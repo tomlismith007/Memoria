@@ -127,6 +127,22 @@
       "dependencies": ["feat-006"],
       "status": "completed",
       "evidence": "src/memoria/mail/auth.py + scripts/auth_gmail.py turnkey runner; pyproject google-auth-oauthlib"
+    },
+    {
+      "id": "feat-017",
+      "name": "Model settings persistence & history presets",
+      "description": "模型设置历史持久化：自动记忆保存 Base URL、API Key 与 Model 配置，页面刷新后自动恢复；支持多配置历史预设管理与快速切换",
+      "dependencies": ["feat-015"],
+      "status": "todo",
+      "evidence": ""
+    },
+    {
+      "id": "feat-018",
+      "name": "Conversation message history persistence",
+      "description": "历史消息与对话流持久化：问答时间线与多轮会话本地持久化，页面刷新后无缝恢复历史消息、逐句溯源切片与归档状态；支持新建会话与清空历史",
+      "dependencies": ["feat-014"],
+      "status": "todo",
+      "evidence": ""
     }
   ]
 }

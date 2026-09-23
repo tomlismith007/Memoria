@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-09-24
-**Active Feature:** all 16 features completed (feat-001..feat-016)
+**Active Feature:** feat-017 (Model settings persistence & history presets)
 
 ## Status
 
@@ -55,21 +55,22 @@
 - [x] feat-012 DONE: 问答与 Wiki 双向链接交互界面 (AskView 句级溯源切片展示与一键沉淀 Wiki; WikiView 索引与双向反向链接漫游)
 - [x] feat-013 DONE: 邮件安全分拣中心与双写摄入界面 (MailView 交易/验证码物理级保护不提供归档，营销邮件强制人工弹窗二次确认；IngestView 拖拽上传与即时双写反馈)
 - [x] feat-014 DONE: 对话历史流与富文本 Markdown 渲染引擎 (AskView 连续追问会话、自动滚动、行内 [[Wiki]] 词条与 [n] 引用芯片交互解析)
-- [x] feat-015 DONE: 模型与环境变量设置抽屉 (SettingsModal 与后端 /api/config 接口，支持 OpenAI / DeepSeek / Ollama 及离线 Demo 演示模式实时切换)
+- [x] feat-015 DONE: 模型与环境变量设置抽屉 (SettingsModal 与后端 /api/config 接口，支持拉取可用模型与连通性延迟诊断)
 - [x] feat-016 DONE: Gmail 本地 OAuth 鉴权工具 (scripts/auth_gmail.py 与 memoria/mail/auth.py 开箱即用生成凭据令牌)
 - [x] UI 精细打磨: 提问对话框首屏居中沉浸、发送后平滑落底吸附、纤长胶囊外形 (h-11/12, max-w-4xl)、黑曜石黑 (#09090b) 圆形发送按钮、移除底部说明小字
 - [x] Launcher: `python run_web.py` 一键启动全栈服务并在浏览器中自动打开
-- [x] Harness & Verification: `init.ps1` 同时验证 56 项后端测试与前端 `npm run build`，100% 绿灯
+- [x] Harness & Verification: `init.ps1` 同时验证 58 项后端测试与前端 `npm run build`，100% 绿灯
 
 ### What's In Progress
 
-- 无进行中特性（feat-001 ~ feat-016 全面交付完成）
+- [ ] feat-017: 模型设置历史持久化（页面刷新自动还原已填参数，支持多配置历史预设管理与快速切换）
+- [ ] feat-018: 历史消息与对话流持久化（问答时间线与多轮会话持久化存储，页面刷新后自动无缝恢复）
 
 ### What's Next
 
-1. 运行 `python run_web.py` 启动全栈服务体验前端交互
-2. 在右上角设置面板中配置真实模型 API Key（OpenAI / DeepSeek / Ollama），或开启 Demo 演示模式体验
-3. 配置 Gmail OAuth 凭证后运行 `python scripts/auth_gmail.py` 开启真实邮箱分拣
+1. 实现 `feat-017`：在前端与后端双重建立模型设置持久化层，即使刷新页面也自动从本地缓存/后端配置无缝恢复；支持保存历史配置快照
+2. 实现 `feat-018`：在 `AskView` 中引入会话持久化机制（支持保存历史问答记录、溯源切片与归档状态，支持清空历史与新建对话）
+3. 保持全套测试与 Harness 门禁（`./init.ps1`）100% 绿灯通过
 
 ## Blockers / Risks
 

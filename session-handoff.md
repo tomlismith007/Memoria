@@ -47,4 +47,7 @@
 
 1. Run `./init.ps1` (Windows) or `./init.sh` (Linux/macOS) to verify environment health (58 tests + Vite build).
 2. Start the web app with `python run_web.py`.
-3. In browser at `http://127.0.0.1:8000`, explore Ask, Wiki, Mail Triage, Ingest, and Settings.
+3. Pick next unfinished feature from `feature_list.json`:
+   - `feat-017`: 模型设置历史持久化（页面刷新自动还原已填参数，支持多配置历史预设管理与快速切换）
+   - `feat-018`: 历史消息与对话流持久化（问答时间线与多轮会话持久化存储，页面刷新后自动无缝恢复）
+4. In browser at `http://127.0.0.1:8000`, explore Ask, Wiki, Mail Triage, Ingest, and Settings.

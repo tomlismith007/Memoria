@@ -9,7 +9,7 @@
 ## Completed This Session
 
 - [x] feat-001..009: Complete Python backend core (RAG ingestion & hybrid retrieval, LLM Wiki structure & ops, mail rules & classify, LangGraph state machine, RAG×Wiki dual-write sync, CLI entry).
-- [x] DESIGN.md created (Utilitarian Minimalism, rounded-3xl/2xl cards, rounded-full pill buttons, muted pastels, `#09090b` obsidian black).
+- [x] docs/DESIGN.md created (Utilitarian Minimalism, rounded-3xl/2xl cards, rounded-full pill buttons, muted pastels, `#09090b` obsidian black).
 - [x] feat-010: Web API service (FastAPI backend in `src/memoria/web/app.py`, unit tests in `tests/test_web_api.py`).
 - [x] feat-011: Frontend scaffold and design system (Vite + React 19 + TS + Tailwind, `PillButton`, `RoundedCard`, `PillBadge`, `SegmentedNav`, `ConfirmModal`).
 - [x] feat-012: RAG & Wiki interactive views (`AskView.tsx` with sentence citations & synthesis archive; `WikiView.tsx` with [[backlinks]]).
@@ -35,7 +35,7 @@
 - Backend: `src/memoria/web/app.py`, `src/memoria/web/config.py`, `src/memoria/mail/auth.py`, `tests/test_web_api.py`
 - Frontend: `frontend/` (React 19, TypeScript, Tailwind CSS, Lucide icons)
 - Launch & Scripts: `run_web.py`, `scripts/auth_gmail.py`, `init.ps1`, `init.sh`
-- Docs & Harness: `README.md`, `DESIGN.md`, `docs/ARCHITECTURE.md`, `feature_list.json`, `progress.md`, `session-handoff.md`, `AGENTS.md`
+- Docs & Harness: `README.md`, `docs/DESIGN.md`, `docs/ARCHITECTURE.md`, `feature_list.json`, `progress.md`, `session-handoff.md`, `AGENTS.md`
 
 ## Decisions Made
 

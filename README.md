@@ -15,7 +15,7 @@ Memoria 是一套专为个人打造的本地智能知识管理系统，解决传
 3. **安全邮件分拣中心（Mail Triage with Hard Invariants）**：
    - 规则层优先拦截验证码与交易邮件，**物理级禁止自动归档（系统红线）**。
    - 营销邮件归档前必须经过人工弹窗二次确认。
-4. **编辑级极简前端设计系统（[DESIGN.md](file:///d:/Memoria/DESIGN.md)）**：
+4. **编辑级极简前端设计系统（[docs/DESIGN.md](file:///d:/Memoria/docs/DESIGN.md)）**：
    - 基于 **React 19 + TypeScript + Tailwind CSS**。
    - 温暖骨白画布（`#FAFAF9`）、炭黑字阶（`#18181B`）、高阶圆角卡片（`rounded-3xl` / `rounded-2xl`）、微触觉胶囊按键（`rounded-full`）、黑曜石黑（`#09090b`）圆形发送键。
    - 首屏居中搜索条，首条提问后平滑落底吸附。
@@ -148,12 +148,11 @@ Memoria/
 │   └── tailwind.config.js   # 骨白、黑曜石黑与高阶圆角主题配置
 ├── tests/                   # 离线自动化测试套件 (58 passed)
 ├── scripts/                 # 工具脚本 (auth_gmail.py)
-├── docs/                    # 架构与产品文档 (ARCHITECTURE.md)
+├── docs/                    # 架构与设计规范文档 (ARCHITECTURE.md, DESIGN.md)
 ├── data/                    # 本地数据持久化 (Chroma 库、Wiki 纯文本)
 ├── feature_list.json        # 交付功能跟踪清单 (Source of Truth)
 ├── progress.md              # 进度日志
 ├── session-handoff.md       # 多会话交接文件
-├── DESIGN.md                # 视觉与设计系统规范
 ├── AGENTS.md                # AI Agent 行为规范与红线
 ├── run_web.py               # Web 服务启动器
 ├── init.ps1                 # Windows 标准初始化与校验脚本

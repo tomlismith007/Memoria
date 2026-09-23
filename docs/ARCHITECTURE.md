@@ -39,7 +39,7 @@ Flow: Gmail API 拉邮件 → 两级分类：
 
 FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感界面：
 - **后端 API**：`/api/ask` (混合检索问答), `/api/wiki` (页面及反向链接), `/api/mail` (分拣与归档确认), `/api/ingest` (文件与文本双写), `/api/config` (模型参数、模型列表拉取与连通性测试)。
-- **前端系统**（React 19 + TypeScript + Tailwind CSS）：
+- **前端系统**（React 19 + TypeScript + Tailwind CSS，设计规范详见 [docs/DESIGN.md](DESIGN.md)）：
   - **AskView**：首屏居中搜索框，首条提问后落底吸附；连续追问流、句级溯源切片卡片展开、一键归档至 Wiki。
   - **WikiView**：`index.md` 索引目录树，Markdown 实时渲染与双向 `[[链接]]` 漫游，底部呈现双向反向链接 (Backlinks)。
   - **MailView**：交易/验证码物理级不可归档保护，营销邮件人工确认弹窗 (Confirm Modal)。

@@ -83,7 +83,7 @@
     {
       "id": "feat-011",
       "name": "Frontend scaffold and design system",
-      "description": "Vite + React + TS + Tailwind CSS app based on DESIGN.md: rounded-2xl/3xl cards, rounded-full pill buttons, muted pastel palette, tab navigation",
+      "description": "Vite + React + TS + Tailwind CSS app based on docs/DESIGN.md: rounded-2xl/3xl cards, rounded-full pill buttons, muted pastel palette, tab navigation",
       "dependencies": ["feat-010"],
       "status": "completed",
       "evidence": "frontend/ package.json + tailwind.config.js + src/components/ui/{PillButton,RoundedCard,PillBadge,SegmentedNav,ConfirmModal}; npm run build passes"

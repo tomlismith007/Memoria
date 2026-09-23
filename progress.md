@@ -49,9 +49,9 @@
 - [x] feat-009 DONE: cli.py + __main__.py（`python -m memoria {ingest|ask|lint}`）; 48 passed
   - 薄封装：argparse → sync/wiki 函数；真实客户端走 env（MEMORIA_CHROMA/WIKI/LLM_*/EMBED_*）
   - main(argv, deps) 可注入 fakes，离线可测
-- [x] DESIGN.md DONE: 圆角卡片 (rounded-2xl/3xl) + 胶囊按键 (rounded-full) + 温暖骨白与低饱和粉彩规范
+- [x] docs/DESIGN.md DONE: 圆角卡片 (rounded-2xl/3xl) + 胶囊按键 (rounded-full) + 温暖骨白与低饱和粉彩规范
 - [x] feat-010 DONE: Web API service (FastAPI 暴露 /api/ask, /api/wiki, /api/mail, /api/ingest, 挂载静态前端); 55 passed total
-- [x] feat-011 DONE: 前端工程搭建与 DESIGN.md 胶囊/圆角卡片组件系统 (PillButton, RoundedCard, PillBadge, SegmentedNav, ConfirmModal)
+- [x] feat-011 DONE: 前端工程搭建与 docs/DESIGN.md 胶囊/圆角卡片组件系统 (PillButton, RoundedCard, PillBadge, SegmentedNav, ConfirmModal)
 - [x] feat-012 DONE: 问答与 Wiki 双向链接交互界面 (AskView 句级溯源切片展示与一键沉淀 Wiki; WikiView 索引与双向反向链接漫游)
 - [x] feat-013 DONE: 邮件安全分拣中心与双写摄入界面 (MailView 交易/验证码物理级保护不提供归档，营销邮件强制人工弹窗二次确认；IngestView 拖拽上传与即时双写反馈)
 - [x] feat-014 DONE: 对话历史流与富文本 Markdown 渲染引擎 (AskView 连续追问会话、自动滚动、行内 [[Wiki]] 词条与 [n] 引用芯片交互解析)

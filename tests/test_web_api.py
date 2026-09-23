@@ -76,7 +76,7 @@ def test_config_endpoints(api_client):
             "embed_base_url": "https://api.deepseek.com/v1",
             "embed_api_key": "sk-1234567890",
             "embed_model": "text-embedding-3-small",
-            "demo_mode": True,
+            "demo_mode": False,
         },
     )
     assert post_resp.status_code == 200

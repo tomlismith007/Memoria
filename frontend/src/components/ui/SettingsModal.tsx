@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { CheckCircle2, Cpu, Settings, X, Zap } from "lucide-react";
+import { CheckCircle2, Cpu, Settings, X } from "lucide-react";
 import { PillButton } from "./PillButton";
 
 interface SettingsData {
@@ -41,7 +41,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       fetch("/api/config")
         .then((r) => r.json())
         .then((data) => {
-          setConfig(data);
+          setConfig({ ...data, demo_mode: false });
         })
         .catch((e) => console.error(e))
         .finally(() => setLoading(false));
@@ -55,7 +55,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const res = await fetch("/api/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ ...config, demo_mode: false }),
       });
       if (res.ok) {
         setSuccess(true);
@@ -121,27 +121,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* Demo Mode Toggle */}
-        <div className="rounded-2xl border border-zinc-200/80 bg-zinc-50/70 p-3.5 flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-xs font-semibold text-zinc-800 flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5 text-amber-500" />
-              离线演示模式 (Mock Mode)
-            </span>
-            <span className="text-[11px] text-zinc-500 block">
-              无需任何 API Key，使用内置确定的 Fake 响应体验全套流程
-            </span>
-          </div>
-          <input
-            type="checkbox"
-            checked={config.demo_mode}
-            onChange={(e) => setConfig({ ...config, demo_mode: e.target.checked })}
-            className="w-4 h-4 rounded text-zinc-900 cursor-pointer"
-          />
-        </div>
-
-        {/* Real Key Settings (dimmed if demo mode is on) */}
-        <div className={`space-y-4 ${config.demo_mode ? "opacity-40 pointer-events-none" : ""}`}>
+        {/* Model Key Settings */}
+        <div className="space-y-4">
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-400">快速预设:</span>
             {(["openai", "deepseek", "ollama"] as const).map((p) => (

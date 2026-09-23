@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memoria"
+version = "0.1.0"
+description = "Personal knowledge system: RAG + LLM Wiki + email triage, orchestrated with LangGraph"
+requires-python = ">=3.11"
+dependencies = [
+  "langgraph",   # orchestration (feat-007); retrieval core stays hand-written
+  "chromadb",    # local vector store (feat-002)
+  "pypdf",       # PDF parsing (feat-002)
+  "requests",    # web fetching + OpenAI-compatible API calls
+  "google-api-python-client",  # Gmail API (feat-006)
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]

@@ -1,0 +1,68 @@
+{
+  "features": [
+    {
+      "id": "feat-001",
+      "name": "Project Setup",
+      "description": "pyproject + deps skeleton, green verification baseline (python -m pytest -q), repo restartable from clean checkout",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "pyproject.toml + src/memoria; pip install -e . OK; init.ps1 green"
+    },
+    {
+      "id": "feat-002",
+      "name": "RAG ingest pipeline",
+      "description": "Upload → parse (PDF/Markdown/网页) → chunk → embed → vector store; incremental update including full vector deletion for a removed document (red line: no orphan vectors)",
+      "dependencies": ["feat-001"],
+      "status": "completed",
+      "evidence": "tests/test_rag_ingest.py: 7 tests pass (ingest/search/delete/re-ingest dedup/citations); src/memoria/rag/{parse,chunk,embed,store,ingest}.py"
+    },
+    {
+      "id": "feat-003",
+      "name": "RAG query with citations",
+      "description": "Hybrid retrieval (vector + rerank, ~100 lines hand-written core) → generation where every answer sentence cites (document, paragraph/chunk)",
+      "dependencies": ["feat-002"],
+      "status": "completed",
+      "evidence": "rag/retrieve.py + rag/answer.py + llm.py; tests/test_rag_answer.py 6 tests pass; 14 passed total"
+    },
+    {
+      "id": "feat-004",
+      "name": "LLM Wiki structure",
+      "description": "raw/ (read-only) → wiki/ pages with [[双向链接]], index.md, log.md → schema.md writing spec for the LLM",
+      "dependencies": ["feat-001"],
+      "status": "completed",
+      "evidence": "wiki/pages.py (Wiki + extract_links + DEFAULT_SCHEMA_MD); tests/test_wiki_structure.py 7 tests pass; 21 passed total"
+    },
+    {
+      "id": "feat-005",
+      "name": "Wiki operations: ingest / query / lint",
+      "description": "ingest: read new source, update ~10 related pages; query: read index.md first then deep answer; lint: broken [[links]], orphan pages, contradictions",
+      "dependencies": ["feat-004"],
+      "status": "completed",
+      "evidence": "wiki/ops.py (ingest/query/lint); tests/test_wiki_ops.py 7 tests pass; 28 passed total"
+    },
+    {
+      "id": "feat-006",
+      "name": "Email classification (two-stage)",
+      "description": "Gmail API pull → rule layer first (验证码/交易 pass-through, NEVER auto-archive — red line) → LLM classify (营销/通知/待办) + one-line summary → marketing archive requires human confirm click, never automatic",
+      "dependencies": ["feat-001"],
+      "status": "completed",
+      "evidence": "mail/{rules,classify,gmail}.py; tests/test_mail_triage.py 6 tests pass; 34 passed total"
+    },
+    {
+      "id": "feat-007",
+      "name": "LangGraph orchestration",
+      "description": "State graph: intent routing (问答/邮件/ingest), multi-step ingest (读→写多页→更新索引→lint), human-confirm node before any archive. Core retrieval stays hand-written; LangChain only for integrations (vector store connectors, doc loaders)",
+      "dependencies": ["feat-002", "feat-005", "feat-006"],
+      "status": "completed",
+      "evidence": "graph/{state,nodes,graph}.py; tests/test_graph.py 5 tests pass incl. interrupt/resume; 39 passed total"
+    },
+    {
+      "id": "feat-008",
+      "name": "RAG × Wiki integration",
+      "description": "(1) Dual-write ingest: vectorize AND compile wiki pages from same document; (2) Hybrid query: Wiki index.md first, fall back to vector retrieval for details; (3) Feedback loop: high-quality Q&A archived as wiki synthesis pages, email-derived facts written into wiki",
+      "dependencies": ["feat-003", "feat-005", "feat-007"],
+      "status": "completed",
+      "evidence": "sync.py (dual_ingest/hybrid_answer/archive_qa/archive_fact) + IngestResult.text; tests/test_sync.py 5 tests pass; 44 passed total"
+    }
+  ]
+}

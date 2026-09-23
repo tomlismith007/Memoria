@@ -63,6 +63,14 @@
       "dependencies": ["feat-003", "feat-005", "feat-007"],
       "status": "completed",
       "evidence": "sync.py (dual_ingest/hybrid_answer/archive_qa/archive_fact) + IngestResult.text; tests/test_sync.py 5 tests pass; 44 passed total"
+    },
+    {
+      "id": "feat-009",
+      "name": "CLI entry",
+      "description": "python -m memoria {ingest|ask|lint} thin wrapper over sync/wiki modules; real clients from env, deps injectable for offline tests",
+      "dependencies": ["feat-008"],
+      "status": "completed",
+      "evidence": "cli.py + __main__.py; tests/test_cli.py 4 tests pass; 48 passed total"
     }
   ]
 }

@@ -46,6 +46,10 @@
   - 双写：IngestResult 加 text 字段，向量+Wiki 单次解析
   - 混合查询：Wiki 先行 → LLM 充分性门（默认 fallback 到 RAG，不冒薄答案风险）→ 细节合并，引用穿透
   - 沉淀：问归档 synthesis 页（问题消毒防路径逃逸）；邮件事实入页（重复摘录去重）
+- [x] feat-009 DONE: cli.py + __main__.py（`python -m memoria {ingest|ask|lint}`）; 48 passed
+  - 薄封装：argparse → sync/wiki 函数；真实客户端走 env（MEMORIA_CHROMA/WIKI/LLM_*/EMBED_*）
+  - main(argv, deps) 可注入 fakes，离线可测
+- [x] git 落盘：已 init + 2 commits（首 commit + 去字节码）；工作树干净
 
 ### What's In Progress
 
@@ -53,9 +57,9 @@
 
 ### What's Next
 
-1. Real-key smoke test (MEMORIA_LLM_*/MEMORIA_EMBED_* with a compatible endpoint)
-2. `git init` + initial commit (repo is not yet under version control)
-3. Next scope (if any): CLI entry, scheduled email pull
+1. Real-key smoke test — BLOCKED: 环境无 MEMORIA_LLM_API_KEY/MEMORIA_EMBED_API_KEY/OPENAI_API_KEY，需用户提供兼容 endpoint + key 后跑：
+   `python -m memoria ingest <doc> && python -m memoria ask "<问题>"`
+2. Next scope (if any): 定时拉邮件（需 Gmail OAuth 凭据）、 richer CLI（mail triage 命令）
 
 ## Blockers / Risks
 
@@ -77,6 +81,7 @@
 - [x] feat-006: `python -m pytest -q` → `34 passed` (tests/test_mail_triage.py, offline)
 - [x] feat-007: `python -m pytest -q` → `39 passed` (tests/test_graph.py, offline)
 - [x] feat-008: `python -m pytest -q` → `44 passed` (tests/test_sync.py, offline)
+- [x] feat-009: `python -m pytest -q` → `48 passed` (tests/test_cli.py, offline)
 
 ## Notes for Next Session
 

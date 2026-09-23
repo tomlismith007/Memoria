@@ -71,6 +71,62 @@
       "dependencies": ["feat-008"],
       "status": "completed",
       "evidence": "cli.py + __main__.py; tests/test_cli.py 4 tests pass; 48 passed total"
+    },
+    {
+      "id": "feat-010",
+      "name": "Web API service",
+      "description": "FastAPI service exposing /api/ask, /api/wiki, /api/mail, /api/ingest over existing sync, wiki, and graph modules; CORS and static serving ready",
+      "dependencies": ["feat-008", "feat-009"],
+      "status": "completed",
+      "evidence": "src/memoria/web/app.py + tests/test_web_api.py: 6 tests pass; 54 passed total"
+    },
+    {
+      "id": "feat-011",
+      "name": "Frontend scaffold and design system",
+      "description": "Vite + React + TS + Tailwind CSS app based on DESIGN.md: rounded-2xl/3xl cards, rounded-full pill buttons, muted pastel palette, tab navigation",
+      "dependencies": ["feat-010"],
+      "status": "completed",
+      "evidence": "frontend/ package.json + tailwind.config.js + src/components/ui/{PillButton,RoundedCard,PillBadge,SegmentedNav,ConfirmModal}; npm run build passes"
+    },
+    {
+      "id": "feat-012",
+      "name": "RAG and Wiki interactive views",
+      "description": "Hybrid query interface with sentence citation chips, Wiki explorer with [[backlinks]], and synthesis Q&A archive action",
+      "dependencies": ["feat-011"],
+      "status": "completed",
+      "evidence": "src/views/AskView.tsx + src/views/WikiView.tsx; interactive citation preview, [[wiki]] pill routing, Q&A synthesis archive"
+    },
+    {
+      "id": "feat-013",
+      "name": "Mail triage and ingest views",
+      "description": "Mail triage board (protected vs candidate), human-in-the-loop confirmation modal (never auto-archive), and document dual-ingest uploader",
+      "dependencies": ["feat-011"],
+      "status": "completed",
+      "evidence": "src/views/MailView.tsx + src/views/IngestView.tsx; strict red line protected items display, human confirmation modal, dual write uploader"
+    },
+    {
+      "id": "feat-014",
+      "name": "Conversation thread and rich Markdown rendering",
+      "description": "Multi-turn Q&A conversation thread in AskView with auto-scroll; rich typography Markdown renderer supporting [[Wiki]] links and [n] citations",
+      "dependencies": ["feat-012"],
+      "status": "completed",
+      "evidence": "MarkdownRenderer.tsx + AskView.tsx conversation thread; full typography, interactive [[wiki]] & [n] pills; npm run build OK"
+    },
+    {
+      "id": "feat-015",
+      "name": "Model and environment configuration panel",
+      "description": "Settings drawer & backend /api/config allowing runtime configuration of OpenAI/DeepSeek/Ollama endpoints, keys, and demo mode",
+      "dependencies": ["feat-010"],
+      "status": "completed",
+      "evidence": "src/memoria/web/config.py + app.py /api/config + SettingsModal.tsx; tests/test_web_api.py test_config_endpoints pass (56 passed)"
+    },
+    {
+      "id": "feat-016",
+      "name": "Gmail local OAuth helper",
+      "description": "scripts/auth_gmail.py + memoria/mail/auth.py for turnkey local OAuth token generation and authorized service bootstrapping",
+      "dependencies": ["feat-006"],
+      "status": "completed",
+      "evidence": "src/memoria/mail/auth.py + scripts/auth_gmail.py turnkey runner; pyproject google-auth-oauthlib"
     }
   ]
 }

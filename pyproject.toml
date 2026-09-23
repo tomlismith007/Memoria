@@ -13,10 +13,14 @@ dependencies = [
   "pypdf",       # PDF parsing (feat-002)
   "requests",    # web fetching + OpenAI-compatible API calls
   "google-api-python-client",  # Gmail API (feat-006)
+  "google-auth-oauthlib",      # Gmail OAuth helper (feat-016)
+  "fastapi",     # web API (feat-010)
+  "uvicorn",     # ASGI server (feat-010)
+  "python-multipart", # form/upload support (feat-010)
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "httpx"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

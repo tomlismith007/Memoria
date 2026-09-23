@@ -6,6 +6,11 @@ echo "=== Harness Initialization ==="
 echo "=== python -m pytest -q ==="
 python -m pytest -q
 
+if [ -d "frontend/node_modules" ]; then
+    echo "=== npm run build (frontend) ==="
+    (cd frontend && npm run build)
+fi
+
 echo "=== Verification Complete ==="
 echo ""
 echo "Next steps:"

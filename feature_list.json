@@ -115,10 +115,10 @@
     {
       "id": "feat-015",
       "name": "Model and environment configuration panel",
-      "description": "Settings drawer & backend /api/config allowing runtime configuration of OpenAI/DeepSeek/Ollama endpoints, keys, and demo mode",
+      "description": "Settings drawer & backend /api/config with Fetch Models (auto model picker) and Test Connectivity (latency & status diagnostics) for OpenAI/DeepSeek/Ollama/custom endpoints",
       "dependencies": ["feat-010"],
       "status": "completed",
-      "evidence": "src/memoria/web/config.py + app.py /api/config + SettingsModal.tsx; tests/test_web_api.py test_config_endpoints pass (56 passed)"
+      "evidence": "src/memoria/web/config.py + app.py /api/config + SettingsModal.tsx; tests/test_web_api.py (test_config_endpoints, test_fetch_models_endpoint, test_test_config_endpoint) all pass (58 passed total)"
     },
     {
       "id": "feat-016",

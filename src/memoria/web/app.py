@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -19,7 +20,15 @@ from memoria.llm import ChatLLM, OpenAICompatibleChat
 from memoria.mail import Email, archive, classify, fetch_messages, is_protected, request_archive
 from memoria.rag import ChromaStore, Citation, OpenAICompatibleEmbedder
 from memoria.sync import archive_qa, dual_ingest, hybrid_answer
-from memoria.web.config import Settings, load_settings, save_settings
+from memoria.web.config import (
+    ModelsRequest,
+    Settings,
+    TestConfigRequest,
+    fetch_remote_models,
+    load_settings,
+    save_settings,
+    test_model_connectivity,
+)
 from memoria.wiki import Wiki, extract_links, lint as wiki_lint
 
 
@@ -113,23 +122,44 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                 )
         return {"status": "ok", "message": "Settings saved successfully"}
 
+    @app.post("/api/config/models")
+    def api_fetch_models(req: ModelsRequest):
+        try:
+            models = fetch_remote_models(req.base_url, req.api_key)
+            return {"status": "ok", "models": models}
+        except Exception as e:
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": f"获取模型失败: {str(e)[:150]}", "models": []},
+            )
+
+    @app.post("/api/config/test")
+    def api_test_config(req: TestConfigRequest):
+        res = test_model_connectivity(req)
+        return {"status": "ok", **res}
+
     @app.post("/api/ask")
     def api_ask(req: AskRequest):
-        ans = hybrid_answer(req.question, wiki, llm, store, embedder)
-        return {
-            "text": ans.text,
-            "source": ans.source,
-            "wiki_pages": ans.wiki_pages,
-            "citations": [
-                {
-                    "ref": c.ref,
-                    "doc_id": c.doc_id,
-                    "chunk": c.chunk,
-                    "start": c.start,
-                }
-                for c in ans.citations
-            ],
-        }
+        try:
+            ans = hybrid_answer(req.question, wiki, llm, store, embedder)
+            return {
+                "text": ans.text,
+                "source": ans.source,
+                "wiki_pages": ans.wiki_pages,
+                "citations": [
+                    {
+                        "ref": c.ref,
+                        "doc_id": c.doc_id,
+                        "chunk": c.chunk,
+                        "start": c.start,
+                    }
+                    for c in ans.citations
+                ],
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"LLM 接口调用失败: {str(e)[:180]}")
 
     @app.get("/api/wiki/pages")
     def api_wiki_pages():

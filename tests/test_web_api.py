@@ -83,6 +83,50 @@ def test_config_endpoints(api_client):
     assert post_resp.json()["status"] == "ok"
 
 
+def test_fetch_models_endpoint(api_client, monkeypatch):
+    client, _, _ = api_client
+
+    class MockResp:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self):
+            return {"data": [{"id": "deepseek-chat"}, {"id": "deepseek-reasoner"}]}
+
+    monkeypatch.setattr("requests.get", lambda *a, **kw: MockResp())
+    resp = client.post("/api/config/models", json={"base_url": "https://api.deepseek.com/v1", "api_key": "sk-xxx"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert "deepseek-chat" in data["models"]
+
+
+def test_test_config_endpoint(api_client, monkeypatch):
+    client, _, _ = api_client
+
+    class MockResp:
+        status_code = 200
+        text = "ok"
+        def json(self):
+            return {"choices": [{"message": {"content": "pong"}}]}
+
+    monkeypatch.setattr("requests.post", lambda *a, **kw: MockResp())
+    resp = client.post(
+        "/api/config/test",
+        json={
+            "llm_base_url": "https://api.deepseek.com/v1",
+            "llm_api_key": "sk-1234",
+            "llm_model": "deepseek-chat",
+            "embed_base_url": "",
+            "embed_api_key": "",
+            "embed_model": "",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["llm_ok"] is True
+
+
 def test_ask_endpoint(api_client):
     client, wiki, _ = api_client
     wiki.write_page("服务到期", "# 服务到期\n\n2027 到期。\n")

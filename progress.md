@@ -97,10 +97,9 @@
 - [x] feat-011: `npm run build` in `frontend/` succeeds cleanly; design system complete
 - [x] feat-012: AskView & WikiView with citations and backlinks implemented
 - [x] feat-013: MailView & IngestView with protected safety rules and confirm modal implemented
-- [x] feat-014: Conversation thread + Markdown renderer with clickable [[wiki]] & [n] citations
-- [x] feat-015: Settings drawer + /api/config runtime switching (56 pytest tests passed)
+- [x] feat-015: Settings drawer + /api/config runtime switching + 获取模型 (Fetch Models) & 测试连接 (Test Connectivity) 连通性诊断卡片 (58 pytest tests passed)
 - [x] feat-016: scripts/auth_gmail.py + memoria/mail/auth.py turnkey Gmail OAuth helper
-- [x] UI Refinements: Centered slender search bar, Obsidian black circular submit button, smooth bottom anchoring
+- [x] UI Refinements: Centered slender search bar, Obsidian black circular submit button, smooth bottom anchoring, 模型快速选择胶囊、网络耗时/诊断反馈卡片
 
 ## Notes for Next Session
 

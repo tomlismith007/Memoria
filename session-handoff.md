@@ -2,9 +2,9 @@
 
 ## Current Objective
 
-- Goal: Ship Memoria's 8 features (see `feature_list.json`)
-- Current status: ALL 8 DONE, `44 passed`. Remaining: real-key smoke test, git init, next scope
-- Branch / commit: (not yet a git repo — `git init` + initial commit pending)
+- Goal: Ship Memoria's features (see `feature_list.json`)
+- Current status: ALL 9 DONE, `48 passed`, 3 commits, tree clean. Blocked: real-key smoke test (no API key in env)
+- Branch / commit: main @ 2e20c7f
 
 ## Completed This Session
 
@@ -16,9 +16,10 @@
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| pytest | `python -m pytest -q` | 44 passed | all offline (Fake*/stubs) |
+| pytest | `python -m pytest -q` | 48 passed | all offline (Fake*/stubs) |
 | YAML | `yaml.safe_load(ci.yml)` | OK | — |
 | install | `pip install -e ".[dev]"` | OK | — |
+| git | `git log --oneline` | 3 commits, clean | — |
 
 ## Files Changed
 
@@ -41,4 +42,5 @@
 
 ## Recommended Next Step
 
-- Real-key smoke test against an OpenAI-compatible endpoint, then `git init` + initial commit.
+- 给一个 OpenAI 兼容 endpoint + key（`MEMORIA_LLM_*` / `MEMORIA_EMBED_*`），跑真 key 联调：
+  `python -m memoria ingest <doc> && python -m memoria ask "<问题>"`。

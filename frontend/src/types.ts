@@ -52,3 +52,36 @@ export interface IngestResponse {
   origin?: string;
   filename?: string;
 }
+
+export type ModelApiFormat =
+  | "chat_completions"
+  | "anthropic_messages"
+  | "openai_responses";
+
+export interface CustomModel {
+  id: string;
+  name: string;
+  tags: string[];
+  enabled: boolean;
+  model_type: "chat" | "embedding";
+}
+
+export interface CustomProvider {
+  id: string;
+  name: string;
+  base_url: string;
+  api_format: ModelApiFormat;
+  api_key?: string;
+  api_key_set: boolean;
+  masked_api_key?: string;
+  enabled: boolean;
+  models: CustomModel[];
+}
+
+export interface ProvidersConfigResponse {
+  status: string;
+  active_provider_id: string;
+  active_chat_model: string;
+  active_embed_model: string;
+  providers: CustomProvider[];
+}

@@ -1,8 +1,12 @@
 import type {
   AskResponse,
   Citation,
+  CustomModel,
+  CustomProvider,
   IngestResponse,
   MailItem,
+  ModelApiFormat,
+  ProvidersConfigResponse,
   WikiListResponse,
   WikiPageDetail,
 } from "./types";
@@ -75,4 +79,110 @@ export const api = {
     }
     return res.json();
   },
+
+  getProviders: () => request<ProvidersConfigResponse>("/api/config/providers"),
+
+  saveProvider: (provider: {
+    id?: string;
+    name: string;
+    base_url: string;
+    api_format?: ModelApiFormat;
+    api_key?: string;
+    enabled?: boolean;
+    active_chat_model?: string;
+    active_embed_model?: string;
+  }) =>
+    request<{ status: string; provider: CustomProvider }>("/api/config/providers", {
+      method: "POST",
+      body: JSON.stringify(provider),
+    }),
+
+  deleteProvider: (id: string) =>
+    request<{ status: string; providers: CustomProvider[] }>(
+      `/api/config/providers/${encodeURIComponent(id)}`,
+      { method: "DELETE" }
+    ),
+
+  saveProviderModel: (
+    providerId: string,
+    model: {
+      id: string;
+      name?: string;
+      tags?: string[];
+      enabled?: boolean;
+      model_type?: "chat" | "embedding";
+    }
+  ) =>
+    request<{ status: string; model: CustomModel; provider: CustomProvider }>(
+      `/api/config/providers/${encodeURIComponent(providerId)}/models`,
+      {
+        method: "POST",
+        body: JSON.stringify(model),
+      }
+    ),
+
+  deleteProviderModel: (providerId: string, modelId: string) =>
+    request<{ status: string; provider: CustomProvider }>(
+      `/api/config/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
+      { method: "DELETE" }
+    ),
+
+  testProvider: (providerId: string, modelId?: string) =>
+    request<{
+      status: string;
+      llm_ok: boolean;
+      llm_latency_ms: number;
+      llm_message: string;
+    }>(`/api/config/providers/${encodeURIComponent(providerId)}/test`, {
+      method: "POST",
+      body: JSON.stringify({ model_id: modelId || "" }),
+    }),
+
+  testConfig: (params: {
+    llm_base_url: string;
+    llm_api_key?: string;
+    llm_model: string;
+    api_format?: ModelApiFormat;
+  }) =>
+    request<{
+      status: string;
+      llm_ok: boolean;
+      llm_latency_ms: number;
+      llm_message: string;
+    }>("/api/config/test", {
+      method: "POST",
+      body: JSON.stringify({
+        llm_base_url: params.llm_base_url,
+        llm_api_key: params.llm_api_key || "",
+        llm_model: params.llm_model,
+        api_format: params.api_format || "chat_completions",
+        embed_base_url: "",
+        embed_api_key: "",
+        embed_model: "",
+      }),
+    }),
+
+  activateProvider: (providerId: string, modelId?: string) =>
+    request<{
+      status: string;
+      active_provider_id: string;
+      active_chat_model: string;
+    }>("/api/config/providers/activate", {
+      method: "POST",
+      body: JSON.stringify({ provider_id: providerId, model_id: modelId || "" }),
+    }),
+
+  fetchModels: (
+    base_url: string,
+    api_key?: string,
+    api_format: ModelApiFormat = "chat_completions"
+  ) =>
+    request<{ status: string; models: string[] }>("/api/config/models", {
+      method: "POST",
+      body: JSON.stringify({
+        base_url,
+        api_key: api_key || "",
+        api_format,
+      }),
+    }),
 };

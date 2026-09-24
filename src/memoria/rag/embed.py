@@ -54,7 +54,6 @@ class OpenAICompatibleEmbedder:
             json_body={"model": self.model, "input": texts},
             timeout=60,
             max_bytes=4 * 1024 * 1024,
-            allow_ollama=True,
         )
         resp.raise_for_status()
         items = sorted(resp.json()["data"], key=lambda d: d["index"])

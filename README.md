@@ -44,7 +44,7 @@ Memoria 是一套专为个人打造的本地智能知识管理系统，解决传
 - **双写即时反馈**：直观展示切片向量入库数量与 LLM 提取编译的 Wiki 页面明细。
 
 ### 5. ⚙️ 模型配置与连通性诊断 (SettingsModal)
-- **灵活适配**：原生兼容 OpenAI、DeepSeek、Ollama 及各类 OpenAI 兼容网关。
+- **公网网关适配**：仅支持公网 HTTPS/443 的 OpenAI-compatible 网关，可使用内置快速预设或自定义公网地址。
 - **一键获取模型列表 (Fetch Models)**：向远端发起请求，自动拉取可用模型并支持快速点选填入。
 - **全链路测试连接 (Test Connectivity)**：即时对 LLM 与 Embedding 进行网络往返测试，反馈翡翠绿/玫瑰红诊断卡片与毫秒级延迟（如 `240ms`）。
 
@@ -117,7 +117,7 @@ python run_web.py
 ```
 
 手动执行单项检验：
-- **后端单元测试**（58 项测试，含 RAG 向量原子删除、LangGraph 中断恢复、Wiki 断链体检、Web API 代理等）：
+- **后端单元测试**（95 项测试，含 RAG 向量原子删除、LangGraph 中断恢复、Wiki 断链体检、Web API 代理与公网 HTTPS/443 配置安全等）：
   ```bash
   python -m pytest -q
   ```
@@ -146,7 +146,7 @@ Memoria/
 │   │   ├── views/           # 页面视图 (AskView, WikiView, MailView, IngestView)
 │   │   └── api.ts           # 前端 API 封装
 │   └── tailwind.config.js   # 骨白、黑曜石黑与高阶圆角主题配置
-├── tests/                   # 离线自动化测试套件 (58 passed)
+├── tests/                   # 离线自动化测试套件 (95 passed)
 ├── scripts/                 # 工具脚本 (auth_gmail.py)
 ├── docs/                    # 架构与设计规范文档 (ARCHITECTURE.md, DESIGN.md)
 ├── data/                    # 本地数据持久化 (Chroma 库、Wiki 纯文本)

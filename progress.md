@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-09-24
-**Active Feature:** none — all 21 tracked features complete
+**Active Feature:** none — feat-026 complete; feat-023 registered as todo
 
 ## Status
 
@@ -61,18 +61,22 @@
 - [x] feat-017 DONE: 配置历史预设（服务端最多 10 个快照、Key 脱敏响应、保存/应用/删除、旧配置兼容）；全量 73 passed，前端构建通过
 - [x] feat-018 DONE: 问答历史 localStorage 持久化（版本化 envelope、刷新/Tab 恢复、归档状态、新建会话清空、损坏数据回退）；全量 73 passed，浏览器冒烟通过
 - [x] feat-020 DONE: 移动端响应式 UI（窄屏图标导航、44px 触控、Header 收缩、五个页面长文本重排）；390/320px 无横向滚动，桌面导航无回归
-- [x] feat-021 DONE: 统一 SSRF 安全出站层（公网 HTTPS/443、精确 Ollama 上下文、DNS 全结果校验与 IP pinning、同源重定向、identity/响应大小限制）；全量 92 passed
+- [x] feat-021 DONE: 统一 SSRF 安全出站层（公网 HTTPS/443、DNS 全结果校验与 IP pinning、同源重定向、identity/响应大小限制）；全量 92 passed
+- [x] feat-022 DONE: 删除本地模型供应商路线，配置与出站统一公网 HTTPS/443；旧非法预设过滤，配置 API 即时拒绝 HTTP/localhost/非 443；全量 95 passed，前端构建通过
+- [x] feat-024 DONE: 纯自定义供应商管理界面重构与刷新零丢失双重持久化；两栏式供应商布局（左侧供应商列表/状态指示点，右侧Base URL、格式、API Key及模型列表维护，模型测试与标签管理），后端 settings.json 与前端 localStorage 双重持久化，AskView 对话端当前模型展示与直接切换；全量 97 passed，前端构建通过 (0 errors)
+- [x] feat-025 DONE: 供应商协议贯通；OpenAI 兼容 Chat Completions、Claude/Anthropic Messages、OpenAI Responses 三种协议可选并持久化，模型列表、连通性测试和实际聊天按协议构造请求；全量 102 passed，标准 init.sh 绿灯
+- [x] feat-026 DONE: 彻底移除添加供应商弹窗，改为右侧面板直接内联新建；点击「添加供应商」直接在右侧进入空白表单模式，输入供应商名称、Base URL、协议与 API Key，直接调用「获取模型」一键拉取并选取模型，可在未保存前一键「测试当前配置」，点击「保存并生效供应商」自动落盘持久化并设为激活状态，提供「取消」按钮安全回退；全量 102 passed，前端构建 0 错误
 - [x] UI 精细打磨: 提问对话框首屏居中沉浸、发送后平滑落底吸附、纤长胶囊外形 (h-11/12, max-w-4xl)、黑曜石黑 (#09090b) 圆形发送按钮、移除底部说明小字
 - [x] Launcher: `python run_web.py` 一键启动全栈服务并在浏览器中自动打开
-- [x] Harness & Verification: `init.ps1` 同时验证 92 项后端测试与前端 `npm run build`，100% 绿灯
+- [x] Harness & Verification: `init.ps1` 同时验证 102 项后端测试与前端 `npm run build`，100% 绿灯
 
 ### What's In Progress
 
-- [ ] 无；`feature_list.json` 中 21 个功能均已完成。
+- [ ] 无；feat-001..feat-026 已完成，feat-023 仅登记为 todo。
 
 ### What's Next
 
-1. 计划功能已全部完成；继续开发前，先从审查报告中登记一个新的单项修复功能
+1. feat-023 仅登记引用完整性后续计划，尚未实现
 2. 保持全套测试与 Harness 门禁（`./init.ps1`）100% 绿灯通过
 
 ## Blockers / Risks
@@ -85,7 +89,7 @@
 
 - **LangGraph over LangChain LCEL**: system is a state machine (routing, multi-step ingest, human-confirm nodes), not a single chain.
 - **Hand-write core retrieval** (~100 lines: vector search + rerank + generate); LangChain only for integrations.
-- **Feature granularity**: 21 features, one at a time; red lines encoded in AGENTS.md § Red Lines.
+- **Feature granularity**: 22 features, one at a time; red lines encoded in AGENTS.md § Red Lines.
 - **Minimalist Capsule Design**: Canvas `#FAFAF9`, Obsidian Black `#09090b` accents, `rounded-3xl` cards, `rounded-full` pills, zero decorative emoji / heavy drop-shadows.
 
 ## Evidence of Completion
@@ -109,7 +113,11 @@
 - [x] feat-017: `pwsh -NoProfile -File ./init.ps1` → 73 passed + frontend build green; up to 10 redacted server-side presets with save/apply/delete and legacy settings compatibility
 - [x] feat-018: `pwsh -NoProfile -File ./init.ps1` → 73 passed + frontend build green; browser smoke verified refresh/tab restoration, citation and archive metadata, new-session clearing, and corrupt JSON fallback
 - [x] feat-020: `pwsh -NoProfile -File ./init.ps1` → 73 passed + frontend build green; browser verification at 390×844 and 320×800 confirmed no page-level horizontal overflow across all views and Settings; desktop navigation preserved at 1280×720
-- [x] feat-021: `pwsh -NoProfile -File ./init.ps1` → 92 passed + frontend build green; all direct requests.get/post call sites migrated to the SSRF-safe standard-library client
+- [x] feat-021: `python -m pytest -q` → 92 passed (baseline) + frontend build green; all direct requests.get/post call sites migrated to the SSRF-safe standard-library client
+- [x] feat-022: `python -m pytest -q` → 95 passed; `npm run build` → OK; public HTTPS/443-only network/configuration policy, legacy filtering, API rejection coverage, and residue search clean
+- [x] feat-024: `powershell -File ./init.ps1` → 97 passed + frontend build green; custom provider CRUD, model management, dual persistence in settings.json & localStorage, and active model switcher
+- [x] feat-025: `./init.sh` → 102 passed + frontend build green; Chat Completions / Anthropic Messages / OpenAI Responses request matrices, provider protocol persistence, model-list and connectivity auth, legacy defaults, and unknown-format rejection
+- [x] feat-026: `./init.ps1` → 102 passed + frontend build green (0 errors); SettingsModal inline right-panel creation workflow, draft model management, pre-save config test API, zero popup windows
 - [x] UI Refinements: Centered slender search bar, Obsidian black circular submit button, smooth bottom anchoring, 模型快速选择胶囊、网络耗时/诊断反馈卡片
 
 ## Notes for Next Session

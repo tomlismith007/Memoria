@@ -1,4 +1,4 @@
-"""Policy-enforcing outbound HTTP for user-configured URLs."""
+"""Policy-enforcing outbound HTTPS for user-configured public gateways."""
 
 from __future__ import annotations
 
@@ -11,12 +11,10 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
-OLLAMA_ORIGINS = {
-    ("localhost", 11434),
-    ("127.0.0.1", 11434),
-}
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 MAX_REDIRECTS = 3
+_PUBLIC_SCHEME = "https"
+_PUBLIC_PORT = 443
 
 
 class SafeRequestError(ValueError):
@@ -62,7 +60,8 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         )
 
 
-def _validate_url(url: str, allow_ollama: bool) -> tuple[str, int, str]:
+def _validate_url(url: str) -> tuple[str, int, str]:
+    """Validate URL syntax and the public HTTPS/443 policy without DNS."""
     if not isinstance(url, str) or not url or any(ch.isspace() or ord(ch) < 32 for ch in url):
         raise SafeRequestError("Invalid URL")
     if "\\" in url:
@@ -75,8 +74,8 @@ def _validate_url(url: str, allow_ollama: bool) -> tuple[str, int, str]:
     except ValueError as exc:
         raise SafeRequestError("Invalid URL or port") from exc
 
-    if parsed.scheme not in {"http", "https"} or not hostname:
-        raise SafeRequestError("Only HTTP(S) URLs are allowed")
+    if parsed.scheme != _PUBLIC_SCHEME or not hostname:
+        raise SafeRequestError("Only public HTTPS URLs are allowed")
     if parsed.username is not None or parsed.password is not None:
         raise SafeRequestError("URL userinfo is not allowed")
     if parsed.netloc.endswith(":"):
@@ -84,27 +83,32 @@ def _validate_url(url: str, allow_ollama: bool) -> tuple[str, int, str]:
     if any(ch.isspace() or ord(ch) < 32 for ch in hostname):
         raise SafeRequestError("Invalid hostname")
 
-    port = port or (443 if parsed.scheme == "https" else 80)
-    ollama_origin = (hostname.casefold(), port) in OLLAMA_ORIGINS
-    if parsed.scheme == "https":
-        if port != 443:
-            raise SafeRequestError("Public HTTPS requests must use port 443")
-    elif allow_ollama and ollama_origin and port == 11434:
+    if port is None:
+        port = _PUBLIC_PORT
+    if port != _PUBLIC_PORT:
+        raise SafeRequestError("Public HTTPS requests must use port 443")
+
+    normalized_host = hostname.casefold().rstrip(".")
+    if normalized_host == "localhost" or normalized_host.endswith(
+        (".localhost", ".local", ".internal", ".lan", ".home")
+    ):
+        raise SafeRequestError("Local gateway hosts are not allowed")
+    try:
+        address = ipaddress.ip_address(hostname.split("%", 1)[0])
+    except ValueError:
         pass
     else:
-        raise SafeRequestError("HTTP is only allowed for the local Ollama endpoint")
-
+        if not _ip(address.compressed):
+            raise SafeRequestError("Public gateway IP is required")
     return parsed.scheme, port, hostname
 
 
-def _ip_is_allowed(raw_ip: str, ollama_context: bool) -> bool:
+def _ip(raw_ip: str) -> bool:
+    """Return whether an address is globally routable and not special-purpose."""
     try:
         address = ipaddress.ip_address(raw_ip.split("%", 1)[0])
     except ValueError as exc:
         raise SafeRequestError("DNS returned an invalid address") from exc
-
-    if ollama_context:
-        return address.is_loopback
     return (
         address.is_global
         and not address.is_multicast
@@ -114,10 +118,8 @@ def _ip_is_allowed(raw_ip: str, ollama_context: bool) -> bool:
     )
 
 
-def _resolve_and_validate(
-    hostname: str, port: int, allow_ollama: bool
-) -> tuple[str, int]:
-    ollama_context = allow_ollama and (hostname.casefold(), port) in OLLAMA_ORIGINS
+def _resolve(hostname: str, port: int) -> tuple[str, int]:
+    """Resolve every address, reject mixed/private DNS, and pin one address."""
     try:
         results = socket.getaddrinfo(
             hostname, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP
@@ -136,14 +138,14 @@ def _resolve_and_validate(
         if socktype != socket.SOCK_STREAM or proto != socket.IPPROTO_TCP:
             raise SafeRequestError("Unsupported DNS result")
         address = sockaddr[0]
-        if not _ip_is_allowed(address, ollama_context):
+        if not _ip(address):
             raise SafeRequestError("DNS resolved to a non-public address")
         if (family, address) not in addresses:
             addresses.append((family, address))
     return addresses[0][1], port
 
 
-def _host_header(hostname: str, port: int, scheme: str) -> str:
+def _host_header(hostname: str, port: int) -> str:
     try:
         hostname.encode("ascii")
         display = hostname
@@ -151,8 +153,7 @@ def _host_header(hostname: str, port: int, scheme: str) -> str:
         display = hostname.encode("idna").decode("ascii")
     if ":" in display:
         display = f"[{display}]"
-    default_port = 443 if scheme == "https" else 80
-    return display if port == default_port else f"{display}:{port}"
+    return display if port == _PUBLIC_PORT else f"{display}:{port}"
 
 
 def _validate_content_length(headers: http.client.HTTPMessage, max_bytes: int) -> None:
@@ -168,9 +169,8 @@ def _validate_content_length(headers: http.client.HTTPMessage, max_bytes: int) -
 
 def _validate_transfer_encoding(headers: http.client.HTTPMessage) -> None:
     encodings = headers.get_all("Transfer-Encoding", []) or []
-    for encoding in encodings:
-        if encoding.strip().lower() not in {"", "chunked"}:
-            raise SafeRequestError("Unsupported transfer encoding")
+    if any(encoding.strip().lower() not in {"", "chunked"} for encoding in encodings):
+        raise SafeRequestError("Unsupported transfer encoding")
 
 
 def _read_response(
@@ -212,16 +212,15 @@ def _request_once(
     timeout: float,
     max_bytes: int,
 ) -> SafeResponse:
-    if scheme == "https":
-        connection: http.client.HTTPConnection = _PinnedHTTPSConnection(
-            pinned_ip,
-            hostname,
-            port,
-            timeout,
-            ssl.create_default_context(),
-        )
-    else:
-        connection = http.client.HTTPConnection(pinned_ip, port=port, timeout=timeout)
+    if scheme != _PUBLIC_SCHEME or port != _PUBLIC_PORT:
+        raise SafeRequestError("Only public HTTPS/443 requests are allowed")
+    connection = _PinnedHTTPSConnection(
+        pinned_ip,
+        hostname,
+        port,
+        timeout,
+        ssl.create_default_context(),
+    )
     try:
         connection.request(method, path, body=body, headers=headers)
         response = connection.getresponse()
@@ -233,6 +232,11 @@ def _request_once(
         connection.close()
 
 
+def validate_public_https_url(url: str) -> None:
+    """Validate a configured gateway URL without performing DNS resolution."""
+    _validate_url(url)
+
+
 def safe_request(
     url: str,
     method: str = "GET",
@@ -240,9 +244,8 @@ def safe_request(
     json_body: Any = None,
     timeout: float = 10.0,
     max_bytes: int = 4 * 1024 * 1024,
-    allow_ollama: bool = False,
 ) -> SafeResponse:
-    """Perform a GET/POST after validating and pinning every destination address."""
+    """Perform a GET/POST against a public HTTPS gateway after DNS pinning."""
     method = method.upper()
     if method not in {"GET", "POST"}:
         raise SafeRequestError("Only GET and POST are supported")
@@ -268,12 +271,12 @@ def safe_request(
         current_headers.setdefault("Content-Type", "application/json")
 
     for redirect_count in range(MAX_REDIRECTS + 1):
-        scheme, port, hostname = _validate_url(current_url, allow_ollama)
-        pinned_ip, _ = _resolve_and_validate(hostname, port, allow_ollama)
+        scheme, port, hostname = _validate_url(current_url)
+        pinned_ip, _ = _resolve(hostname, port)
         parsed = urlsplit(current_url)
         path = urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
         request_headers = dict(current_headers)
-        request_headers["Host"] = _host_header(hostname, port, scheme)
+        request_headers["Host"] = _host_header(hostname, port)
         result = _request_once(
             scheme,
             hostname,
@@ -296,9 +299,7 @@ def safe_request(
             return result
 
         next_url = urljoin(current_url, location)
-        next_scheme, next_port, next_hostname = _validate_url(
-            next_url, allow_ollama
-        )
+        next_scheme, next_port, next_hostname = _validate_url(next_url)
         if (next_scheme, next_port, next_hostname.casefold()) != (
             scheme,
             port,

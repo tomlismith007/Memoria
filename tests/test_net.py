@@ -31,13 +31,14 @@ def _response(status=200, headers=None, text="ok"):
         "ftp://example.com/file",
         "https://example.com:8443/",
         "http://example.com/",
+        "http://localhost/",
         "https://user:pass@example.com/",
         "https://example.com:bad/",
     ],
 )
-def test_rejects_invalid_protocol_port_and_userinfo(url):
+def test_rejects_non_public_protocol_port_and_userinfo(url):
     with pytest.raises(SafeRequestError):
-        safe_request(url, allow_ollama=True)
+        safe_request(url)
 
 
 @pytest.mark.parametrize("address", ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1", "fc00::1", "fe80::1"])
@@ -47,30 +48,12 @@ def test_web_fetch_rejects_internal_ipv4_and_ipv6(address, monkeypatch):
         safe_request("https://internal.example/")
 
 
-def test_ollama_context_is_exact_host_and_port(monkeypatch):
-    seen = []
-    monkeypatch.setattr(socket, "getaddrinfo", _dns(["127.0.0.1"]))
-    monkeypatch.setattr(
-        net,
-        "_request_once",
-        lambda *args, **kwargs: seen.append((args, kwargs)) or _response(text='{"ok":true}'),
-    )
+def test_public_gateway_validator_does_not_resolve_dns(monkeypatch):
+    def unexpected_dns(*args, **kwargs):
+        raise AssertionError("configuration validation must not perform DNS")
 
-    assert safe_request("http://localhost:11434/api", allow_ollama=True).json() == {"ok": True}
-    assert seen[0][0][1] == "localhost"
-    assert seen[0][0][3] == "127.0.0.1"
-
-    for url in ("http://localhost/", "http://127.0.0.1:11435/", "https://localhost:11434/"):
-        with pytest.raises(SafeRequestError):
-            safe_request(url, allow_ollama=True)
-
-    monkeypatch.setattr(socket, "getaddrinfo", _dns(["127.0.0.1", "93.184.216.34"]))
-    with pytest.raises(SafeRequestError, match="non-public"):
-        safe_request("http://localhost:11434/api", allow_ollama=True)
-
-    monkeypatch.setattr(socket, "getaddrinfo", _dns(["127.0.0.1"]))
-    with pytest.raises(SafeRequestError, match="HTTP"):
-        safe_request("http://localhost:11434/api")
+    monkeypatch.setattr(socket, "getaddrinfo", unexpected_dns)
+    net.validate_public_https_url("https://gateway.example/v1")
 
 
 def test_all_dns_results_must_be_public(monkeypatch):
@@ -80,7 +63,7 @@ def test_all_dns_results_must_be_public(monkeypatch):
 
 
 def test_redirects_are_same_origin_and_limited(monkeypatch):
-    monkeypatch.setattr(net, "_resolve_and_validate", lambda *args: ("93.184.216.34", args[1]))
+    monkeypatch.setattr(net, "_resolve", lambda *args: ("93.184.216.34", args[1]))
     responses = iter(
         [
             _response(302, {"location": "/next"}),

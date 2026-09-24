@@ -115,7 +115,7 @@
     {
       "id": "feat-015",
       "name": "Model and environment configuration panel",
-      "description": "Settings drawer & backend /api/config with Fetch Models (auto model picker) and Test Connectivity (latency & status diagnostics) for OpenAI/DeepSeek/Ollama/custom endpoints",
+      "description": "Settings drawer & backend /api/config with Fetch Models (auto model picker) and Test Connectivity (latency & status diagnostics) for public HTTPS/443 custom gateways",
       "dependencies": ["feat-010"],
       "status": "completed",
       "evidence": "src/memoria/web/config.py + app.py /api/config + SettingsModal.tsx; tests/test_web_api.py (test_config_endpoints, test_fetch_models_endpoint, test_test_config_endpoint) all pass (58 passed total)"
@@ -163,10 +163,50 @@
     {
       "id": "feat-021",
       "name": "SSRF-safe outbound requests",
-      "description": "统一标准库出站请求；公网 HTTPS/443、受限 Ollama 本地上下文、全量 DNS 校验与 IP pinning、同源重定向和响应大小/压缩限制",
+      "description": "统一标准库出站请求；公网 HTTPS/443、全量 DNS 校验与 IP pinning、同源重定向和响应大小/压缩限制",
       "dependencies": ["feat-002", "feat-003", "feat-015"],
       "status": "completed",
-      "evidence": "init.ps1 green: 92 pytest tests passed; frontend npm run build passed; src/memoria/net.py + callers migrated; tests/test_net.py covers protocol/port, internal IPv4/IPv6, exact Ollama context, mixed DNS, redirects, size/compression limits, pinned IP and original SNI/Host"
+      "evidence": "src/memoria/net.py + callers migrated; tests/test_net.py covers public HTTPS/443 policy, internal IPv4/IPv6, mixed DNS, redirects, size/compression limits, pinned IP and original SNI/Host"
+    },
+    {
+      "id": "feat-022",
+      "name": "Public HTTPS gateway-only model configuration",
+      "description": "彻底删除本地模型供应商路线；LLM 与 embedding 配置、保存/预设/模型列表/连通性入口即时校验公网 HTTPS/443 网关，保留标准 data[].id 模型列表和脱敏历史预设",
+      "dependencies": ["feat-015", "feat-017", "feat-021"],
+      "status": "completed",
+      "evidence": "init.ps1 green: 95 pytest tests passed; frontend npm run build passed; public HTTPS-only outbound client, legacy filtering, API rejection coverage, and tracked-source residue search verified"
+    },
+    {
+      "id": "feat-023",
+      "name": "Citation integrity follow-up",
+      "description": "后续登记引用完整性增强计划；本 feature 仅登记计划，不实现",
+      "dependencies": ["feat-022"],
+      "status": "todo",
+      "evidence": "planned only; no implementation in feat-022"
+    },
+    {
+      "id": "feat-024",
+      "name": "Custom model provider management and dual-layer persistence",
+      "description": "纯自定义供应商管理界面重构与刷新零丢失双重持久化：两栏式供应商布局（左侧供应商列表/状态指示点，右侧Base URL、格式、API Key及模型列表维护，模型测试与标签管理），后端 settings.json 与前端 localStorage 双重持久化，AskView 对话端当前模型展示与直接切换",
+      "dependencies": ["feat-015", "feat-017", "feat-022"],
+      "status": "completed",
+      "evidence": "init.ps1 green: 97 pytest tests passed; frontend npm run build passed (0 errors); SettingsModal.tsx two-column layout + full localStorage & backend /api/config/providers synchronization + unit tests in tests/test_web_api.py"
+    },
+    {
+      "id": "feat-025",
+      "name": "Multi-protocol custom model providers",
+      "description": "供应商协议贯通：OpenAI Chat Completions、Claude/Anthropic Messages、OpenAI Responses 三种协议可选择并持久化；模型列表、连通性测试和实际聊天按协议请求",
+      "dependencies": ["feat-015", "feat-024"],
+      "status": "completed",
+      "evidence": "init.sh green: 102 pytest tests passed; frontend npm run build passed; protocol request/response matrix, provider persistence, auth headers, legacy default and unknown-format rejection covered"
+    },
+    {
+      "id": "feat-026",
+      "name": "Inline custom provider creation without modal popup",
+      "description": "点击添加供应商时直接在右侧面板展示全新空白设置表单，彻底移除模态弹窗；支持直接在右侧配置供应商名称、Base URL、协议、API Key、一键获取/选择模型、测试连接与保存生效",
+      "dependencies": ["feat-024", "feat-025"],
+      "status": "completed",
+      "evidence": "init.ps1 green: 102 pytest tests passed; frontend npm run build passed (0 errors); SettingsModal inline isCreatingNew state, handleStartCreateProvider, draftModels, pre-save config test API, and eliminated isAddProviderOpen dialog"
     }
   ]
 }

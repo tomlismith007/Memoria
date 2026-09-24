@@ -136,7 +136,60 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const [activeModelInfo, setActiveModelInfo] = useState<{
+    providerName: string;
+    modelName: string;
+  }>(() => {
+    try {
+      const activeId = localStorage.getItem("memoria_active_provider_cache") || "";
+      const activeModel = localStorage.getItem("memoria_active_model_cache") || "";
+      const cachedStr = localStorage.getItem("memoria_custom_providers_cache");
+      if (cachedStr) {
+        const cached = JSON.parse(cachedStr);
+        const p = Array.isArray(cached) ? cached.find((item: any) => item.id === activeId) : null;
+        if (p) {
+          return {
+            providerName: p.name,
+            modelName: activeModel || p.models?.[0]?.id || "未选择模型",
+          };
+        }
+      }
+      if (activeModel) {
+        return { providerName: activeId || "自定义", modelName: activeModel };
+      }
+    } catch {}
+    return { providerName: "自定义供应商", modelName: "默认模型" };
+  });
+
   const hasStarted = messages.length > 0;
+
+  useEffect(() => {
+    const updateModelInfo = () => {
+      try {
+        const activeId = localStorage.getItem("memoria_active_provider_cache") || "";
+        const activeModel = localStorage.getItem("memoria_active_model_cache") || "";
+        const cachedStr = localStorage.getItem("memoria_custom_providers_cache");
+        if (cachedStr) {
+          const cached = JSON.parse(cachedStr);
+          const p = Array.isArray(cached) ? cached.find((item: any) => item.id === activeId) : null;
+          if (p) {
+            setActiveModelInfo({
+              providerName: p.name,
+              modelName: activeModel || p.models?.[0]?.id || "未选择模型",
+            });
+            return;
+          }
+        }
+        if (activeModel) {
+          setActiveModelInfo({ providerName: activeId || "自定义", modelName: activeModel });
+        }
+      } catch {}
+    };
+
+    updateModelInfo();
+    window.addEventListener("storage", updateModelInfo);
+    return () => window.removeEventListener("storage", updateModelInfo);
+  }, []);
 
   useEffect(() => {
     persistMessages(messages);
@@ -231,6 +284,15 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900 text-center">
             想探索什么知识？
           </h1>
+
+          {/* Active Model Capsule Badge */}
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            <span>当前模型:</span>
+            <span className="font-mono text-zinc-800 bg-white border border-zinc-200/80 px-2.5 py-0.5 rounded-full shadow-xs">
+              {activeModelInfo.providerName} / {activeModelInfo.modelName}
+            </span>
+          </div>
 
           <form
             onSubmit={(e) => {
@@ -421,7 +483,15 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
 
           {/* Fixed Floating Bottom Capsule Search Bar */}
           <div className="fixed bottom-0 left-0 right-0 z-30 pointer-events-none pb-6 pt-10 bg-gradient-to-t from-canvas via-canvas/90 to-transparent">
-            <div className="max-w-4xl w-full mx-auto px-3 sm:px-4 pointer-events-auto">
+            <div className="max-w-4xl w-full mx-auto px-3 sm:px-4 pointer-events-auto space-y-2">
+              <div className="flex justify-end pr-3">
+                <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 bg-white/90 backdrop-blur-sm border border-zinc-200/80 px-2.5 py-0.5 rounded-full shadow-xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span className="font-mono text-zinc-600">
+                    {activeModelInfo.providerName} / {activeModelInfo.modelName}
+                  </span>
+                </div>
+              </div>
               <form
                 onSubmit={(e) => {
                   e.preventDefault();

@@ -1,5 +1,7 @@
 """feat-003: hybrid retrieval + cited answering. Offline — stubs and fakes only."""
 
+import pytest
+
 from memoria.llm import FakeChat, OpenAICompatibleChat
 from memoria.rag import (
     ChromaStore,
@@ -91,11 +93,75 @@ def test_chat_parses_response(monkeypatch):
 
     seen = {}
 
-    def fake_post(url, method, headers, json_body, timeout, max_bytes, allow_ollama):
+    def fake_post(url, method, headers, json_body, timeout, max_bytes):
         seen.update(url=url, model=json_body["model"], roles=[m["role"] for m in json_body["messages"]])
         return FakeResp()
 
     monkeypatch.setattr("memoria.llm.safe_request", fake_post)
-    c = OpenAICompatibleChat(base_url="http://x", api_key="k", model="m")
+    c = OpenAICompatibleChat(base_url="https://gateway.example/v1", api_key="k", model="m")
     assert c.chat("sys", "hi") == "你好"
-    assert seen == {"url": "http://x/chat/completions", "model": "m", "roles": ["system", "user"]}
+    assert seen == {"url": "https://gateway.example/v1/chat/completions", "model": "m", "roles": ["system", "user"]}
+
+
+@pytest.mark.parametrize(
+    ("api_format", "response", "expected_text", "expected_url"),
+    [
+        (
+            "chat_completions",
+            {"choices": [{"message": {"content": "chat"}}]},
+            "chat",
+            "https://gateway.example/v1/chat/completions",
+        ),
+        (
+            "anthropic_messages",
+            {"content": [{"type": "text", "text": "claude"}]},
+            "claude",
+            "https://gateway.example/v1/messages",
+        ),
+        (
+            "openai_responses",
+            {"output": [{"content": [{"type": "output_text", "text": "responses"}]}]},
+            "responses",
+            "https://gateway.example/v1/responses",
+        ),
+    ],
+)
+def test_chat_protocols_build_provider_specific_requests(
+    monkeypatch, api_format, response, expected_text, expected_url
+):
+    class FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return response
+
+    seen = {}
+
+    def fake_post(url, method, headers, json_body, timeout, max_bytes):
+        seen.update(url=url, headers=headers, json_body=json_body)
+        return FakeResp()
+
+    monkeypatch.setattr("memoria.llm.safe_request", fake_post)
+    client = OpenAICompatibleChat(
+        base_url="https://gateway.example/v1",
+        api_key="secret",
+        model="model-x",
+        api_format=api_format,
+    )
+    assert client.chat("system prompt", "hello") == expected_text
+    assert seen["url"] == expected_url
+    assert seen["json_body"]["model"] == "model-x"
+
+    if api_format == "chat_completions":
+        assert seen["headers"]["Authorization"] == "Bearer secret"
+        assert [item["role"] for item in seen["json_body"]["messages"]] == ["system", "user"]
+    elif api_format == "anthropic_messages":
+        assert seen["headers"]["x-api-key"] == "secret"
+        assert seen["headers"]["anthropic-version"] == "2023-06-01"
+        assert seen["json_body"]["system"] == "system prompt"
+        assert [item["role"] for item in seen["json_body"]["messages"]] == ["user"]
+    else:
+        assert seen["headers"]["Authorization"] == "Bearer secret"
+        assert seen["json_body"]["instructions"] == "system prompt"
+        assert seen["json_body"]["input"] == "hello"

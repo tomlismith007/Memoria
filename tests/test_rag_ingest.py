@@ -119,11 +119,11 @@ def test_openai_compat_embedder_parses_response(monkeypatch):
 
     calls = {}
 
-    def fake_post(url, method, headers, json_body, timeout, max_bytes, allow_ollama):
+    def fake_post(url, method, headers, json_body, timeout, max_bytes):
         calls.update(url=url, model=json_body["model"], n=len(json_body["input"]))
         return FakeResp()
 
     monkeypatch.setattr("memoria.rag.embed.safe_request", fake_post)
-    e = OpenAICompatibleEmbedder(base_url="http://x", api_key="k", model="m")
+    e = OpenAICompatibleEmbedder(base_url="https://gateway.example/v1", api_key="k", model="m")
     assert e.embed(["a", "b"]) == [[0.1], [0.2]]  # sorted back into input order
-    assert calls == {"url": "http://x/embeddings", "model": "m", "n": 2}
+    assert calls == {"url": "https://gateway.example/v1/embeddings", "model": "m", "n": 2}

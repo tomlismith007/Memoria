@@ -71,6 +71,71 @@ def test_load_settings_supports_legacy_files_without_presets(tmp_path):
     assert settings.presets == []
 
 
+def test_load_settings_filters_non_public_urls_and_presets(tmp_path, monkeypatch):
+    from memoria.web.config import load_settings
+
+    monkeypatch.setenv("MEMORIA_LLM_BASE_URL", "https://env-llm.example/v1")
+    monkeypatch.setenv("MEMORIA_EMBED_BASE_URL", "https://env-embed.example/v1")
+    path = tmp_path / "settings.json"
+    path.write_text(
+        '{"llm_base_url":"http://127.0.0.1/v1",'
+        '"embed_base_url":"http://10.0.0.1/v1","presets":['
+        '{"name":"legacy","llm_base_url":"http://localhost/v1","llm_api_key":"k",'
+        '"llm_model":"m","embed_base_url":"","embed_api_key":"","embed_model":"e"},'
+        '{"name":"public","llm_base_url":"https://saved.example/v1","llm_api_key":"k",'
+        '"llm_model":"m","embed_base_url":"https://saved.example/v1",'
+        '"embed_api_key":"","embed_model":"e"}]}',
+        encoding="utf-8",
+    )
+
+    settings = load_settings(path)
+
+    assert settings.llm_base_url == "https://env-llm.example/v1"
+    assert settings.embed_base_url == "https://env-embed.example/v1"
+    assert [preset.name for preset in settings.presets] == ["public"]
+
+
+def test_config_api_rejects_non_public_https_urls(api_client, monkeypatch):
+    from memoria.web.config import ModelPreset, Settings
+
+    client, _, _ = api_client
+    credential_marker = "x" * 12
+    current = Settings(
+        presets=[
+            ModelPreset(
+                name="bad",
+                llm_base_url="http://localhost/v1",
+                llm_api_key="",
+                llm_model="m",
+                embed_base_url="",
+                embed_api_key="",
+                embed_model="e",
+            )
+        ]
+    )
+    monkeypatch.setattr("memoria.web.app.load_settings", lambda: current)
+    monkeypatch.setattr("memoria.web.app.save_settings", lambda settings: None)
+    invalid = {
+        "llm_base_url": "http://localhost/v1",
+        "llm_api_key": credential_marker,
+        "llm_model": "m",
+        "embed_base_url": "",
+        "embed_api_key": credential_marker,
+        "embed_model": "e",
+    }
+
+    assert client.post("/api/config", json=invalid).status_code == 400
+    assert client.post("/api/config/presets", json={**invalid, "name": "bad-http"}).status_code == 400
+    assert client.post("/api/config/models", json={"base_url": "http://localhost/v1", "api_key": credential_marker}).status_code == 400
+    assert client.post("/api/config/models", json={"base_url": "https://gateway.example:8443/v1"}).status_code == 400
+    assert client.post("/api/config/test", json={**invalid, "llm_base_url": "https://localhost/v1"}).status_code == 400
+    assert client.post("/api/config/presets/bad/apply").status_code == 400
+    assert all(credential_marker not in response.text for response in [
+        client.post("/api/config", json=invalid),
+        client.post("/api/config/presets", json={**invalid, "name": "bad-http"}),
+    ])
+
+
 def test_config_endpoints_redact_keys_and_preserve_empty_updates(api_client, monkeypatch):
     from memoria.web.config import Settings
 
@@ -320,6 +385,242 @@ def test_test_config_endpoint(api_client, monkeypatch):
     data = resp.json()
     assert data["status"] == "ok"
     assert data["llm_ok"] is True
+
+
+def test_provider_crud_and_model_management(api_client, monkeypatch):
+    from memoria.web.config import Settings
+
+    client, _, _ = api_client
+    current = Settings()
+
+    def load_current():
+        return current.model_copy(deep=True)
+
+    def save_current(settings):
+        nonlocal current
+        current = settings.model_copy(deep=True)
+
+    monkeypatch.setattr("memoria.web.app.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.app.save_settings", save_current)
+
+    secret_key = "sk-provider-secret-123456"
+    # 1. Create provider
+    create_resp = client.post(
+        "/api/config/providers",
+        json={
+            "name": "openrouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_format": "chat_completions",
+            "api_key": secret_key,
+            "enabled": True,
+        },
+    )
+    assert create_resp.status_code == 200
+    pdata = create_resp.json()["provider"]
+    provider_id = pdata["id"]
+    assert provider_id == "openrouter"
+    assert pdata["api_key_set"] is True
+    assert pdata["masked_api_key"] == "sk-p...3456"
+    assert secret_key not in create_resp.text
+    assert current.active_provider_id == "openrouter"
+
+    # 2. Get providers
+    list_resp = client.get("/api/config/providers")
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()["providers"]) == 1
+    assert list_resp.json()["active_provider_id"] == "openrouter"
+
+    # 3. Add models (including slash in model ID)
+    m1_resp = client.post(
+        f"/api/config/providers/{provider_id}/models",
+        json={
+            "id": "stealth/union-alpha",
+            "name": "stealth/union-alpha",
+            "tags": ["1M"],
+            "enabled": True,
+            "model_type": "chat",
+        },
+    )
+    assert m1_resp.status_code == 200
+    assert m1_resp.json()["model"]["id"] == "stealth/union-alpha"
+    assert m1_resp.json()["model"]["tags"] == ["1M"]
+    assert current.active_chat_model == "stealth/union-alpha"
+
+    m2_resp = client.post(
+        f"/api/config/providers/{provider_id}/models",
+        json={
+            "id": "stealth/space-bunny",
+            "name": "Space Bunny",
+            "tags": ["1M", "视觉"],
+            "enabled": True,
+            "model_type": "chat",
+        },
+    )
+    assert m2_resp.status_code == 200
+    assert len(m2_resp.json()["provider"]["models"]) == 2
+
+    # 4. Test provider connectivity
+    monkeypatch.setattr(
+        "memoria.web.app.test_model_connectivity",
+        lambda req: {"llm_ok": True, "llm_latency_ms": 120, "llm_message": "连接成功 (120ms)"},
+    )
+    test_resp = client.post(f"/api/config/providers/{provider_id}/test", json={"model_id": "stealth/space-bunny"})
+    assert test_resp.status_code == 200
+    assert test_resp.json()["llm_ok"] is True
+
+    # 5. Activate second model
+    act_resp = client.post(
+        "/api/config/providers/activate",
+        json={"provider_id": provider_id, "model_id": "stealth/space-bunny"},
+    )
+    assert act_resp.status_code == 200
+    assert act_resp.json()["active_chat_model"] == "stealth/space-bunny"
+    assert current.llm_model == "stealth/space-bunny"
+    assert current.llm_base_url == "https://openrouter.ai/api/v1"
+
+    # 6. Delete model with slash
+    del_m_resp = client.delete(f"/api/config/providers/{provider_id}/models/stealth/union-alpha")
+    assert del_m_resp.status_code == 200
+    remaining_models = del_m_resp.json()["provider"]["models"]
+    assert len(remaining_models) == 1
+    assert remaining_models[0]["id"] == "stealth/space-bunny"
+
+    # 7. Delete provider
+    del_p_resp = client.delete(f"/api/config/providers/{provider_id}")
+    assert del_p_resp.status_code == 200
+    assert del_p_resp.json()["providers"] == []
+    assert current.active_provider_id == ""
+
+
+def test_provider_protocol_persists_and_rejects_unknown_formats(api_client, monkeypatch):
+    from memoria.web.config import Settings
+
+    client, _, _ = api_client
+    current = Settings()
+    secret = "s" * 16
+
+    def load_current():
+        return current.model_copy(deep=True)
+
+    def save_current(settings):
+        nonlocal current
+        current = settings.model_copy(deep=True)
+
+    monkeypatch.setattr("memoria.web.app.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.app.save_settings", save_current)
+
+    create = client.post(
+        "/api/config/providers",
+        json={
+            "name": "Claude Gateway",
+            "base_url": "https://gateway.example/v1",
+            "api_format": "anthropic_messages",
+            "api_key": secret,
+        },
+    )
+    assert create.status_code == 200
+    provider_id = create.json()["provider"]["id"]
+    assert create.json()["provider"]["api_format"] == "anthropic_messages"
+
+    update = client.post(
+        "/api/config/providers",
+        json={
+            "id": provider_id,
+            "name": "Claude Gateway",
+            "base_url": "https://gateway.example/v1",
+            "api_format": "openai_responses",
+            "api_key": "",
+        },
+    )
+    assert update.status_code == 200
+    assert update.json()["provider"]["api_format"] == "openai_responses"
+    assert client.get("/api/config/providers").json()["providers"][0]["api_format"] == "openai_responses"
+
+    unknown = client.post(
+        "/api/config/providers",
+        json={
+            "name": "Unknown",
+            "base_url": "https://gateway.example/v1",
+            "api_format": "gemini",
+        },
+    )
+    assert unknown.status_code == 400
+
+
+def test_provider_protocol_controls_model_list_and_connectivity(api_client, monkeypatch):
+    client, _, _ = api_client
+    secret = "t" * 16
+    calls = []
+
+    class MockResponse:
+        status = 200
+        text = "ok"
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": [{"id": "claude-model"}]}
+
+    def fake_request(url, method, headers, json_body=None, timeout=10.0, max_bytes=1024 * 1024):
+        calls.append({"url": url, "method": method, "headers": headers, "json_body": json_body})
+        return MockResponse()
+
+    monkeypatch.setattr("memoria.web.config.safe_request", fake_request)
+    models = client.post(
+        "/api/config/models",
+        json={
+            "base_url": "https://gateway.example/v1",
+            "api_key": secret,
+            "api_format": "anthropic_messages",
+        },
+    )
+    assert models.status_code == 200
+    assert models.json()["models"] == ["claude-model"]
+    assert calls[0]["url"] == "https://gateway.example/v1/models"
+    assert calls[0]["headers"]["x-api-key"] == secret
+    assert calls[0]["headers"]["anthropic-version"] == "2023-06-01"
+
+    calls.clear()
+    tested = client.post(
+        "/api/config/test",
+        json={
+            "llm_base_url": "https://gateway.example/v1",
+            "llm_api_key": secret,
+            "llm_model": "claude-model",
+            "api_format": "anthropic_messages",
+            "embed_base_url": "",
+            "embed_model": "",
+        },
+    )
+    assert tested.status_code == 200
+    assert calls[0]["url"] == "https://gateway.example/v1/messages"
+    assert "system" not in calls[0]["json_body"]
+    assert calls[0]["json_body"]["max_tokens"] == 5
+
+
+def test_provider_rejects_invalid_urls_and_errors(api_client):
+    client, _, _ = api_client
+
+    # Invalid URL
+    bad_url_resp = client.post(
+        "/api/config/providers",
+        json={"name": "local", "base_url": "http://127.0.0.1:8000/v1"},
+    )
+    assert bad_url_resp.status_code == 400
+
+    # Empty name
+    bad_name_resp = client.post(
+        "/api/config/providers",
+        json={"name": "   ", "base_url": "https://api.example.com/v1"},
+    )
+    assert bad_name_resp.status_code == 400
+
+    # Non-existent provider
+    assert client.delete("/api/config/providers/missing").status_code == 404
+    assert client.post("/api/config/providers/missing/models", json={"id": "m1"}).status_code == 404
+    assert client.post("/api/config/providers/missing/test").status_code == 404
+    assert client.post("/api/config/providers/activate", json={"provider_id": "missing"}).status_code == 404
 
 
 def test_ask_endpoint(api_client):

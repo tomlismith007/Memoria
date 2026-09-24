@@ -69,7 +69,7 @@ FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感
 | 编排 | LangGraph（不用 LCEL 单链路） | 系统是状态机：意图路由、多步 ingest、人工确认节点；LCEL 只适合单链 |
 | 检索核心 | 自己手写（向量检索+重排+生成 ~100 行） | 面试能讲清每一行；LangChain 只用 integrations（向量库连接器、文档加载器） |
 | 向量库 | Chroma（本地，零服务器） | 单机开箱即用；数据量/多租户需求出现再迁 Qdrant |
-| LLM / Embedding | OpenAI 兼容接口（`MEMORIA_LLM_*` / `MEMORIA_EMBED_*` / `data/settings.json`） | 不绑定厂商，可随时切换 OpenAI / DeepSeek / Ollama / 本地网关 |
+| LLM / Embedding | 公网 HTTPS/443 的 OpenAI-compatible 接口（`MEMORIA_LLM_*` / `MEMORIA_EMBED_*` / `data/settings.json`） | 统一公网网关配置；不接受 HTTP、本机、内网或非 443 端口 |
 | Web API 服务 | FastAPI + Uvicorn | 异步高性能、自动生成 OpenAPI 文档、轻量可靠 |
 | 前端工程 | Vite + React 19 + TypeScript + Tailwind CSS | 秒级构建、类型安全；圆角卡片 (`rounded-3xl`) 与胶囊按键 (`rounded-full`) 设计系统 |
 | 邮件接入 | Gmail API + OAuth（本地离线/交互授权生成 token.json） | 最小权限（只读 + 归档写权限）；凭据只放本地密钥文件，永不入库 |

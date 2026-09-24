@@ -99,12 +99,12 @@ export const WikiView: React.FC<WikiViewProps> = ({ initialPage }) => {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-5xl mx-auto">
+    <div className="min-w-0 space-y-6 animate-fade-in max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-200/80 pb-4">
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold text-zinc-900 tracking-tight flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-zinc-700" />
+      <div className="flex flex-col items-start gap-3 border-b border-zinc-200/80 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl md:text-2xl font-semibold text-zinc-900 tracking-tight flex items-start sm:items-center gap-2 break-words">
+            <BookOpen className="w-5 h-5 text-zinc-700 shrink-0" />
             <span>LLM Wiki 知识复利库</span>
           </h1>
           <p className="text-xs text-zinc-500 mt-1">
@@ -124,16 +124,16 @@ export const WikiView: React.FC<WikiViewProps> = ({ initialPage }) => {
 
       {/* Lint Diagnostics Banner if any broken/orphans */}
       {listData && (listData.lint.broken.length > 0 || listData.lint.orphans.length > 0) && (
-        <div className="bg-amber-50/70 border border-amber-200/70 rounded-2xl p-4 flex items-center justify-between text-xs text-amber-900">
-          <div className="flex items-center gap-2">
+        <div className="bg-amber-50/70 border border-amber-200/70 rounded-2xl p-4 flex flex-col items-start gap-2 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
               <strong>Wiki Lint 诊断</strong>：发现 {listData.lint.broken.length} 个断链，{listData.lint.orphans.length} 个孤立页面。
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {listData.lint.broken.map(([src, dst], i) => (
-              <PillBadge key={i} variant="candidate">
+              <PillBadge key={i} variant="candidate" className="max-w-full break-all">
                 {src} ➔ ?[[{dst}]]
               </PillBadge>
             ))}
@@ -203,17 +203,17 @@ export const WikiView: React.FC<WikiViewProps> = ({ initialPage }) => {
               </div>
             ) : pageDetail ? (
               <div className="space-y-6">
-                <div className="border-b border-zinc-100 pb-4 flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-zinc-900">
+                <div className="border-b border-zinc-100 pb-4 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="min-w-0 break-words text-xl font-bold text-zinc-900">
                     {pageDetail.name}
                   </h2>
-                  <span className="text-xs font-mono text-zinc-400">
+                  <span className="shrink-0 text-xs font-mono text-zinc-400">
                     {pageDetail.content.length} 字符
                   </span>
                 </div>
 
                 {/* Markdown text */}
-                <div className="text-sm leading-relaxed text-zinc-800 font-sans">
+                <div className="min-w-0 break-words text-sm leading-relaxed text-zinc-800 font-sans">
                   <MarkdownRenderer
                     content={pageDetail.content}
                     onNavigateWiki={setSelectedPage}

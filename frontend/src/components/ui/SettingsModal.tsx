@@ -7,19 +7,65 @@ import {
   Loader2,
   RefreshCw,
   Settings,
+  Trash2,
   X,
 } from "lucide-react";
 import { PillButton } from "./PillButton";
 
+interface ModelPresetData {
+  name: string;
+  llm_base_url: string;
+  llm_model: string;
+  llm_api_key_set: boolean;
+  masked_llm_key: string;
+  embed_base_url: string;
+  embed_model: string;
+  embed_api_key_set: boolean;
+  masked_embed_key: string;
+  demo_mode: boolean;
+}
+
 interface SettingsData {
   llm_base_url: string;
   llm_api_key: string;
+  llm_api_key_set: boolean;
   llm_model: string;
   embed_base_url: string;
   embed_api_key: string;
+  embed_api_key_set: boolean;
   embed_model: string;
   demo_mode: boolean;
+  presets: ModelPresetData[];
 }
+
+type ConfigResponse = Omit<SettingsData, "llm_api_key" | "embed_api_key"> & {
+  masked_llm_key: string;
+  masked_embed_key: string;
+};
+
+const mergeConfigResponse = (current: SettingsData, data: ConfigResponse): SettingsData => ({
+  ...current,
+  llm_base_url: data.llm_base_url,
+  llm_api_key: "",
+  llm_api_key_set: data.llm_api_key_set,
+  llm_model: data.llm_model,
+  embed_base_url: data.embed_base_url,
+  embed_api_key: "",
+  embed_api_key_set: data.embed_api_key_set,
+  embed_model: data.embed_model,
+  demo_mode: false,
+  presets: data.presets,
+});
+
+const configRequestBody = (config: SettingsData) => ({
+  llm_base_url: config.llm_base_url,
+  llm_api_key: config.llm_api_key,
+  llm_model: config.llm_model,
+  embed_base_url: config.embed_base_url,
+  embed_api_key: config.embed_api_key,
+  embed_model: config.embed_model,
+  demo_mode: false,
+});
 
 interface TestResult {
   llm_ok: boolean;
@@ -42,15 +88,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [config, setConfig] = useState<SettingsData>({
     llm_base_url: "https://api.openai.com/v1",
     llm_api_key: "",
+    llm_api_key_set: false,
     llm_model: "gpt-4o-mini",
     embed_base_url: "https://api.openai.com/v1",
     embed_api_key: "",
+    embed_api_key_set: false,
     embed_model: "text-embedding-3-small",
     demo_mode: false,
+    presets: [],
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [presetBusy, setPresetBusy] = useState<string | null>(null);
 
   // Model listing state
   const [fetchingLLMModels, setFetchingLLMModels] = useState(false);
@@ -70,9 +121,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setFetchError(null);
       setTestResult(null);
       fetch("/api/config")
-        .then((r) => r.json())
+        .then(async (r) => {
+          if (!r.ok) throw new Error(`Failed to load config: ${r.status}`);
+          return (await r.json()) as ConfigResponse;
+        })
         .then((data) => {
-          setConfig({ ...data, demo_mode: false });
+          setConfig((current) => mergeConfigResponse(current, data));
         })
         .catch((e) => console.error(e))
         .finally(() => setLoading(false));
@@ -86,9 +140,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const res = await fetch("/api/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...config, demo_mode: false }),
+        body: JSON.stringify(configRequestBody(config)),
       });
       if (res.ok) {
+        setConfig((current) => ({
+          ...current,
+          llm_api_key: "",
+          embed_api_key: "",
+          llm_api_key_set: current.llm_api_key_set || Boolean(current.llm_api_key.trim()),
+          embed_api_key_set: current.embed_api_key_set || Boolean(current.embed_api_key.trim()),
+        }));
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
       } else {
@@ -98,6 +159,77 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       alert(`保存失败: ${e.message}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSavePreset = async () => {
+    const name = presetName.trim();
+    if (!name) {
+      setFetchError("请输入预设名称");
+      return;
+    }
+    setPresetBusy("save");
+    setFetchError(null);
+    try {
+      const res = await fetch("/api/config/presets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, ...configRequestBody(config) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "保存预设失败");
+      setConfig((current) => ({
+        ...current,
+        llm_api_key: "",
+        embed_api_key: "",
+        presets: [...current.presets, data.preset as ModelPresetData],
+      }));
+      setPresetName("");
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : "保存预设失败");
+    } finally {
+      setPresetBusy(null);
+    }
+  };
+
+  const handleApplyPreset = async (preset: ModelPresetData) => {
+    setPresetBusy(`apply:${preset.name}`);
+    setFetchError(null);
+    try {
+      const res = await fetch(
+        `/api/config/presets/${encodeURIComponent(preset.name)}/apply`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "应用预设失败");
+      setConfig((current) => mergeConfigResponse(current, data.config as ConfigResponse));
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : "应用预设失败");
+    } finally {
+      setPresetBusy(null);
+    }
+  };
+
+  const handleDeletePreset = async (preset: ModelPresetData) => {
+    if (!window.confirm(`删除预设“${preset.name}”？`)) return;
+    setPresetBusy(`delete:${preset.name}`);
+    setFetchError(null);
+    try {
+      const res = await fetch(
+        `/api/config/presets/${encodeURIComponent(preset.name)}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "删除预设失败");
+      setConfig((current) => ({ ...current, presets: data.presets as ModelPresetData[] }));
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : "删除预设失败");
+    } finally {
+      setPresetBusy(null);
     }
   };
 
@@ -202,7 +334,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const applyPreset = (preset: "openai" | "deepseek" | "ollama") => {
+  const applyBuiltInPreset = (preset: "openai" | "deepseek" | "ollama") => {
     if (preset === "openai") {
       setConfig((p) => ({
         ...p,
@@ -233,8 +365,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 backdrop-blur-sm animate-fade-in overflow-y-auto">
-      <div className="bg-white rounded-3xl border border-zinc-200 shadow-2xl max-w-lg w-full p-6 md:p-8 space-y-5 my-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-zinc-900/40 backdrop-blur-sm animate-fade-in overflow-y-auto">
+      <div className="bg-white rounded-3xl border border-zinc-200 shadow-2xl max-w-lg w-full max-h-[calc(100dvh-1.5rem)] overflow-y-auto p-4 sm:p-6 md:p-8 space-y-5 my-2 sm:my-8">
         <div className="flex items-center justify-between border-b border-zinc-100 pb-4">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-700">
@@ -255,18 +387,79 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Model Key Settings */}
         <div className="space-y-4">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-zinc-400">快速预设:</span>
             {(["openai", "deepseek", "ollama"] as const).map((p) => (
               <button
                 key={p}
                 type="button"
-                onClick={() => applyPreset(p)}
+                onClick={() => applyBuiltInPreset(p)}
                 className="rounded-full px-2.5 py-0.5 text-xs bg-zinc-100 hover:bg-zinc-200/70 text-zinc-700 transition-colors capitalize cursor-pointer"
               >
                 {p}
               </button>
             ))}
+          </div>
+
+          <div className="space-y-2.5 rounded-2xl border border-zinc-200/80 bg-zinc-50/60 p-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium text-zinc-700">历史配置</span>
+              <span className="text-[10px] text-zinc-400">{config.presets.length}/10</span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={presetName}
+                onChange={(event) => setPresetName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void handleSavePreset();
+                }}
+                maxLength={64}
+                placeholder="例如：DeepSeek 日常"
+                className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs outline-none focus:border-zinc-400"
+              />
+              <button
+                type="button"
+                onClick={handleSavePreset}
+                disabled={presetBusy !== null || !presetName.trim()}
+                className="rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-40"
+              >
+                {presetBusy === "save" ? "保存中" : "保存为预设"}
+              </button>
+            </div>
+            {config.presets.length === 0 ? (
+              <p className="text-[10px] text-zinc-400">尚无历史配置。保存为预设不会立即切换当前模型。</p>
+            ) : (
+              <div className="max-h-36 space-y-1.5 overflow-y-auto">
+                {config.presets.map((preset) => (
+                  <div
+                    key={preset.name}
+                    className="flex items-center gap-2 rounded-xl border border-zinc-200/70 bg-white px-3 py-2"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void handleApplyPreset(preset)}
+                      disabled={presetBusy !== null}
+                      className="min-w-0 flex-1 text-left disabled:opacity-50"
+                      title={preset.llm_base_url}
+                    >
+                      <span className="block truncate text-xs font-medium text-zinc-700">{preset.name}</span>
+                      <span className="block truncate text-[10px] text-zinc-400">
+                        {preset.llm_model} · {preset.masked_llm_key || "无需 Key"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeletePreset(preset)}
+                      disabled={presetBusy !== null}
+                      className="rounded-full p-1.5 text-zinc-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                      title="删除预设"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="space-y-3.5 text-xs">
@@ -291,7 +484,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   value={config.llm_api_key}
                   onChange={(e) => setConfig({ ...config, llm_api_key: e.target.value })}
                   className="w-full rounded-xl border border-zinc-200 px-3 py-2 outline-none focus:border-zinc-400 font-mono text-xs"
-                  placeholder="sk-..."
+                  placeholder={config.llm_api_key_set ? "已保存，留空保留；测试时请重新输入" : "sk-..."}
                 />
               </div>
               <div>
@@ -374,7 +567,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   value={config.embed_api_key}
                   onChange={(e) => setConfig({ ...config, embed_api_key: e.target.value })}
                   className="w-full rounded-xl border border-zinc-200 px-3 py-2 outline-none focus:border-zinc-400 font-mono text-xs"
-                  placeholder="留空则复用 LLM Key"
+                  placeholder={config.embed_api_key_set ? "已保存，留空保留；测试时请重新输入" : "留空则复用 LLM Key"}
                 />
               </div>
               <div>
@@ -524,7 +717,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         )}
 
-        <div className="flex items-center justify-between pt-2 border-t border-zinc-100">
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-zinc-100">
           <button
             type="button"
             onClick={handleTestConnection}

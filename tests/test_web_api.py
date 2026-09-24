@@ -59,40 +59,235 @@ def test_frontend_static_serving(api_client):
     assert "<div id=\"root\">" in resp.text
 
 
-def test_config_endpoints(api_client):
+def test_load_settings_supports_legacy_files_without_presets(tmp_path):
+    from memoria.web.config import load_settings
+
+    path = tmp_path / "settings.json"
+    path.write_text('{"llm_model": "legacy-model"}', encoding="utf-8")
+
+    settings = load_settings(path)
+
+    assert settings.llm_model == "legacy-model"
+    assert settings.presets == []
+
+
+def test_config_endpoints_redact_keys_and_preserve_empty_updates(api_client, monkeypatch):
+    from memoria.web.config import Settings
+
     client, _, _ = api_client
+    llm_secret = "x" * 12
+    embed_secret = "y" * 12
+    replacement_secret = "z" * 12
+    current = Settings(
+        llm_base_url="https://api.openai.com/v1",
+        llm_api_key=llm_secret,
+        llm_model="gpt-4o-mini",
+        embed_base_url="https://api.openai.com/v1",
+        embed_api_key=embed_secret,
+        embed_model="text-embedding-3-small",
+    )
+    saved = []
+    monkeypatch.setattr("memoria.web.app.load_settings", lambda: current)
+    monkeypatch.setattr("memoria.web.app.save_settings", saved.append)
+
     get_resp = client.get("/api/config")
     assert get_resp.status_code == 200
     cfg = get_resp.json()
     assert "llm_base_url" in cfg
-    assert "demo_mode" in cfg
+    assert "llm_api_key" not in cfg
+    assert "embed_api_key" not in cfg
+    assert cfg["llm_api_key_set"] is True
+    assert cfg["embed_api_key_set"] is True
+    assert llm_secret not in get_resp.text
+    assert embed_secret not in get_resp.text
 
     post_resp = client.post(
         "/api/config",
         json={
             "llm_base_url": "https://api.deepseek.com/v1",
-            "llm_api_key": "sk-1234567890",
+            "llm_api_key": "",
             "llm_model": "deepseek-chat",
             "embed_base_url": "https://api.deepseek.com/v1",
-            "embed_api_key": "sk-1234567890",
+            "embed_api_key": "  ",
             "embed_model": "text-embedding-3-small",
             "demo_mode": False,
         },
     )
     assert post_resp.status_code == 200
     assert post_resp.json()["status"] == "ok"
+    assert saved[-1].llm_api_key == llm_secret
+    assert saved[-1].embed_api_key == embed_secret
+    assert saved[-1].llm_model == "deepseek-chat"
+
+    client.post(
+        "/api/config",
+        json={
+            "llm_base_url": "https://api.deepseek.com/v1",
+            "llm_api_key": replacement_secret,
+            "llm_model": "deepseek-chat",
+            "embed_base_url": "https://api.deepseek.com/v1",
+            "embed_api_key": "",
+            "embed_model": "text-embedding-3-small",
+            "demo_mode": False,
+        },
+    )
+    assert saved[-1].llm_api_key == replacement_secret
+    assert saved[-1].embed_api_key == embed_secret
+
+
+def test_config_presets_save_apply_and_delete_without_exposing_keys(api_client, monkeypatch):
+    from memoria.web.config import Settings
+
+    client, _, _ = api_client
+    current_key = "a" * 12
+    current_embed_key = "b" * 12
+    preset_key = "c" * 12
+    current = Settings(
+        llm_base_url="https://current.example/v1",
+        llm_api_key=current_key,
+        llm_model="current-model",
+        embed_base_url="https://current.example/v1",
+        embed_api_key=current_embed_key,
+        embed_model="current-embed-model",
+    )
+
+    def load_current():
+        return current.model_copy(deep=True)
+
+    def save_current(settings):
+        nonlocal current
+        current = settings.model_copy(deep=True)
+
+    monkeypatch.setattr("memoria.web.app.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.app.save_settings", save_current)
+
+    save_response = client.post(
+        "/api/config/presets",
+        json={
+            "name": "  Work  ",
+            "llm_base_url": "https://preset.example/v1",
+            "llm_api_key": preset_key,
+            "llm_model": "preset-model",
+            "embed_base_url": "https://preset.example/v1",
+            "embed_api_key": "",
+            "embed_model": "preset-embed-model",
+            "demo_mode": False,
+        },
+    )
+    assert save_response.status_code == 200
+    assert save_response.json()["preset"]["name"] == "Work"
+    assert preset_key not in save_response.text
+    assert current_embed_key not in save_response.text
+    assert current.llm_model == "current-model"
+    assert current.presets[0].llm_api_key == preset_key
+    assert current.presets[0].embed_api_key == current_embed_key
+
+    get_response = client.get("/api/config")
+    assert get_response.status_code == 200
+    assert get_response.json()["presets"][0]["name"] == "Work"
+    assert preset_key not in get_response.text
+
+    save_current_response = client.post(
+        "/api/config",
+        json={
+            "llm_base_url": "https://saved.example/v1",
+            "llm_api_key": "",
+            "llm_model": "saved-current-model",
+            "embed_base_url": "https://saved.example/v1",
+            "embed_api_key": "",
+            "embed_model": "saved-current-embed-model",
+            "demo_mode": False,
+        },
+    )
+    assert save_current_response.status_code == 200
+    assert current.llm_model == "saved-current-model"
+    assert current.llm_api_key == current_key
+    assert len(current.presets) == 1
+
+    apply_response = client.post("/api/config/presets/work/apply")
+    assert apply_response.status_code == 200
+    assert apply_response.json()["config"]["llm_model"] == "preset-model"
+    assert preset_key not in apply_response.text
+    assert current.llm_model == "preset-model"
+    assert current.llm_api_key == preset_key
+    assert len(current.presets) == 1
+
+    delete_response = client.delete("/api/config/presets/WORK")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["presets"] == []
+    assert current.llm_model == "preset-model"
+    assert current.presets == []
+
+    assert client.post("/api/config/presets/missing/apply").status_code == 404
+    assert client.delete("/api/config/presets/missing").status_code == 404
+
+
+def test_config_preset_names_are_unique_and_limited_to_ten(api_client, monkeypatch):
+    from memoria.web.config import Settings
+
+    client, _, _ = api_client
+    current = Settings(llm_api_key="d" * 12, embed_api_key="e" * 12)
+    saved = []
+
+    def load_current():
+        return current.model_copy(deep=True)
+
+    def save_current(settings):
+        nonlocal current
+        current = settings.model_copy(deep=True)
+        saved.append(settings)
+
+    monkeypatch.setattr("memoria.web.app.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.app.save_settings", save_current)
+
+    def body(name):
+        return {
+            "name": name,
+            "llm_base_url": "https://preset.example/v1",
+            "llm_api_key": "",
+            "llm_model": "preset-model",
+            "embed_base_url": "https://preset.example/v1",
+            "embed_api_key": "",
+            "embed_model": "preset-embed-model",
+            "demo_mode": False,
+        }
+
+    for invalid_name in ("", ".", "..", "../bad", "..\\bad"):
+        assert client.post("/api/config/presets", json=body(invalid_name)).status_code == 400
+    assert saved == []
+
+    assert client.post("/api/config/presets", json=body("Work")).status_code == 200
+    assert client.post("/api/config/presets", json=body("work")).status_code == 409
+    assert len(saved) == 1
+
+    for index in range(9):
+        assert client.post("/api/config/presets", json=body(f"Preset {index}")).status_code == 200
+    assert len(saved) == 10
+    assert client.post("/api/config/presets", json=body("Overflow")).status_code == 409
+    assert len(saved) == 10
+
+
+def test_cors_allows_only_local_development_origins(api_client):
+    client, _, _ = api_client
+
+    for origin in ("http://localhost:3000", "http://127.0.0.1:3000"):
+        response = client.get("/api/health", headers={"Origin": origin})
+        assert response.headers["access-control-allow-origin"] == origin
+
+    blocked = client.get("/api/health", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in blocked.headers
 
 
 def test_fetch_models_endpoint(api_client, monkeypatch):
     client, _, _ = api_client
 
     class MockResp:
-        status_code = 200
+        status = 200
         def raise_for_status(self): pass
         def json(self):
             return {"data": [{"id": "deepseek-chat"}, {"id": "deepseek-reasoner"}]}
 
-    monkeypatch.setattr("requests.get", lambda *a, **kw: MockResp())
+    monkeypatch.setattr("memoria.web.config.safe_request", lambda *a, **kw: MockResp())
     resp = client.post("/api/config/models", json={"base_url": "https://api.deepseek.com/v1", "api_key": "sk-xxx"})
     assert resp.status_code == 200
     data = resp.json()
@@ -104,12 +299,12 @@ def test_test_config_endpoint(api_client, monkeypatch):
     client, _, _ = api_client
 
     class MockResp:
-        status_code = 200
+        status = 200
         text = "ok"
         def json(self):
             return {"choices": [{"message": {"content": "pong"}}]}
 
-    monkeypatch.setattr("requests.post", lambda *a, **kw: MockResp())
+    monkeypatch.setattr("memoria.web.config.safe_request", lambda *a, **kw: MockResp())
     resp = client.post(
         "/api/config/test",
         json={
@@ -202,6 +397,26 @@ def test_mail_triage_and_archive_red_line(api_client):
     assert "m1" in arch_data["blocked"]
     assert "m2" in arch_data["archived"]
 
+    # Confirmed candidates are single-use.
+    replay = client.post("/api/mail/archive", json={"confirmed_ids": ["m2"]}).json()
+    assert replay["archived"] == []
+    assert "m2" in replay["blocked"]
+
+
+def test_mail_archive_rejects_ids_without_fresh_triage(api_client):
+    client, _, _ = api_client
+
+    without_triage = client.post("/api/mail/archive", json={"confirmed_ids": ["m2"]})
+    assert without_triage.status_code == 200
+    assert without_triage.json()["archived"] == []
+    assert "m2" in without_triage.json()["blocked"]
+
+    assert client.get("/api/mail/triage").status_code == 200
+    unknown = client.post("/api/mail/archive", json={"confirmed_ids": ["unknown"]})
+    assert unknown.status_code == 200
+    assert unknown.json()["archived"] == []
+    assert "unknown" in unknown.json()["blocked"]
+
 
 def test_ingest_text_endpoint(api_client):
     client, wiki, store = api_client
@@ -217,3 +432,50 @@ def test_ingest_text_endpoint(api_client):
     assert data["chunks"] > 0
     assert store.count() > 0
     assert len(data["wiki_pages"]) > 0
+
+
+@pytest.mark.parametrize(
+    "unsafe_name",
+    ["../escape.md", "sub/../escape.md", "..\\escape.md", "/tmp/escape.md", "C:\\escape.md"],
+)
+def test_ingest_rejects_unsafe_text_origins(api_client, unsafe_name):
+    client, wiki, _ = api_client
+
+    response = client.post(
+        "/api/ingest",
+        json={"text": "unsafe", "origin": unsafe_name},
+    )
+
+    assert response.status_code == 400
+    assert not (wiki.root.parent / "escape.md").exists()
+    assert not (wiki.raw_dir / "escape.md").exists()
+
+
+@pytest.mark.parametrize(
+    "unsafe_name",
+    ["../escape.md", "sub/../escape.md", "..\\escape.md", "/tmp/escape.md"],
+)
+def test_ingest_rejects_unsafe_upload_filenames(api_client, unsafe_name):
+    client, wiki, _ = api_client
+
+    response = client.post(
+        "/api/ingest/file",
+        files={"file": (unsafe_name, b"unsafe", "text/markdown")},
+    )
+
+    assert response.status_code == 400
+    assert not (wiki.root.parent / "escape.md").exists()
+    assert not (wiki.raw_dir / "escape.md").exists()
+
+
+def test_ingest_accepts_safe_upload_filename(api_client):
+    client, wiki, _ = api_client
+
+    response = client.post(
+        "/api/ingest/file",
+        files={"file": ("safe.md", "安全文件内容".encode(), "text/markdown")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["filename"] == "safe.md"
+    assert (wiki.raw_dir / "safe.md").exists()

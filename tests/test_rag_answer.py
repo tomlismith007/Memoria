@@ -91,11 +91,11 @@ def test_chat_parses_response(monkeypatch):
 
     seen = {}
 
-    def fake_post(url, headers, json, timeout):
-        seen.update(url=url, model=json["model"], roles=[m["role"] for m in json["messages"]])
+    def fake_post(url, method, headers, json_body, timeout, max_bytes, allow_ollama):
+        seen.update(url=url, model=json_body["model"], roles=[m["role"] for m in json_body["messages"]])
         return FakeResp()
 
-    monkeypatch.setattr("requests.post", fake_post)
+    monkeypatch.setattr("memoria.llm.safe_request", fake_post)
     c = OpenAICompatibleChat(base_url="http://x", api_key="k", model="m")
     assert c.chat("sys", "hi") == "你好"
     assert seen == {"url": "http://x/chat/completions", "model": "m", "roles": ["system", "user"]}

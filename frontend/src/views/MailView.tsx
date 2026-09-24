@@ -79,12 +79,12 @@ export const MailView: React.FC = () => {
     .map((m) => ({ id: m.id, subject: m.subject, summary: m.summary }));
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+    <div className="min-w-0 space-y-6 animate-fade-in max-w-4xl mx-auto">
       {/* Header & Invariants Banner */}
-      <div className="flex items-center justify-between border-b border-zinc-200/80 pb-4">
-        <div>
-          <h1 className="text-xl md:text-2xl font-semibold text-zinc-900 tracking-tight flex items-center gap-2">
-            <Mail className="w-5 h-5 text-zinc-700" />
+      <div className="flex flex-col items-start gap-3 border-b border-zinc-200/80 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl md:text-2xl font-semibold text-zinc-900 tracking-tight flex items-start sm:items-center gap-2 break-words">
+            <Mail className="w-5 h-5 text-zinc-700 shrink-0" />
             <span>AI 邮件安全分拣中心</span>
           </h1>
           <p className="text-xs text-zinc-500 mt-1">
@@ -111,8 +111,8 @@ export const MailView: React.FC = () => {
 
       {/* 1. Protected Section (Red Line) */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-amber-600" />
               受保护邮件（验证码 / 交易账单 — 永不可归档）
@@ -134,19 +134,19 @@ export const MailView: React.FC = () => {
               <RoundedCard
                 key={m.id}
                 variant="amber"
-                className="flex items-start justify-between gap-4"
+                className="flex flex-col items-stretch justify-between gap-4 sm:flex-row"
               >
-                <div className="space-y-1">
+                <div className="min-w-0 space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <PillBadge variant="protected">
                       <ShieldCheck className="w-3 h-3" />
                       交易/验证码保护
                     </PillBadge>
-                    <span className="font-medium text-xs text-zinc-900">
+                    <span className="min-w-0 break-words font-medium text-xs text-zinc-900">
                       {m.subject}
                     </span>
                   </div>
-                  <div className="text-xs text-zinc-600">
+                  <div className="min-w-0 break-words text-xs text-zinc-600">
                     <strong>摘要：</strong> {m.summary}
                   </div>
                   <div className="text-[11px] text-zinc-400 font-mono">
@@ -167,8 +167,8 @@ export const MailView: React.FC = () => {
 
       {/* 2. Marketing / Archive Candidate Section */}
       <div className="space-y-3 pt-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
               <Archive className="w-4 h-4 text-rose-600" />
               营销推广邮件（建议归档候选）
@@ -179,7 +179,7 @@ export const MailView: React.FC = () => {
           </div>
 
           {candidateMails.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <PillButton
                 variant="secondary"
                 size="sm"
@@ -212,12 +212,12 @@ export const MailView: React.FC = () => {
                 <RoundedCard
                   key={m.id}
                   variant="rose"
-                  className={`flex items-start justify-between gap-4 transition-all cursor-pointer ${
+                  className={`flex flex-col items-stretch justify-between gap-4 transition-all cursor-pointer sm:flex-row ${
                     isChecked ? "ring-2 ring-rose-400/60 bg-rose-50/50" : ""
                   }`}
                   onClick={() => toggleSelect(m.id)}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
                     <input
                       type="checkbox"
                       checked={isChecked}
@@ -226,13 +226,13 @@ export const MailView: React.FC = () => {
                       onClick={(e) => e.stopPropagation()}
                     />
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <PillBadge variant="candidate">营销推广</PillBadge>
-                        <span className="font-medium text-xs text-zinc-900">
+                        <span className="min-w-0 break-words font-medium text-xs text-zinc-900">
                           {m.subject}
                         </span>
                       </div>
-                      <div className="text-xs text-zinc-600">
+                      <div className="min-w-0 break-words text-xs text-zinc-600">
                         <strong>摘要：</strong> {m.summary}
                       </div>
                       <div className="text-[11px] text-zinc-400 font-mono">

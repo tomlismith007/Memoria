@@ -2,6 +2,7 @@
 
 import pytest
 
+from memoria.net import SafeRequestError, SafeResponse
 from memoria.rag import (
     ChromaStore,
     FakeEmbedder,
@@ -71,6 +72,29 @@ def test_chunk_offsets_cover_text():
         chunk_text(text, size=50, overlap=50)
 
 
+def test_load_document_rejects_local_web_url():
+    with pytest.raises(SafeRequestError):
+        load_document("http://localhost:8000/private")
+
+
+def test_load_document_fetches_web_through_safe_request(monkeypatch):
+    seen = {}
+
+    def fake_request(url, method, timeout, max_bytes):
+        seen.update(url=url, method=method, timeout=timeout, max_bytes=max_bytes)
+        return SafeResponse(200, {}, "<html><script>x</script><p>安全正文</p></html>")
+
+    monkeypatch.setattr("memoria.rag.parse.safe_request", fake_request)
+    document = load_document("https://example.com/article")
+    assert document.text == "安全正文"
+    assert seen == {
+        "url": "https://example.com/article",
+        "method": "GET",
+        "timeout": 30,
+        "max_bytes": 5 * 1024 * 1024,
+    }
+
+
 def test_load_document_markdown_and_txt(tmp_path):
     md = _write_doc(tmp_path / "a.md", "# 标题\n\n正文")
     txt = _write_doc(tmp_path / "b.txt", "纯文本")
@@ -95,11 +119,11 @@ def test_openai_compat_embedder_parses_response(monkeypatch):
 
     calls = {}
 
-    def fake_post(url, headers, json, timeout):
-        calls.update(url=url, model=json["model"], n=len(json["input"]))
+    def fake_post(url, method, headers, json_body, timeout, max_bytes, allow_ollama):
+        calls.update(url=url, model=json_body["model"], n=len(json_body["input"]))
         return FakeResp()
 
-    monkeypatch.setattr("requests.post", fake_post)
+    monkeypatch.setattr("memoria.rag.embed.safe_request", fake_post)
     e = OpenAICompatibleEmbedder(base_url="http://x", api_key="k", model="m")
     assert e.embed(["a", "b"]) == [[0.1], [0.2]]  # sorted back into input order
     assert calls == {"url": "http://x/embeddings", "model": "m", "n": 2}

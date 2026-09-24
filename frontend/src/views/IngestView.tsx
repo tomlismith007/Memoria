@@ -60,11 +60,11 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+    <div className="min-w-0 space-y-6 animate-fade-in max-w-4xl mx-auto">
       {/* Header */}
       <div className="border-b border-zinc-200/80 pb-4">
-        <h1 className="text-xl md:text-2xl font-semibold text-zinc-900 tracking-tight flex items-center gap-2">
-          <UploadCloud className="w-5 h-5 text-zinc-700" />
+        <h1 className="text-xl md:text-2xl font-semibold text-zinc-900 tracking-tight flex items-start sm:items-center gap-2 break-words">
+          <UploadCloud className="w-5 h-5 text-zinc-700 shrink-0" />
           <span>文档双写摄入中心 (Dual-Write Ingest)</span>
         </h1>
         <p className="text-xs text-zinc-500 mt-1">
@@ -80,7 +80,7 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        className={`rounded-3xl border-2 border-dashed p-8 text-center transition-all ${
+        className={`rounded-3xl border-2 border-dashed p-6 sm:p-8 text-center transition-all ${
           dragOver
             ? "border-zinc-900 bg-zinc-100/70"
             : "border-zinc-200 bg-white hover:border-zinc-300 shadow-sm"
@@ -118,19 +118,19 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
 
       {/* Or Paste Direct Text Card */}
       <RoundedCard variant="primary" className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
             <FileCode className="w-4 h-4 text-zinc-500" />
             或直接粘贴正文 Markdown 内容
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
             <label className="text-xs text-zinc-500 font-mono">来源文件名:</label>
             <input
               type="text"
               value={origin}
               onChange={(e) => setOrigin(e.target.value)}
               placeholder="note.md"
-              className="rounded-full bg-zinc-50 border border-zinc-200 px-3 py-1 text-xs text-zinc-800 outline-none w-36 font-mono"
+              className="w-full min-w-0 rounded-full bg-zinc-50 border border-zinc-200 px-3 py-1 text-xs text-zinc-800 outline-none sm:w-36 font-mono"
             />
           </div>
         </div>
@@ -140,7 +140,7 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="在此处粘贴任何需要摄入知识库的长文本或 Markdown 笔记..."
-          className="w-full rounded-2xl bg-zinc-50/70 border border-zinc-200/80 p-4 text-xs md:text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-zinc-400 font-mono leading-relaxed"
+          className="w-full min-w-0 rounded-2xl bg-zinc-50/70 border border-zinc-200/80 p-4 text-xs md:text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-zinc-400 font-mono leading-relaxed"
         />
 
         <div className="flex justify-end">

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Protocol
 
-import requests
+from memoria.net import safe_request
 
 
 class ChatLLM(Protocol):
@@ -40,10 +40,11 @@ class OpenAICompatibleChat:
         self.model = model or os.environ.get("MEMORIA_LLM_MODEL", "gpt-4o-mini")
 
     def chat(self, system: str, user: str) -> str:
-        resp = requests.post(
-            f"{self.base_url}/chat/completions",
+        resp = safe_request(
+            f"{self.base_url.rstrip('/')}/chat/completions",
+            method="POST",
             headers={"Authorization": f"Bearer {self.api_key}"},
-            json={
+            json_body={
                 "model": self.model,
                 "messages": [
                     {"role": "system", "content": system},
@@ -51,6 +52,8 @@ class OpenAICompatibleChat:
                 ],
             },
             timeout=120,
+            max_bytes=4 * 1024 * 1024,
+            allow_ollama=True,
         )
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]

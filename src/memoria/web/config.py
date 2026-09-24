@@ -8,10 +8,22 @@ import time
 from pathlib import Path
 from typing import Any
 
-import requests
 from pydantic import BaseModel, Field
 
+from memoria.net import safe_request
+
 DEFAULT_SETTINGS_PATH = Path("./data/settings.json")
+
+
+class ModelPreset(BaseModel):
+    name: str
+    llm_base_url: str
+    llm_api_key: str
+    llm_model: str
+    embed_base_url: str
+    embed_api_key: str
+    embed_model: str
+    demo_mode: bool = False
 
 
 class Settings(BaseModel):
@@ -22,6 +34,7 @@ class Settings(BaseModel):
     embed_api_key: str = Field(default="")
     embed_model: str = Field(default="text-embedding-3-small")
     demo_mode: bool = Field(default=False)
+    presets: list[ModelPreset] = Field(default_factory=list)
 
 
 class ModelsRequest(BaseModel):
@@ -68,7 +81,14 @@ def fetch_remote_models(base_url: str, api_key: str = "", timeout: float = 10.0)
     headers: dict[str, str] = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    resp = requests.get(url, headers=headers, timeout=timeout)
+    resp = safe_request(
+        url,
+        method="GET",
+        headers=headers,
+        timeout=timeout,
+        max_bytes=1024 * 1024,
+        allow_ollama=True,
+    )
     resp.raise_for_status()
     data = resp.json()
     models: list[str] = []
@@ -108,25 +128,28 @@ def test_model_connectivity(req: TestConfigRequest, timeout: float = 10.0) -> di
         headers: dict[str, str] = {}
         if req.llm_api_key:
             headers["Authorization"] = f"Bearer {req.llm_api_key}"
-        resp = requests.post(
+        resp = safe_request(
             url,
+            method="POST",
             headers=headers,
-            json={
+            json_body={
                 "model": req.llm_model or "gpt-4o-mini",
                 "messages": [{"role": "user", "content": "hi"}],
                 "max_tokens": 5,
             },
             timeout=timeout,
+            max_bytes=1024 * 1024,
+            allow_ollama=True,
         )
         latency = int((time.perf_counter() - t0) * 1000)
-        if resp.status_code == 200:
+        if resp.status == 200:
             result["llm_ok"] = True
             result["llm_latency_ms"] = latency
             result["llm_message"] = f"连接成功 ({latency}ms)"
         else:
             result["llm_ok"] = False
             result["llm_latency_ms"] = latency
-            result["llm_message"] = f"HTTP {resp.status_code}: {resp.text[:120]}"
+            result["llm_message"] = f"HTTP {resp.status}: {resp.text[:120]}"
     except Exception as e:
         latency = int((time.perf_counter() - t0) * 1000)
         result["llm_ok"] = False
@@ -145,21 +168,24 @@ def test_model_connectivity(req: TestConfigRequest, timeout: float = 10.0) -> di
             headers = {}
             if embed_key:
                 headers["Authorization"] = f"Bearer {embed_key}"
-            resp = requests.post(
+            resp = safe_request(
                 url,
+                method="POST",
                 headers=headers,
-                json={"model": embed_model, "input": "test"},
+                json_body={"model": embed_model, "input": "test"},
                 timeout=timeout,
+                max_bytes=1024 * 1024,
+                allow_ollama=True,
             )
             latency = int((time.perf_counter() - t1) * 1000)
-            if resp.status_code == 200:
+            if resp.status == 200:
                 result["embed_ok"] = True
                 result["embed_latency_ms"] = latency
                 result["embed_message"] = f"连接成功 ({latency}ms)"
             else:
                 result["embed_ok"] = False
                 result["embed_latency_ms"] = latency
-                result["embed_message"] = f"HTTP {resp.status_code}: {resp.text[:120]}"
+                result["embed_message"] = f"HTTP {resp.status}: {resp.text[:120]}"
         except Exception as e:
             latency = int((time.perf_counter() - t1) * 1000)
             result["embed_ok"] = False

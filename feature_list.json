@@ -133,16 +133,40 @@
       "name": "Model settings persistence & history presets",
       "description": "模型设置历史持久化：自动记忆保存 Base URL、API Key 与 Model 配置，页面刷新后自动恢复；支持多配置历史预设管理与快速切换",
       "dependencies": ["feat-015"],
-      "status": "todo",
-      "evidence": ""
+      "status": "completed",
+      "evidence": "init.ps1 green: 73 pytest tests passed; frontend npm run build passed; up to 10 server-side config presets with redacted responses, save/apply/delete flows, and legacy settings.json compatibility"
     },
     {
       "id": "feat-018",
       "name": "Conversation message history persistence",
       "description": "历史消息与对话流持久化：问答时间线与多轮会话本地持久化，页面刷新后无缝恢复历史消息、逐句溯源切片与归档状态；支持新建会话与清空历史",
       "dependencies": ["feat-014"],
-      "status": "todo",
-      "evidence": ""
+      "status": "completed",
+      "evidence": "init.ps1 green: 73 pytest tests passed; frontend npm run build passed; browser smoke verified refresh/tab restoration, archived state, new-session clearing, and corrupt JSON fallback"
+    },
+    {
+      "id": "feat-019",
+      "name": "Local Web security boundary",
+      "description": "本地 Web 安全边界：配置 API Key 脱敏与空值保留、严格 CORS、邮件归档新鲜候选门禁、raw 摄入路径穿越防护",
+      "dependencies": ["feat-010", "feat-013", "feat-015"],
+      "status": "completed",
+      "evidence": "init.ps1 green: 70 pytest tests passed; frontend npm run build passed; config secrets redacted, empty keys preserved, CORS allowlist enforced, stale/unknown mail IDs blocked, unsafe ingest paths rejected"
+    },
+    {
+      "id": "feat-020",
+      "name": "Mobile responsive UI",
+      "description": "移动端响应式优化：窄屏图标导航、44px 触控区域、Header 收缩、Ask/Wiki/Mail/Ingest/Settings 长文本与窄屏重排，消除 390px/320px 横向滚动",
+      "dependencies": ["feat-011", "feat-014"],
+      "status": "completed",
+      "evidence": "init.ps1 green: 73 pytest tests passed; frontend npm run build passed; browser verification at 390x844 and 320x800 found no page-level horizontal overflow across Ask/Wiki/Mail/Ingest/Settings; desktop text navigation preserved at 1280x720"
+    },
+    {
+      "id": "feat-021",
+      "name": "SSRF-safe outbound requests",
+      "description": "统一标准库出站请求；公网 HTTPS/443、受限 Ollama 本地上下文、全量 DNS 校验与 IP pinning、同源重定向和响应大小/压缩限制",
+      "dependencies": ["feat-002", "feat-003", "feat-015"],
+      "status": "completed",
+      "evidence": "init.ps1 green: 92 pytest tests passed; frontend npm run build passed; src/memoria/net.py + callers migrated; tests/test_net.py covers protocol/port, internal IPv4/IPv6, exact Ollama context, mixed DNS, redirects, size/compression limits, pinned IP and original SNI/Host"
     }
   ]
 }

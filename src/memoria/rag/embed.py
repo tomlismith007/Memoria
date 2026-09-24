@@ -7,7 +7,7 @@ import os
 import re
 from typing import Protocol
 
-import requests
+from memoria.net import safe_request
 
 
 class Embedder(Protocol):
@@ -47,11 +47,14 @@ class OpenAICompatibleEmbedder:
         self.model = model or os.environ.get("MEMORIA_EMBED_MODEL", "text-embedding-3-small")
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        resp = requests.post(
-            f"{self.base_url}/embeddings",
+        resp = safe_request(
+            f"{self.base_url.rstrip('/')}/embeddings",
+            method="POST",
             headers={"Authorization": f"Bearer {self.api_key}"},
-            json={"model": self.model, "input": texts},
+            json_body={"model": self.model, "input": texts},
             timeout=60,
+            max_bytes=4 * 1024 * 1024,
+            allow_ollama=True,
         )
         resp.raise_for_status()
         items = sorted(resp.json()["data"], key=lambda d: d["index"])

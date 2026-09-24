@@ -7,8 +7,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-import requests
 from pypdf import PdfReader
+
+from memoria.net import safe_request
 
 
 @dataclass
@@ -41,7 +42,13 @@ def _parse_pdf(path: Path) -> str:
 
 
 def _parse_url(url: str) -> str:
-    html = requests.get(url, timeout=30).text
+    response = safe_request(
+        url,
+        method="GET",
+        timeout=30,
+        max_bytes=5 * 1024 * 1024,
+    )
+    html = response.text
     # ponytail: regex tag-strip; trafilatura if extraction quality ever matters
     text = re.sub(r"<script.*?</script>|<style.*?</style>", " ", html, flags=re.S | re.I)
     text = re.sub(r"<[^>]+>", " ", text)

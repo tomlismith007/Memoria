@@ -4,8 +4,8 @@ import {
   BookmarkPlus,
   CheckCircle2,
   Loader2,
+  Plus,
   Search,
-  Sparkles,
 } from "lucide-react";
 import { api } from "../api";
 import type { AskResponse, Citation } from "../types";
@@ -24,17 +24,123 @@ interface MessageItem {
   activeCitation?: Citation | null;
 }
 
+const ASK_HISTORY_KEY = "memoria.ask.history";
+const ASK_HISTORY_VERSION = 1;
+
+interface PersistedMessage {
+  id: string;
+  question: string;
+  result?: AskResponse;
+  error?: string;
+  archivedPage?: string;
+}
+
+interface PersistedConversation {
+  version: number;
+  messages: PersistedMessage[];
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const isCitation = (value: unknown): value is Citation => {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.ref === "number" &&
+    typeof value.doc_id === "string" &&
+    typeof value.chunk === "number" &&
+    typeof value.start === "number"
+  );
+};
+
+const isAskResponse = (value: unknown): value is AskResponse => {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.text === "string" &&
+    (value.source === "wiki" || value.source === "rag+wiki") &&
+    Array.isArray(value.wiki_pages) &&
+    value.wiki_pages.every((page) => typeof page === "string") &&
+    Array.isArray(value.citations) &&
+    value.citations.every(isCitation)
+  );
+};
+
+const loadMessages = (): MessageItem[] => {
+  try {
+    const raw = localStorage.getItem(ASK_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || parsed.version !== ASK_HISTORY_VERSION || !Array.isArray(parsed.messages)) {
+      return [];
+    }
+
+    const restored: MessageItem[] = [];
+    const seen = new Set<string>();
+    for (const value of parsed.messages) {
+      if (!isRecord(value)) continue;
+      const id = value.id;
+      const question = value.question;
+      if (typeof id !== "string" || !id || typeof question !== "string" || !question || seen.has(id)) {
+        continue;
+      }
+      const result = value.result;
+      const error = value.error;
+      const archivedPage = value.archivedPage;
+      if (result !== undefined && !isAskResponse(result)) continue;
+      if (error !== undefined && typeof error !== "string") continue;
+      if (archivedPage !== undefined && typeof archivedPage !== "string") continue;
+      if (result === undefined && error === undefined) continue;
+      seen.add(id);
+      restored.push({
+        id,
+        question,
+        result,
+        error,
+        archivedPage,
+        loading: false,
+      });
+    }
+    return restored;
+  } catch {
+    return [];
+  }
+};
+
+const persistMessages = (messages: MessageItem[]): void => {
+  try {
+    const payload: PersistedConversation = {
+      version: ASK_HISTORY_VERSION,
+      messages: messages
+        .filter((message) => !message.loading && (message.result !== undefined || message.error !== undefined))
+        .map(({ id, question, result, error, archivedPage }) => ({
+          id,
+          question,
+          result,
+          error,
+          archivedPage,
+        })),
+    };
+    localStorage.setItem(ASK_HISTORY_KEY, JSON.stringify(payload));
+  } catch {
+    // Storage is an enhancement; keep the in-memory conversation usable.
+  }
+};
+
 interface AskViewProps {
   onNavigateWiki: (pageName: string) => void;
 }
 
 export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [messages, setMessages] = useState<MessageItem[]>(() => loadMessages());
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const hasStarted = messages.length > 0;
+
+  useEffect(() => {
+    persistMessages(messages);
+  }, [messages]);
 
   useEffect(() => {
     if (hasStarted) {
@@ -85,6 +191,13 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
     }
   };
 
+  const handleNewSession = () => {
+    if (!window.confirm("清空当前本地问答历史？已沉淀的 Wiki 页面不会被删除。")) return;
+    setMessages([]);
+    setInput("");
+    setArchivingId(null);
+  };
+
   const handleArchive = async (msg: MessageItem) => {
     if (!msg.result) return;
     setArchivingId(msg.id);
@@ -111,10 +224,10 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
   };
 
   return (
-    <div className="flex-1 flex flex-col w-full">
+    <div className="flex-1 min-w-0 flex flex-col w-full">
       {/* 1. INITIAL STATE: Centered in the middle */}
       {!hasStarted && (
-        <div className="flex-1 flex flex-col items-center justify-center -mt-16 space-y-6 w-full max-w-3xl md:max-w-4xl mx-auto animate-fade-in px-4">
+        <div className="flex-1 flex flex-col items-center justify-center -mt-10 sm:-mt-16 space-y-6 w-full max-w-3xl md:max-w-4xl mx-auto animate-fade-in px-0 sm:px-4">
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-zinc-900 text-center">
             想探索什么知识？
           </h1>
@@ -132,7 +245,7 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="提出问题，如：服务续费时间是什么时候？"
-              className="w-full bg-transparent border-none outline-none text-sm text-zinc-900 placeholder:text-zinc-400"
+              className="w-full min-w-0 bg-transparent border-none outline-none text-sm text-zinc-900 placeholder:text-zinc-400"
               autoFocus
             />
             <button
@@ -168,11 +281,22 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
       {hasStarted && (
         <div className="flex-1 flex flex-col justify-between max-w-4xl w-full mx-auto animate-fade-in pb-28 space-y-8">
           <div className="space-y-8">
+            <div className="flex justify-end">
+              <PillButton
+                variant="outline"
+                size="sm"
+                onClick={handleNewSession}
+                title="清空当前本地问答历史"
+                icon={<Plus className="w-3.5 h-3.5" />}
+              >
+                新建会话
+              </PillButton>
+            </div>
             {messages.map((msg) => (
               <div key={msg.id} className="space-y-4">
                 {/* User Message Bubble */}
                 <div className="flex justify-end">
-                  <div className="rounded-2xl bg-zinc-900 text-white px-5 py-2.5 text-xs md:text-sm max-w-xl font-medium shadow-sm">
+                  <div className="rounded-2xl bg-zinc-900 text-white px-5 py-2.5 text-xs md:text-sm max-w-xl min-w-0 break-words font-medium shadow-sm">
                     {msg.question}
                   </div>
                 </div>
@@ -243,7 +367,7 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
                     </div>
 
                     {/* Rich Markdown Answer Text */}
-                    <div className="text-sm md:text-base leading-relaxed text-zinc-800 font-sans">
+                    <div className="min-w-0 break-words text-sm md:text-base leading-relaxed text-zinc-800 font-sans">
                       <MarkdownRenderer
                         content={msg.result.text}
                         citations={msg.result.citations}
@@ -297,7 +421,7 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
 
           {/* Fixed Floating Bottom Capsule Search Bar */}
           <div className="fixed bottom-0 left-0 right-0 z-30 pointer-events-none pb-6 pt-10 bg-gradient-to-t from-canvas via-canvas/90 to-transparent">
-            <div className="max-w-4xl w-full mx-auto px-4 pointer-events-auto">
+            <div className="max-w-4xl w-full mx-auto px-3 sm:px-4 pointer-events-auto">
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -311,7 +435,7 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="继续提问..."
-                  className="w-full bg-transparent border-none outline-none text-sm text-zinc-900 placeholder:text-zinc-400"
+                  className="w-full min-w-0 bg-transparent border-none outline-none text-sm text-zinc-900 placeholder:text-zinc-400"
                   autoFocus
                 />
                 <button

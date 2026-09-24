@@ -82,6 +82,7 @@ export interface ProvidersConfigResponse {
   status: string;
   active_provider_id: string;
   active_chat_model: string;
+  active_embed_provider_id: string;
   active_embed_model: string;
   providers: CustomProvider[];
 }

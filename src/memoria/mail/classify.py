@@ -13,8 +13,11 @@ from memoria.llm import ChatLLM
 from memoria.mail.rules import is_protected
 
 CATEGORIES = ("营销", "通知", "待办")
+_MARKETING = CATEGORIES[0]
+_NOTIFICATION = CATEGORIES[1]
+_CATEGORY_PATTERN = "|".join(map(re.escape, CATEGORIES))
 
-SYSTEM = "你是邮件分类助手。只回两行：`类别：<营销|通知|待办>` 和 `摘要：<一句话>`，无多余解释。"
+SYSTEM = f"你是邮件分类助手。只回两行：`类别：<{'|'.join(CATEGORIES)}>` 和 `摘要：<一句话>`，无多余解释。"
 
 
 @dataclass
@@ -34,7 +37,7 @@ class Triage:
 
     @property
     def archive_candidate(self) -> bool:
-        return self.category == "营销" and not self.protected
+        return self.category == _MARKETING and not self.protected
 
 
 def classify(email: Email, llm: ChatLLM) -> Triage:
@@ -48,8 +51,8 @@ def classify(email: Email, llm: ChatLLM) -> Triage:
 
 
 def _parse(text: str, fallback: str) -> tuple[str, str]:
-    category, summary = "通知", fallback[:100]
-    m = re.search(r"类别\s*[:：]\s*(营销|通知|待办)", text)
+    category, summary = _NOTIFICATION, fallback[:100]
+    m = re.search(rf"类别\s*[:：]\s*({_CATEGORY_PATTERN})", text)
     if m:
         category = m.group(1)
     m = re.search(r"摘要\s*[:：]\s*(.+)", text)

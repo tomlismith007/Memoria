@@ -9,7 +9,7 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-from memoria.net import safe_request
+from memoria.net import SafeRequestError, safe_request
 
 
 @dataclass
@@ -25,7 +25,9 @@ def _doc_id(origin: str) -> str:
 
 def load_document(source: str) -> Document:
     """Load any supported source into a Document. Dispatch by URL vs suffix."""
-    if source.startswith(("http://", "https://")):
+    if source.startswith("http://"):
+        raise SafeRequestError("URL must use HTTPS")
+    if source.startswith("https://"):
         return Document(_doc_id(source), _parse_url(source), source)
     path = Path(source)
     suffix = path.suffix.lower()

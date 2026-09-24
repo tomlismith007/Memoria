@@ -17,7 +17,7 @@ export const PillButton: React.FC<PillButtonProps> = ({
   ...props
 }) => {
   const baseClasses =
-    "rounded-full font-medium inline-flex items-center justify-center gap-1.5 transition-all duration-150 select-none pill-active cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none";
+    "rounded-full font-medium whitespace-nowrap inline-flex items-center justify-center gap-1.5 transition-all duration-150 select-none pill-active cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none";
 
   const sizeClasses = {
     sm: "px-3.5 py-1 text-xs",

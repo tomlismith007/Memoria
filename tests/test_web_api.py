@@ -113,8 +113,8 @@ def test_config_api_rejects_non_public_https_urls(api_client, monkeypatch):
             )
         ]
     )
-    monkeypatch.setattr("memoria.web.app.load_settings", lambda: current)
-    monkeypatch.setattr("memoria.web.app.save_settings", lambda settings: None)
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", lambda settings: None)
     invalid = {
         "llm_base_url": "http://localhost/v1",
         "llm_api_key": credential_marker,
@@ -152,8 +152,8 @@ def test_config_endpoints_redact_keys_and_preserve_empty_updates(api_client, mon
         embed_model="text-embedding-3-small",
     )
     saved = []
-    monkeypatch.setattr("memoria.web.app.load_settings", lambda: current)
-    monkeypatch.setattr("memoria.web.app.save_settings", saved.append)
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", saved.append)
 
     get_resp = client.get("/api/config")
     assert get_resp.status_code == 200
@@ -223,8 +223,8 @@ def test_config_presets_save_apply_and_delete_without_exposing_keys(api_client, 
         nonlocal current
         current = settings.model_copy(deep=True)
 
-    monkeypatch.setattr("memoria.web.app.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.app.save_settings", save_current)
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
 
     save_response = client.post(
         "/api/config/presets",
@@ -302,8 +302,8 @@ def test_config_preset_names_are_unique_and_limited_to_ten(api_client, monkeypat
         current = settings.model_copy(deep=True)
         saved.append(settings)
 
-    monkeypatch.setattr("memoria.web.app.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.app.save_settings", save_current)
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
 
     def body(name):
         return {
@@ -353,7 +353,7 @@ def test_fetch_models_endpoint(api_client, monkeypatch):
             return {"data": [{"id": "deepseek-chat"}, {"id": "deepseek-reasoner"}]}
 
     monkeypatch.setattr("memoria.web.config.safe_request", lambda *a, **kw: MockResp())
-    resp = client.post("/api/config/models", json={"base_url": "https://api.deepseek.com/v1", "api_key": "sk-xxx"})
+    resp = client.post("/api/config/models", json={"base_url": "https://api.deepseek.com/v1", "api_key": "x" * 12})
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
@@ -374,7 +374,7 @@ def test_test_config_endpoint(api_client, monkeypatch):
         "/api/config/test",
         json={
             "llm_base_url": "https://api.deepseek.com/v1",
-            "llm_api_key": "sk-1234",
+            "llm_api_key": "x" * 12,
             "llm_model": "deepseek-chat",
             "embed_base_url": "",
             "embed_api_key": "",
@@ -400,10 +400,10 @@ def test_provider_crud_and_model_management(api_client, monkeypatch):
         nonlocal current
         current = settings.model_copy(deep=True)
 
-    monkeypatch.setattr("memoria.web.app.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.app.save_settings", save_current)
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
 
-    secret_key = "sk-provider-secret-123456"
+    secret_key = "x" * 24
     # 1. Create provider
     create_resp = client.post(
         "/api/config/providers",
@@ -420,7 +420,7 @@ def test_provider_crud_and_model_management(api_client, monkeypatch):
     provider_id = pdata["id"]
     assert provider_id == "openrouter"
     assert pdata["api_key_set"] is True
-    assert pdata["masked_api_key"] == "sk-p...3456"
+    assert pdata["masked_api_key"] == "xxxx...xxxx"
     assert secret_key not in create_resp.text
     assert current.active_provider_id == "openrouter"
 
@@ -461,7 +461,7 @@ def test_provider_crud_and_model_management(api_client, monkeypatch):
 
     # 4. Test provider connectivity
     monkeypatch.setattr(
-        "memoria.web.app.test_model_connectivity",
+        "memoria.web.config_routes.test_model_connectivity",
         lambda req: {"llm_ok": True, "llm_latency_ms": 120, "llm_message": "连接成功 (120ms)"},
     )
     test_resp = client.post(f"/api/config/providers/{provider_id}/test", json={"model_id": "stealth/space-bunny"})
@@ -506,8 +506,8 @@ def test_provider_protocol_persists_and_rejects_unknown_formats(api_client, monk
         nonlocal current
         current = settings.model_copy(deep=True)
 
-    monkeypatch.setattr("memoria.web.app.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.app.save_settings", save_current)
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
 
     create = client.post(
         "/api/config/providers",
@@ -545,6 +545,108 @@ def test_provider_protocol_persists_and_rejects_unknown_formats(api_client, monk
         },
     )
     assert unknown.status_code == 400
+
+
+def test_embedding_provider_is_independent_from_chat_provider(api_client, monkeypatch):
+    from memoria.web.config import CustomModel, CustomProvider, Settings
+
+    client, _, _ = api_client
+    chat_key = "c" * 12
+    embed_key = "e" * 12
+    chat_provider = CustomProvider(
+        id="chat-provider",
+        name="Chat Provider",
+        base_url="https://chat.example/v1",
+        api_format="chat_completions",
+        api_key=chat_key,
+        enabled=True,
+        models=[CustomModel(id="chat-model", name="Chat Model", model_type="chat")],
+    )
+    embed_provider = CustomProvider(
+        id="embed-provider",
+        name="Embed Provider",
+        base_url="https://embed.example/v1",
+        api_format="chat_completions",
+        api_key=embed_key,
+        enabled=True,
+        models=[CustomModel(id="embed-model", name="Embed Model", model_type="embedding")],
+    )
+    current = Settings(
+        active_provider_id="chat-provider",
+        active_chat_model="chat-model",
+        providers=[chat_provider, embed_provider],
+        llm_base_url="https://chat.example/v1",
+        llm_api_key=chat_key,
+        llm_model="chat-model",
+    )
+
+    def load_current():
+        return current.model_copy(deep=True)
+
+    def save_current(settings):
+        nonlocal current
+        current = settings.model_copy(deep=True)
+
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+
+    activated = client.post(
+        "/api/config/providers/activate",
+        json={
+            "provider_id": "embed-provider",
+            "model_id": "embed-model",
+            "model_type": "embedding",
+        },
+    )
+    assert activated.status_code == 200
+    assert activated.json()["active_embed_provider_id"] == "embed-provider"
+    assert activated.json()["active_embed_model"] == "embed-model"
+    assert current.active_provider_id == "chat-provider"
+    assert current.active_chat_model == "chat-model"
+    assert current.active_embed_provider_id == "embed-provider"
+    assert current.active_embed_model == "embed-model"
+    assert current.llm_base_url == "https://chat.example/v1"
+    assert current.llm_api_key == chat_key
+    assert current.llm_model == "chat-model"
+
+    listed = client.get("/api/config/providers").json()
+    assert listed["active_embed_provider_id"] == "embed-provider"
+
+    saved_embed = client.post(
+        "/api/config/providers",
+        json={
+            "id": "embed-provider",
+            "name": "Embed Provider Renamed",
+            "base_url": "https://embed.example/v1",
+            "api_key": "",
+            "enabled": True,
+            "scope": "embedding",
+        },
+    )
+    assert saved_embed.status_code == 200
+    assert saved_embed.json()["provider"]["name"] == "Embed Provider Renamed"
+    assert current.active_provider_id == "chat-provider"
+    assert current.active_chat_model == "chat-model"
+    assert current.llm_base_url == "https://chat.example/v1"
+
+    deleted = client.delete("/api/config/providers/embed-provider")
+    assert deleted.status_code == 200
+    assert current.active_provider_id == "chat-provider"
+    assert current.active_chat_model == "chat-model"
+    assert current.active_embed_provider_id == ""
+    assert current.active_embed_model == ""
+
+
+def test_legacy_settings_load_with_default_embed_provider_state(tmp_path):
+    from memoria.web.config import load_settings
+
+    path = tmp_path / "settings.json"
+    path.write_text('{"llm_model": "legacy-model"}', encoding="utf-8")
+
+    settings = load_settings(path)
+
+    assert settings.llm_model == "legacy-model"
+    assert settings.active_embed_provider_id == ""
 
 
 def test_provider_protocol_controls_model_list_and_connectivity(api_client, monkeypatch):

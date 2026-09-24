@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   ArrowRight,
   BookOpen,
-  FileText,
   Link2,
   RefreshCw,
   Search,
@@ -74,29 +73,6 @@ export const WikiView: React.FC<WikiViewProps> = ({ initialPage }) => {
     listData?.pages.filter((p) =>
       p.name.toLowerCase().includes(search.toLowerCase())
     ) || [];
-
-  // Parse Markdown with [[links]] into clickable pill elements
-  const renderWikiContent = (content: string) => {
-    const parts = content.split(/(\[\[[^\[\]]+\]\])/g);
-    return parts.map((part, idx) => {
-      const match = part.match(/\[\[([^\[\]]+)\]\]/);
-      if (match) {
-        const linkName = match[1];
-        return (
-          <button
-            key={idx}
-            onClick={() => setSelectedPage(linkName)}
-            className="cursor-pointer mx-0.5 inline-block"
-          >
-            <PillBadge variant="wiki" interactive>
-              [[{linkName}]]
-            </PillBadge>
-          </button>
-        );
-      }
-      return <span key={idx}>{part}</span>;
-    });
-  };
 
   return (
     <div className="min-w-0 space-y-6 animate-fade-in max-w-5xl mx-auto">

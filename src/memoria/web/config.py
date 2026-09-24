@@ -6,9 +6,9 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, Field
 
 from memoria.llm import (
     API_FORMAT_ANTHROPIC_MESSAGES,
@@ -44,24 +44,23 @@ class CustomModel(BaseModel):
     model_type: str = "chat"
 
 
+ApiFormat = Annotated[str, BeforeValidator(normalize_api_format)]
+
+
 class CustomProvider(BaseModel):
     id: str
     name: str
     base_url: str
-    api_format: str = API_FORMAT_CHAT_COMPLETIONS
+    api_format: ApiFormat = API_FORMAT_CHAT_COMPLETIONS
     api_key: str = ""
     enabled: bool = True
     models: list[CustomModel] = Field(default_factory=list)
-
-    @field_validator("api_format", mode="before")
-    @classmethod
-    def normalize_protocol(cls, value: str | None) -> str:
-        return normalize_api_format(value)
 
 
 class Settings(BaseModel):
     active_provider_id: str = ""
     active_chat_model: str = ""
+    active_embed_provider_id: str = ""
     active_embed_model: str = ""
     providers: list[CustomProvider] = Field(default_factory=list)
     llm_base_url: str = Field(default=DEFAULT_LLM_BASE_URL)
@@ -77,27 +76,17 @@ class Settings(BaseModel):
 class ModelsRequest(BaseModel):
     base_url: str
     api_key: str = ""
-    api_format: str = API_FORMAT_CHAT_COMPLETIONS
-
-    @field_validator("api_format", mode="before")
-    @classmethod
-    def normalize_protocol(cls, value: str | None) -> str:
-        return normalize_api_format(value)
+    api_format: ApiFormat = API_FORMAT_CHAT_COMPLETIONS
 
 
 class TestConfigRequest(BaseModel):
     llm_base_url: str = DEFAULT_LLM_BASE_URL
     llm_api_key: str = ""
     llm_model: str = DEFAULT_LLM_MODEL
-    api_format: str = API_FORMAT_CHAT_COMPLETIONS
+    api_format: ApiFormat = API_FORMAT_CHAT_COMPLETIONS
     embed_base_url: str = ""
     embed_api_key: str = ""
     embed_model: str = ""
-
-    @field_validator("api_format", mode="before")
-    @classmethod
-    def normalize_protocol(cls, value: str | None) -> str:
-        return normalize_api_format(value)
 
 
 def _environment_settings() -> Settings:
@@ -215,7 +204,8 @@ def fetch_remote_models(
 
 
 def test_model_connectivity(req: TestConfigRequest, timeout: float = 10.0) -> dict[str, Any]:
-    validate_public_https_url(req.llm_base_url)
+    if req.llm_base_url:
+        validate_public_https_url(req.llm_base_url)
     if req.embed_base_url:
         validate_public_https_url(req.embed_base_url)
 
@@ -228,37 +218,42 @@ def test_model_connectivity(req: TestConfigRequest, timeout: float = 10.0) -> di
         "embed_message": "",
     }
 
-    # 1. Test LLM using the selected provider protocol.
+    # 1. Test LLM using the selected provider protocol. An empty URL means
+    # embedding-only diagnostics (the vector provider is independent).
     t0 = time.perf_counter()
-    try:
-        url, headers, json_body = build_chat_request(
-            req.llm_base_url,
-            req.llm_api_key,
-            req.llm_model or DEFAULT_LLM_MODEL,
-            req.api_format,
-            system="",
-            user="hi",
-            max_tokens=5,
-        )
-        resp = safe_request(
-            url,
-            method="POST",
-            headers=headers,
-            json_body=json_body,
-            timeout=timeout,
-            max_bytes=1024 * 1024,
-        )
-        latency = int((time.perf_counter() - t0) * 1000)
-        if resp.status == 200:
-            result["llm_ok"] = True
+    if not req.llm_base_url:
+        result["llm_ok"] = True
+        result["llm_message"] = "未选择对话网关，跳过"
+    else:
+        try:
+            url, headers, json_body = build_chat_request(
+                req.llm_base_url,
+                req.llm_api_key,
+                req.llm_model or DEFAULT_LLM_MODEL,
+                req.api_format,
+                system="",
+                user="hi",
+                max_tokens=5,
+            )
+            resp = safe_request(
+                url,
+                method="POST",
+                headers=headers,
+                json_body=json_body,
+                timeout=timeout,
+                max_bytes=1024 * 1024,
+            )
+            latency = int((time.perf_counter() - t0) * 1000)
+            if resp.status == 200:
+                result["llm_ok"] = True
+                result["llm_latency_ms"] = latency
+                result["llm_message"] = f"连接成功 ({latency}ms)"
+            else:
+                result["llm_message"] = f"HTTP {resp.status}: {resp.text[:120]}"
+        except Exception as exc:
+            latency = int((time.perf_counter() - t0) * 1000)
             result["llm_latency_ms"] = latency
-            result["llm_message"] = f"连接成功 ({latency}ms)"
-        else:
-            result["llm_message"] = f"HTTP {resp.status}: {resp.text[:120]}"
-    except Exception as exc:
-        latency = int((time.perf_counter() - t0) * 1000)
-        result["llm_latency_ms"] = latency
-        result["llm_message"] = f"连接失败: {str(exc)[:120]}"
+            result["llm_message"] = f"连接失败: {str(exc)[:120]}"
 
     # 2. Test Embedding
     embed_url = req.embed_base_url or req.llm_base_url

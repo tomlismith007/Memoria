@@ -2,39 +2,43 @@
 
 ## Current Objective
 
-- Goal: Full-stack Memoria personal knowledge system with React 19 + TypeScript + Tailwind CSS frontend, FastAPI Web API, and LangGraph orchestration.
-- Current status: feat-001..feat-024 completed; feat-023 citation-integrity follow-up is registered as todo only.
-- Working tree: clean and verified; ready for commit or next scope.
+- Goal: Maintain the full-stack Memoria personal knowledge system with React 19 + TypeScript + Tailwind CSS frontend, FastAPI Web API, and LangGraph orchestration.
+- Current status: feat-001..feat-031 completed; feat-023 citation-integrity follow-up remains todo only.
+- Working tree: contains audit cleanup, configuration route split, SettingsModal display split, minimal model-settings UI, and independent chat/embedding provider separation. The untracked `.zcode/` path remains unrelated; browser evidence is under `gui-test-screenshots/`.
 
 ## Completed This Session
 
-- [x] feat-024: 自定义供应商管理页面重构与刷新零丢失双重持久化。
-- [x] 参考用户设计图重构 `SettingsModal.tsx` 为大卡片两栏式布局（左侧自定义供应商列表与健康指示灯，右侧详情与模型列表维护）。
-- [x] 纯自定义供应商体系：彻底去除固化预设，纯粹由用户添加并管理自己的供应商（Base URL、API 格式、API Key）。
-- [x] 模型列表维护：支持添加模型、标签徽标（如 `1M`, `视觉`, `Chat`）、远端 `/models` 自动拉取导入、连通性端到端诊断测试及单模型启停与删除。
-- [x] 刷新零丢失双重持久化：后端 `data/settings.json` 与前端 `localStorage` 双向同步与自动恢复，即使重启或刷新配置 100% 还原。
-- [x] 聊天集成与即时切换：当前激活的模型在 `AskView` 首屏与多轮对话吸底工具条中清晰展示。
-- [x] 后端 `src/memoria/web/app.py` 提供完整的 `/api/config/providers` CRUD、模型增删、单模型测速与激活接口，并补充 2 组完备单元测试。
+- [x] feat-027: embedded Ponytail and harness discipline into `AGENTS.md`.
+- [x] feat-028: removed confirmed dead code, consolidated repeated validators and mail categories, tightened HTTP ingest handling, and split 14 configuration routes into `src/memoria/web/config_routes.py`.
+- [x] feat-029: extracted `ProviderTemplatePicker`, `ProviderSidebar`, and `DeleteConfirmDialog` from `SettingsModal.tsx` without moving state or async flows.
+- [x] feat-030: simplified the model settings interface to match the requested minimal reference layout while preserving all Provider/Model behavior.
+- [x] feat-031: removed manual chat/embedding model inputs and added independent chat and embedding provider tabs with separate activation state.
 
 ## Verification Evidence
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| pytest | `python -m pytest -q` | 97 passed | all offline mocks/fakes; 0 failures |
-| frontend build | `npm run build` in `frontend/` | OK | TypeScript check and Vite production build (0 errors) |
-| full init | `powershell -ExecutionPolicy Bypass -File .\init.ps1` | 100% green | pytest + frontend build |
-| residue search | `rg` over tracked source/tests/docs | clean | no legacy provider route, local model port, or local model name remains |
+| strict frontend types | `tsc --noEmit --noUnusedLocals --noUnusedParameters` | pass | 0 diagnostics |
+| focused backend tests | `python -m pytest tests/test_web_api.py -q` | 33 passed | includes embedding/chat isolation |
+| frontend build | `npm run build` in `frontend/` | OK | TypeScript + Vite production build |
+| full init | `./init.ps1` | green | 103 pytest tests + frontend build |
+| browser smoke | local `http://127.0.0.1:8000/` | pass | 1280×720 and 390×844 |
+| browser evidence | `gui-test-screenshots/feat-029/`, `feat-030/`, `feat-031/` | archived screenshots | settings, templates, vector tab, desktop/mobile |
 
 ## Key Decisions
 
-- Public gateway configuration is syntax-checked without DNS; actual requests still validate every DNS result before pinning.
-- Empty embedding URL remains supported and means reuse of the LLM gateway.
-- Invalid configuration endpoints return HTTP 400 with generic messages and never include API keys.
-- `feat-023` is a plan-only entry; citation integrity is not implemented in this session.
+- Chat and embedding now use separate activation state: `active_provider_id/active_chat_model` and `active_embed_provider_id/active_embed_model`.
+- Saving or activating an embedding provider no longer changes the chat provider or `llm_*` runtime fields.
+- Manual chat/embedding model inputs were removed; chat models are selected through “使用” in the model list.
+- The embedding provider API is fixed to OpenAI-compatible `/embeddings`; embedding-only connectivity tests skip the chat gateway.
+- Switching embedding models may require rebuilding the existing vector index; index rebuild is intentionally out of scope.
+- `SettingsModal` remains the state and side-effect owner; no Context, reducer, global store, or large provider hook was introduced.
+- `feat-023` remains a plan-only entry; citation integrity is not implemented.
 
 ## Next Session Startup
 
-1. Run `pwsh -NoProfile -File ./init.ps1` (or `./init.sh` on bash).
-2. Start the web app with `python run_web.py`.
-3. Leave feat-023 as todo unless a separate approved implementation request is provided.
-4. Standard verification command: `python -m pytest -q`.
+1. Run `pwsh -NoProfile -File ./init.ps1` (or `./init.sh` on Bash).
+2. Read `AGENTS.md`, `docs/ARCHITECTURE.md`, `feature_list.json`, `progress.md`, and this file.
+3. If continuing SettingsModal cleanup, extract only `ModelListItem` and `ModelFormDialog` as controlled display components; do not add a state hook yet.
+4. Leave feat-023 as todo unless a separate implementation request is provided.
+5. Standard verification command: `./init.ps1` on Windows/Pwsh, `./init.sh` on Bash.

@@ -29,8 +29,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  health: () => request<{ status: string; version: string }>("/api/health"),
-
   ask: (question: string) =>
     request<AskResponse>("/api/ask", {
       method: "POST",
@@ -89,6 +87,7 @@ export const api = {
     api_format?: ModelApiFormat;
     api_key?: string;
     enabled?: boolean;
+    scope?: "chat" | "embedding";
     active_chat_model?: string;
     active_embed_model?: string;
   }) =>
@@ -127,49 +126,68 @@ export const api = {
       { method: "DELETE" }
     ),
 
-  testProvider: (providerId: string, modelId?: string) =>
+  testProvider: (providerId: string, modelId?: string, modelType: "chat" | "embedding" = "chat") =>
     request<{
       status: string;
       llm_ok: boolean;
       llm_latency_ms: number;
       llm_message: string;
+      embed_ok?: boolean;
+      embed_latency_ms?: number;
+      embed_message?: string;
     }>(`/api/config/providers/${encodeURIComponent(providerId)}/test`, {
       method: "POST",
-      body: JSON.stringify({ model_id: modelId || "" }),
+      body: JSON.stringify({ model_id: modelId || "", model_type: modelType }),
     }),
 
   testConfig: (params: {
-    llm_base_url: string;
+    llm_base_url?: string;
     llm_api_key?: string;
-    llm_model: string;
+    llm_model?: string;
     api_format?: ModelApiFormat;
+    embed_base_url?: string;
+    embed_api_key?: string;
+    embed_model?: string;
   }) =>
     request<{
       status: string;
       llm_ok: boolean;
       llm_latency_ms: number;
       llm_message: string;
+      embed_ok?: boolean;
+      embed_latency_ms?: number;
+      embed_message?: string;
     }>("/api/config/test", {
       method: "POST",
       body: JSON.stringify({
-        llm_base_url: params.llm_base_url,
+        llm_base_url: params.llm_base_url || "",
         llm_api_key: params.llm_api_key || "",
-        llm_model: params.llm_model,
+        llm_model: params.llm_model || "",
         api_format: params.api_format || "chat_completions",
-        embed_base_url: "",
-        embed_api_key: "",
-        embed_model: "",
+        embed_base_url: params.embed_base_url || "",
+        embed_api_key: params.embed_api_key || "",
+        embed_model: params.embed_model || "",
       }),
     }),
 
-  activateProvider: (providerId: string, modelId?: string) =>
+  activateProvider: (
+    providerId: string,
+    modelId?: string,
+    modelType: "chat" | "embedding" = "chat"
+  ) =>
     request<{
       status: string;
       active_provider_id: string;
       active_chat_model: string;
+      active_embed_provider_id: string;
+      active_embed_model: string;
     }>("/api/config/providers/activate", {
       method: "POST",
-      body: JSON.stringify({ provider_id: providerId, model_id: modelId || "" }),
+      body: JSON.stringify({
+        provider_id: providerId,
+        model_id: modelId || "",
+        model_type: modelType,
+      }),
     }),
 
   fetchModels: (

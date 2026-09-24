@@ -6,7 +6,6 @@ import {
   Mail,
   RefreshCw,
   ShieldCheck,
-  Tag,
 } from "lucide-react";
 import { api } from "../api";
 import type { MailItem } from "../types";

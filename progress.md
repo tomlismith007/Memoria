@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-09-24
-**Active Feature:** none — feat-026 complete; feat-023 registered as todo
+**Active Feature:** none — feat-031 chat/embedding provider separation complete; feat-023 remains the only todo feature
 
 ## Status
 
@@ -68,28 +68,36 @@
 - [x] feat-026 DONE: 彻底移除添加供应商弹窗，改为右侧面板直接内联新建；点击「添加供应商」直接在右侧进入空白表单模式，输入供应商名称、Base URL、协议与 API Key，直接调用「获取模型」一键拉取并选取模型，可在未保存前一键「测试当前配置」，点击「保存并生效供应商」自动落盘持久化并设为激活状态，提供「取消」按钮安全回退；全量 102 passed，前端构建 0 错误
 - [x] UI 精细打磨: 提问对话框首屏居中沉浸、发送后平滑落底吸附、纤长胶囊外形 (h-11/12, max-w-4xl)、黑曜石黑 (#09090b) 圆形发送按钮、移除底部说明小字
 - [x] Launcher: `python run_web.py` 一键启动全栈服务并在浏览器中自动打开
-- [x] Harness & Verification: `init.ps1` 同时验证 102 项后端测试与前端 `npm run build`，100% 绿灯
+- [x] Harness & Verification: `init.ps1` 同时验证 101 项后端测试与前端 `npm run build`，100% 绿灯
+- [x] feat-027: `AGENTS.md` 固化 Ponytail 最小实现阶梯、根因修复、复用优先、安全例外、harness 五子系统与证据闭环；`validate-harness` 100/100
+- [x] feat-028: 按代码审查报告完成低风险死代码清理、重复配置校验收敛、邮件类别单一来源和 HTTP 入口收紧；将 14 个配置路由拆到 `web/config_routes.py`，保留运行时激活闭包与 API 契约；`init.ps1` 101 passed + frontend build green
+- [x] feat-029: 将 ProviderTemplatePicker、ProviderSidebar、DeleteConfirmDialog 从 SettingsModal 拆为纯受控组件；主文件 1,932→1,642 行，状态/API/localStorage 仍集中；修复 390px Provider 头部与模型操作行挤压；`init.ps1` 101 passed + frontend build green，浏览器模板/侧栏/删除确认/移动端冒烟通过
+- [x] feat-030: 按用户参考图将模型设置收敛为极简双栏；压缩标题/说明、去除重复徽章与重复入口、合并模型区、简化模板选择器和模型行；保留 Provider/Model 全部状态与 API 流程；`SettingsModal.tsx` 1,642→1,571 行；`init.ps1` 101 passed + frontend build green，1280px/390px 浏览器验收通过
+- [x] feat-031: 删除对话/向量手填输入框；设置页新增对话模型与向量模型页签；后端新增 `active_embed_provider_id`，向量 Provider 保存/激活/删除与对话 Provider 完全隔离；embedding-only 连通性测试支持；全量 103 passed + frontend build green，1280px/390px 浏览器验收通过
 
 ### What's In Progress
 
-- [ ] 无；feat-001..feat-026 已完成，feat-023 仅登记为 todo。
+- [ ] 无；feat-001..feat-031 已完成，feat-023 仅登记为 todo。
 
 ### What's Next
 
-1. feat-023 仅登记引用完整性后续计划，尚未实现
-2. 保持全套测试与 Harness 门禁（`./init.ps1`）100% 绿灯通过
+1. `SettingsModal` 下一刀仅拆 ModelListItem / ModelFormDialog 等纯展示区，不抽状态 hook
+2. `feat-023` 仅登记引用完整性后续计划，尚未实现
+3. 保持全套测试与 Harness 门禁（`./init.ps1`）100% 绿灯通过
 
 ## Blockers / Risks
 
 - [ ] No `bash` on this Windows machine — `./init.sh` cannot run here; use `./init.ps1`. Risk: agent following AGENTS.md blindly runs init.sh and fails. Mitigation: AGENTS.md documents both.
 - [ ] feat-019 残余边界：CORS 不是认证；`data/settings.json` 仍以本地明文保存 Key；邮件候选集合仅适用于单用户单 worker。
 - [ ] feat-018 边界：localStorage 恢复的是前端时间线，不会自动作为模型上下文；未完成请求在刷新后不恢复。
+- [ ] feat-029 残余边界：`SettingsModal.tsx` 仍有 1,762 行并集中 Provider/Model 状态与异步流程；后续仍应拆 `ModelListItem` / `ModelFormDialog` 纯展示区。
+- [ ] feat-031 残余边界：切换向量模型不会自动重建既有向量索引；不同向量模型的维度/语义空间可能不兼容，需要人工重建或后续校验。
 
 ## Decisions Made
 
 - **LangGraph over LangChain LCEL**: system is a state machine (routing, multi-step ingest, human-confirm nodes), not a single chain.
 - **Hand-write core retrieval** (~100 lines: vector search + rerank + generate); LangChain only for integrations.
-- **Feature granularity**: 22 features, one at a time; red lines encoded in AGENTS.md § Red Lines.
+- **Feature granularity**: 31 features, one at a time; red lines encoded in AGENTS.md § Red Lines.
 - **Minimalist Capsule Design**: Canvas `#FAFAF9`, Obsidian Black `#09090b` accents, `rounded-3xl` cards, `rounded-full` pills, zero decorative emoji / heavy drop-shadows.
 
 ## Evidence of Completion
@@ -118,6 +126,11 @@
 - [x] feat-024: `powershell -File ./init.ps1` → 97 passed + frontend build green; custom provider CRUD, model management, dual persistence in settings.json & localStorage, and active model switcher
 - [x] feat-025: `./init.sh` → 102 passed + frontend build green; Chat Completions / Anthropic Messages / OpenAI Responses request matrices, provider protocol persistence, model-list and connectivity auth, legacy defaults, and unknown-format rejection
 - [x] feat-026: `./init.ps1` → 102 passed + frontend build green (0 errors); SettingsModal inline right-panel creation workflow, draft model management, pre-save config test API, zero popup windows
+- [x] feat-027: `AGENTS.md` harness review and update; `validate-harness.mjs` → 100/100; `./init.ps1` → 102 passed + frontend build green
+- [x] feat-028: audit-driven cleanup and config route split; focused Web API tests → 31 passed; full `./init.ps1` → 101 passed + frontend build green; `git diff --check` passed
+- [x] feat-029: SettingsModal first pure-UI split → 1,642 lines; strict TypeScript → 0 diagnostics; `./init.ps1` → 101 passed + frontend build green; browser smoke covered template picker, sidebar, delete confirmation, and 390px layout; evidence in `gui-test-screenshots/feat-029/`
+- [x] feat-030: model settings visual simplification → 1,571 lines; strict TypeScript → 0 diagnostics; `./init.ps1` → 101 passed + frontend build green; browser acceptance at 1280×720 and 390×844 covered empty/template/provider/model views and delete confirmation; evidence in `gui-test-screenshots/feat-030/`
+- [x] feat-031: chat/embedding separation; focused Web API tests → 33 passed; full `./init.ps1` → 103 passed + frontend build green; browser verified manual model inputs removed and vector tab at desktop/mobile; evidence in `gui-test-screenshots/feat-031/`
 - [x] UI Refinements: Centered slender search bar, Obsidian black circular submit button, smooth bottom anchoring, 模型快速选择胶囊、网络耗时/诊断反馈卡片
 
 ## Notes for Next Session

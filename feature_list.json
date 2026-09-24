@@ -207,6 +207,46 @@
       "dependencies": ["feat-024", "feat-025"],
       "status": "completed",
       "evidence": "init.ps1 green: 102 pytest tests passed; frontend npm run build passed (0 errors); SettingsModal inline isCreatingNew state, handleStartCreateProvider, draftModels, pre-save config test API, and eliminated isAddProviderOpen dialog"
+    },
+    {
+      "id": "feat-027",
+      "name": "Agent harness and minimal-change discipline",
+      "description": "将 Ponytail 最小实现阶梯、根因修复、复用优先、安全例外、harness 五子系统、证据闭环和跨会话生命周期固化到 AGENTS.md",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "AGENTS.md updated; validate-harness 100/100; init.ps1 green: 102 pytest tests passed and frontend npm run build passed; stale session-handoff.md refreshed"
+    },
+    {
+      "id": "feat-028",
+      "name": "Audit-driven cleanup and configuration route split",
+      "description": "按 2026-09-24 代码审查报告执行低风险死代码清理、配置协议校验收敛、邮件类别单一来源和 HTTP 入口收紧；将 14 个配置路由拆出 web/app.py，保留动态运行时激活与 API 契约",
+      "dependencies": ["feat-027"],
+      "status": "completed",
+      "evidence": "init.ps1 green: 101 pytest tests passed and frontend npm run build passed; focused Web API tests 31 passed; git diff --check passed; SettingsModal.tsx existing changes untouched"
+    },
+    {
+      "id": "feat-029",
+      "name": "SettingsModal pure-UI split and mobile layout fix",
+      "description": "将 ProviderTemplatePicker、ProviderSidebar、DeleteConfirmDialog 拆为纯受控组件，保留全部状态/API/localStorage 流程在主容器；修复 390px Provider 头部和模型行横向挤压",
+      "dependencies": ["feat-028"],
+      "status": "completed",
+      "evidence": "SettingsModal.tsx 1932→1642 lines; strict TypeScript 0 diagnostics; init.ps1 green: 101 pytest tests + frontend build; browser smoke verified template picker, sidebar, delete confirmation, and 390px layout; evidence in gui-test-screenshots/feat-029/"
+    },
+    {
+      "id": "feat-030",
+      "name": "Minimal model settings interface",
+      "description": "按用户参考图重构模型设置视觉：页面级标题、安静 Provider 侧栏、纵向基础字段、单一模型区、紧凑模板选择器和模型行；保留全部 Provider/Model 状态、API、激活、测试和删除流程",
+      "dependencies": ["feat-029"],
+      "status": "completed",
+      "evidence": "SettingsModal.tsx 1642→1571 lines; strict TypeScript 0 diagnostics; init.ps1 green: 101 pytest tests + frontend build; browser acceptance passed at 1280×720 and 390×844; evidence in gui-test-screenshots/feat-030/"
+    },
+    {
+      "id": "feat-031",
+      "name": "Independent chat and embedding provider pages",
+      "description": "删除对话/向量手填输入框；设置页新增对话模型与向量模型页签；后端以 active_embed_provider_id 独立解析向量供应商，向量 Provider 保存/激活/删除不再劫持对话状态",
+      "dependencies": ["feat-030"],
+      "status": "completed",
+      "evidence": "init.ps1 green: 103 pytest tests + frontend build; focused Web API tests 33 passed; browser verified manual model inputs removed and vector tab at 1280×720/390×844; evidence in gui-test-screenshots/feat-031/"
     }
   ]
 }

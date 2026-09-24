@@ -5,21 +5,16 @@ import {
   Box,
   Check,
   CheckCircle2,
-  ChevronDown,
   Cpu,
   Eye,
   EyeOff,
-  Globe,
-  Key,
   Layers,
-  Link2,
   Loader2,
   MoreVertical,
   Pencil,
   Plus,
   RefreshCw,
   Search,
-  Server,
   Trash2,
   X,
   Zap,
@@ -32,10 +27,18 @@ import type {
   ProvidersConfigResponse,
 } from "../../types";
 import { PillButton } from "./PillButton";
+import { DeleteConfirmDialog } from "../settings/DeleteConfirmDialog";
+import { ProviderSidebar } from "../settings/ProviderSidebar";
+import {
+  ProviderTemplatePicker,
+  type ProviderTemplate,
+} from "../settings/ProviderTemplatePicker";
 
 const PROVIDERS_STORAGE_KEY = "memoria_custom_providers_cache";
 const ACTIVE_PROVIDER_STORAGE_KEY = "memoria_active_provider_cache";
 const ACTIVE_MODEL_STORAGE_KEY = "memoria_active_model_cache";
+const ACTIVE_EMBED_PROVIDER_STORAGE_KEY = "memoria_active_embed_provider_cache";
+const ACTIVE_EMBED_MODEL_STORAGE_KEY = "memoria_active_embed_model_cache";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -61,11 +64,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [activeChatModel, setActiveChatModel] = useState<string>(() => {
     return localStorage.getItem(ACTIVE_MODEL_STORAGE_KEY) || "";
   });
+  const [activeEmbedProviderId, setActiveEmbedProviderId] = useState<string>(() => {
+    return localStorage.getItem(ACTIVE_EMBED_PROVIDER_STORAGE_KEY) || "";
+  });
+  const [activeEmbedModel, setActiveEmbedModel] = useState<string>(() => {
+    return localStorage.getItem(ACTIVE_EMBED_MODEL_STORAGE_KEY) || "";
+  });
 
+  const [settingsTab, setSettingsTab] = useState<"chat" | "embedding">("chat");
   const [selectedProviderId, setSelectedProviderId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Template Picker State (参考 ZCode ProviderTemplatePicker)
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   // Detail panel form state
   const [formName, setFormName] = useState("");
@@ -74,14 +87,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [formApiKey, setFormApiKey] = useState("");
   const [formEnabled, setFormEnabled] = useState(true);
   const [formChatModel, setFormChatModel] = useState("");
-  const [formEmbedModel, setFormEmbedModel] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
 
   // Model Fetching & Quick Selection State
   const [fetchingModels, setFetchingModels] = useState(false);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   const [modelSearchQuery, setModelSearchQuery] = useState("");
-  const [showModelSelectionPanel, setShowModelSelectionPanel] = useState(false);
 
   // Inline Provider Creation State
   const [isCreatingNew, setIsCreatingNew] = useState(false);
@@ -93,6 +104,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [modelFormName, setModelFormName] = useState("");
   const [modelFormTags, setModelFormTags] = useState("");
   const [editingModelOriginalId, setEditingModelOriginalId] = useState<string | null>(null);
+
+  // In-modal sleek Delete Confirmation (替代原生 window.confirm)
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    type: "provider" | "model";
+    id: string;
+    name: string;
+  } | null>(null);
 
   // Overall Connection test state
   const [testingConnection, setTestingConnection] = useState(false);
@@ -117,12 +135,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const syncToLocalStorage = (
     updatedProviders: CustomProvider[],
     updatedActiveId: string,
-    updatedActiveModel: string
+    updatedActiveModel: string,
+    updatedEmbedProviderId: string = activeEmbedProviderId,
+    updatedEmbedModel: string = activeEmbedModel
   ) => {
     try {
       localStorage.setItem(PROVIDERS_STORAGE_KEY, JSON.stringify(updatedProviders));
       localStorage.setItem(ACTIVE_PROVIDER_STORAGE_KEY, updatedActiveId);
       localStorage.setItem(ACTIVE_MODEL_STORAGE_KEY, updatedActiveModel);
+      localStorage.setItem(ACTIVE_EMBED_PROVIDER_STORAGE_KEY, updatedEmbedProviderId);
+      localStorage.setItem(ACTIVE_EMBED_MODEL_STORAGE_KEY, updatedEmbedModel);
     } catch (e) {
       console.warn("Failed to write to localStorage", e);
     }
@@ -130,7 +152,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Populate form when selectedProvider changes
   useEffect(() => {
-    if (selectedProvider && !isCreatingNew) {
+    if (selectedProvider && !isCreatingNew && !showTemplatePicker) {
       setFormName(selectedProvider.name);
       setFormBaseUrl(selectedProvider.base_url);
       setFormApiFormat(selectedProvider.api_format || "chat_completions");
@@ -138,15 +160,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setFormEnabled(selectedProvider.enabled);
       setShowApiKey(false);
 
-      // Chat model: if active chat model belongs to this provider, use it; else first model
-      const activeMatch = selectedProvider.models.find((m) => m.id === activeChatModel);
-      setFormChatModel(activeMatch ? activeMatch.id : selectedProvider.models[0]?.id || "");
-      setFormEmbedModel("");
+      if (settingsTab === "chat") {
+        const chatModels = selectedProvider.models.filter((m) => m.model_type === "chat");
+        const activeMatch = chatModels.find((m) => m.id === activeChatModel);
+        setFormChatModel(activeMatch ? activeMatch.id : chatModels[0]?.id || "");
+      } else {
+        const embeddingModels = selectedProvider.models.filter((m) => m.model_type === "embedding");
+        const activeMatch = embeddingModels.find((m) => m.id === activeEmbedModel);
+        setFormChatModel(activeMatch ? activeMatch.id : embeddingModels[0]?.id || "");
+      }
       setFetchedModels([]);
-      setShowModelSelectionPanel(false);
       setConnectionDiagnostics(null);
     }
-  }, [selectedProviderId, isCreatingNew]);
+  }, [selectedProviderId, isCreatingNew, showTemplatePicker, settingsTab]);
 
   // Load from backend when modal opens
   const refreshProviders = async () => {
@@ -160,10 +186,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           setProviders(data.providers);
           setActiveProviderId(data.active_provider_id);
           setActiveChatModel(data.active_chat_model);
+          setActiveEmbedProviderId(data.active_embed_provider_id);
+          setActiveEmbedModel(data.active_embed_model);
           syncToLocalStorage(
             data.providers,
             data.active_provider_id,
-            data.active_chat_model
+            data.active_chat_model,
+            data.active_embed_provider_id,
+            data.active_embed_model
           );
           if (!selectedProviderId || !data.providers.some((p) => p.id === selectedProviderId)) {
             const active = data.providers.find((p) => p.id === data.active_provider_id);
@@ -192,6 +222,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               setProviders(refreshed.providers);
               setActiveProviderId(refreshed.active_provider_id);
               setActiveChatModel(refreshed.active_chat_model);
+              setActiveEmbedProviderId(refreshed.active_embed_provider_id);
+              setActiveEmbedModel(refreshed.active_embed_model);
               setSelectedProviderId(refreshed.providers[0]?.id || "");
             }
           }
@@ -217,27 +249,62 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }, 3500);
   };
 
-  // Start inline new provider creation
-  const handleStartCreateProvider = () => {
-    setIsCreatingNew(true);
-    setSelectedProviderId("");
-    setFormName("");
-    setFormBaseUrl("https://");
-    setFormApiKey("");
-    setFormApiFormat("chat_completions");
-    setFormChatModel("");
-    setFormEmbedModel("");
-    setFormEnabled(true);
-    setFetchedModels([]);
-    setShowModelSelectionPanel(false);
-    setConnectionDiagnostics(null);
-    setDraftModels([]);
-    setShowApiKey(false);
+  // Open Template Picker
+  const handleOpenTemplatePicker = () => {
+    setShowTemplatePicker(true);
+    setIsCreatingNew(false);
+    setShowMoreMenu(false);
   };
 
-  // Cancel inline new provider creation
+  const handleSwitchSettingsTab = (tab: "chat" | "embedding") => {
+    setSettingsTab(tab);
+    setIsCreatingNew(false);
+    setShowTemplatePicker(false);
+    setShowMoreMenu(false);
+    setFetchedModels([]);
+    setConnectionDiagnostics(null);
+    const activeId =
+      tab === "embedding"
+        ? activeEmbedProviderId || providers[0]?.id || ""
+        : activeProviderId || providers[0]?.id || "";
+    setSelectedProviderId(activeId);
+  };
+
+  // Select a template from picker
+  const handleSelectTemplate = (template: ProviderTemplate | null) => {
+    setShowTemplatePicker(false);
+    setIsCreatingNew(true);
+    setSelectedProviderId("");
+    setConnectionDiagnostics(null);
+    setShowApiKey(false);
+
+    if (template) {
+      setFormName(template.name);
+      setFormBaseUrl(template.baseUrl);
+      setFormApiFormat(template.apiFormat);
+      setFormApiKey("");
+      setFormEnabled(true);
+      setFormChatModel(template.defaultChatModel);
+      setDraftModels(template.suggestedModels);
+      setFetchedModels([]);
+      showToast("success", `已应用 ${template.name} 预设模板，请输入 API Key`);
+    } else {
+      // Pure Custom Provider
+      setFormName("");
+      setFormBaseUrl("https://");
+      setFormApiFormat("chat_completions");
+      setFormApiKey("");
+      setFormEnabled(true);
+      setFormChatModel("");
+      setDraftModels([]);
+      setFetchedModels([]);
+    }
+  };
+
+  // Cancel creation
   const handleCancelCreate = () => {
     setIsCreatingNew(false);
+    setShowTemplatePicker(false);
     if (providers.length > 0) {
       setSelectedProviderId(providers[0].id);
     } else {
@@ -245,7 +312,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  // 1. Fetch Models (获取模型)
+  // Switch Provider in sidebar with dirty check
+  const handleSelectProvider = (id: string) => {
+    if (isCreatingNew && (formName.trim() || formApiKey.trim() || (formBaseUrl && formBaseUrl !== "https://"))) {
+      if (!window.confirm("当前新建的供应商草稿尚未保存，确定放弃并切换吗？")) {
+        return;
+      }
+    }
+    setIsCreatingNew(false);
+    setShowTemplatePicker(false);
+    setSelectedProviderId(id);
+  };
+
+  // 1. Fetch Remote Models (获取模型)
   const handleFetchModels = async () => {
     const url = (formBaseUrl || selectedProvider?.base_url || "").trim();
     if (!url) {
@@ -262,11 +341,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const res = await api.fetchModels(
         url,
         formApiKey.trim(),
-        formApiFormat
+        settingsTab === "embedding" ? "chat_completions" : formApiFormat
       );
       if (res.models && res.models.length > 0) {
         setFetchedModels(res.models);
-        setShowModelSelectionPanel(true);
         if (!formChatModel.trim()) {
           setFormChatModel(res.models[0]);
         }
@@ -276,11 +354,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             name: mId,
             tags: [mId.includes("vision") || mId.includes("vl") ? "视觉" : "Chat"],
             enabled: true,
-            model_type: "chat",
+            model_type: settingsTab,
           }));
           setDraftModels(autoDrafts);
         }
-        showToast("success", `成功获取 ${res.models.length} 个模型`);
+        showToast("success", `成功拉取 ${res.models.length} 个可用模型`);
       } else {
         showToast("error", "远端返回的模型列表为空");
       }
@@ -293,11 +371,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // 2. Select Model (选择模型)
   const handleSelectModel = async (modelId: string, modelType: "chat" | "embedding" = "chat") => {
-    if (modelType === "chat") {
-      setFormChatModel(modelId);
-    } else {
-      setFormEmbedModel(modelId);
-    }
+    setFormChatModel(modelId);
 
     if (isCreatingNew) {
       if (!draftModels.some((m) => m.id === modelId)) {
@@ -306,19 +380,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {
             id: modelId,
             name: modelId,
-            tags: [modelId.includes("vision") || modelId.includes("vl") ? "视觉" : "Chat"],
+            tags: [
+              modelId.includes("vision") || modelId.includes("vl")
+                ? "视觉"
+                : modelType === "embedding"
+                ? "Embedding"
+                : "Chat",
+            ],
             enabled: true,
             model_type: modelType,
           },
         ]);
       }
-      showToast("success", `已选择对话模型: ${modelId}`);
+      showToast("success", `已选择${modelType === "chat" ? "对话" : "向量"}模型: ${modelId}`);
       return;
     }
 
     if (!selectedProvider) return;
 
-    // If model is not yet in provider's model list, automatically add it!
+    // Auto-add model if not yet in provider list
     const alreadyExists = selectedProvider.models.some((m) => m.id === modelId);
     if (!alreadyExists) {
       try {
@@ -349,11 +429,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     // Activate this model
     try {
-      const actRes = await api.activateProvider(selectedProvider.id, modelId);
-      setActiveProviderId(actRes.active_provider_id);
-      setActiveChatModel(actRes.active_chat_model);
-      syncToLocalStorage(providers, actRes.active_provider_id, actRes.active_chat_model);
-      showToast("success", `已选择并激活模型: ${modelId}`);
+      const actRes = await api.activateProvider(selectedProvider.id, modelId, modelType);
+      if (modelType === "chat") {
+        setActiveProviderId(actRes.active_provider_id);
+        setActiveChatModel(actRes.active_chat_model);
+        setProviders((prev) => {
+          syncToLocalStorage(
+            prev,
+            actRes.active_provider_id,
+            actRes.active_chat_model,
+            actRes.active_embed_provider_id,
+            actRes.active_embed_model
+          );
+          return prev;
+        });
+      } else {
+        setActiveEmbedProviderId(actRes.active_embed_provider_id);
+        setActiveEmbedModel(actRes.active_embed_model);
+        setProviders((prev) => {
+          syncToLocalStorage(
+            prev,
+            activeProviderId,
+            activeChatModel,
+            actRes.active_embed_provider_id,
+            actRes.active_embed_model
+          );
+          return prev;
+        });
+      }
+      showToast(
+        "success",
+        `已激活${modelType === "chat" ? "对话" : "向量"}模型: ${modelId}`
+      );
     } catch (err: any) {
       showToast("error", err.message || "切换激活模型失败");
     }
@@ -368,7 +475,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         name: mId,
         tags: [mId.includes("vision") || mId.includes("vl") ? "视觉" : "Chat"],
         enabled: true,
-        model_type: "chat",
+        model_type: settingsTab,
       }));
       setDraftModels(added);
       showToast("success", `已批量导入 ${added.length} 个模型`);
@@ -384,6 +491,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             name: mId,
             tags: [mId.includes("vision") ? "视觉" : "Chat"],
             enabled: true,
+            model_type: settingsTab,
           });
         }
       }
@@ -414,11 +522,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         id: selectedProvider.id,
         name: formName.trim(),
         base_url: formBaseUrl.trim(),
-        api_format: formApiFormat,
+        api_format: settingsTab === "embedding" ? "chat_completions" : formApiFormat,
         api_key: formApiKey.trim(),
         enabled: formEnabled,
-        active_chat_model: formChatModel.trim(),
-        active_embed_model: formEmbedModel.trim(),
+        scope: settingsTab,
+        active_chat_model: settingsTab === "chat" ? formChatModel.trim() : undefined,
       });
 
       const updated = providers.map((p) =>
@@ -427,7 +535,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               ...p,
               name: formName.trim(),
               base_url: formBaseUrl.trim(),
-              api_format: formApiFormat,
+              api_format: settingsTab === "embedding" ? "chat_completions" : formApiFormat,
               enabled: formEnabled,
               api_key_set: formApiKey.trim() ? true : p.api_key_set,
               masked_api_key: res.provider.masked_api_key || p.masked_api_key,
@@ -460,6 +568,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return;
     }
 
+    const isEmbedding = settingsTab === "embedding";
     const chosenModel =
       formChatModel.trim() ||
       (draftModels.length > 0 ? draftModels[0].id : "") ||
@@ -470,27 +579,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const res = await api.saveProvider({
         name: trimmedName,
         base_url: trimmedUrl,
-        api_format: formApiFormat,
+        api_format: isEmbedding ? "chat_completions" : formApiFormat,
         api_key: formApiKey.trim(),
         enabled: formEnabled,
-        active_chat_model: chosenModel,
-        active_embed_model: formEmbedModel.trim(),
+        scope: settingsTab,
+        active_chat_model: isEmbedding ? undefined : chosenModel,
       });
 
       const newP = res.provider;
 
-      // Automatically add the selected chat model
+      // Automatically add chosen model
       if (chosenModel && !draftModels.some((m) => m.id === chosenModel)) {
         await api.saveProviderModel(newP.id, {
           id: chosenModel,
           name: chosenModel,
-          tags: [chosenModel.includes("vision") || chosenModel.includes("vl") ? "视觉" : "Chat"],
+          tags: [
+            chosenModel.includes("vision") || chosenModel.includes("vl")
+              ? "视觉"
+              : isEmbedding
+              ? "Embedding"
+              : "Chat",
+          ],
           enabled: true,
-          model_type: "chat",
+          model_type: settingsTab,
         });
       }
 
-      // Also import all draft models
+      // Import all draft models
       for (const m of draftModels) {
         try {
           await api.saveProviderModel(newP.id, {
@@ -498,22 +613,47 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             name: m.name,
             tags: m.tags,
             enabled: m.enabled,
-            model_type: m.model_type || "chat",
+            model_type: m.model_type || settingsTab,
           });
         } catch {}
+      }
+
+      if (isEmbedding && chosenModel) {
+        await api.activateProvider(newP.id, chosenModel, "embedding");
       }
 
       const refreshed = await api.getProviders();
       setProviders(refreshed.providers);
       setIsCreatingNew(false);
       setSelectedProviderId(newP.id);
-      setActiveProviderId(newP.id);
-      const activeModelToSet =
-        chosenModel ||
-        refreshed.active_chat_model ||
-        (refreshed.providers.find((p) => p.id === newP.id)?.models[0]?.id || "");
-      setActiveChatModel(activeModelToSet);
-      syncToLocalStorage(refreshed.providers, newP.id, activeModelToSet);
+
+      if (isEmbedding) {
+        setActiveEmbedProviderId(refreshed.active_embed_provider_id || newP.id);
+        setActiveEmbedModel(
+          chosenModel || refreshed.active_embed_model
+        );
+        syncToLocalStorage(
+          refreshed.providers,
+          activeProviderId,
+          activeChatModel,
+          refreshed.active_embed_provider_id || newP.id,
+          chosenModel || refreshed.active_embed_model
+        );
+      } else {
+        setActiveProviderId(newP.id);
+        const activeModelToSet =
+          chosenModel ||
+          refreshed.active_chat_model ||
+          (refreshed.providers.find((p) => p.id === newP.id)?.models[0]?.id || "");
+        setActiveChatModel(activeModelToSet);
+        syncToLocalStorage(
+          refreshed.providers,
+          newP.id,
+          activeModelToSet,
+          refreshed.active_embed_provider_id,
+          refreshed.active_embed_model
+        );
+      }
 
       showToast("success", `供应商 ${newP.name} 创建成功并已生效`);
     } catch (e: any) {
@@ -523,33 +663,93 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  // Delete provider
-  const handleDeleteProvider = async (providerId: string) => {
-    const p = providers.find((item) => item.id === providerId);
-    if (!p) return;
-    if (!window.confirm(`确定删除供应商“${p.name}”及其全部模型配置吗？`)) return;
+  // Perform Delete confirmed
+  const handleExecuteDelete = async () => {
+    if (!deleteConfirm) return;
+    const target = deleteConfirm;
+    setDeleteConfirm(null);
 
-    try {
-      const res = await api.deleteProvider(providerId);
-      const remaining = res.providers;
-      setProviders(remaining);
-      let nextActive = activeProviderId === providerId ? "" : activeProviderId;
-      let nextModel = activeProviderId === providerId ? "" : activeChatModel;
-      if (activeProviderId === providerId && remaining.length > 0) {
-        nextActive = remaining[0].id;
-        nextModel = remaining[0].models[0]?.id || "";
+    if (target.type === "provider") {
+      try {
+        const res = await api.deleteProvider(target.id);
+        const remaining = res.providers;
+        setProviders(remaining);
+        let nextActive = activeProviderId === target.id ? "" : activeProviderId;
+        let nextModel = activeProviderId === target.id ? "" : activeChatModel;
+        if (activeProviderId === target.id && remaining.length > 0) {
+          nextActive = remaining[0].id;
+          nextModel = remaining[0].models[0]?.id || "";
+        }
+        setActiveProviderId(nextActive);
+        setActiveChatModel(nextModel);
+        let nextEmbedProviderId = activeEmbedProviderId;
+        let nextEmbedModel = activeEmbedModel;
+        if (activeEmbedProviderId === target.id) {
+          nextEmbedProviderId = "";
+          nextEmbedModel = "";
+          setActiveEmbedProviderId(nextEmbedProviderId);
+          setActiveEmbedModel(nextEmbedModel);
+        }
+        setSelectedProviderId(remaining[0]?.id || "");
+        syncToLocalStorage(remaining, nextActive, nextModel, nextEmbedProviderId, nextEmbedModel);
+        showToast("success", `已删除供应商 ${target.name}`);
+      } catch (e: any) {
+        showToast("error", e.message || "删除供应商失败");
       }
-      setActiveProviderId(nextActive);
-      setActiveChatModel(nextModel);
-      setSelectedProviderId(remaining[0]?.id || "");
-      syncToLocalStorage(remaining, nextActive, nextModel);
-      showToast("success", `已删除供应商 ${p.name}`);
-    } catch (e: any) {
-      showToast("error", e.message || "删除供应商失败");
+    } else {
+      // Model delete
+      if (isCreatingNew) {
+        setDraftModels((prev) => prev.filter((m) => m.id !== target.id));
+        if (formChatModel === target.id) {
+          setFormChatModel(draftModels.find((m) => m.id !== target.id)?.id || "");
+        }
+        showToast("success", `已移除模型 ${target.id}`);
+        return;
+      }
+
+      if (!selectedProvider) return;
+      try {
+        const res = await api.deleteProviderModel(selectedProvider.id, target.id);
+        const updatedProviders = providers.map((p) =>
+          p.id === selectedProvider.id ? res.provider : p
+        );
+        setProviders(updatedProviders);
+        let nextActiveModel = activeChatModel;
+        let nextEmbedProviderId = activeEmbedProviderId;
+        let nextEmbedModel = activeEmbedModel;
+        if (settingsTab === "chat" && activeChatModel === target.id) {
+          nextActiveModel =
+            res.provider.models.find((m) => m.enabled && m.model_type === "chat")?.id || "";
+          setActiveChatModel(nextActiveModel);
+          setFormChatModel(nextActiveModel);
+        }
+        if (
+          settingsTab === "embedding" &&
+          activeEmbedProviderId === selectedProvider.id &&
+          activeEmbedModel === target.id
+        ) {
+          nextEmbedProviderId = selectedProvider.id;
+          nextEmbedModel =
+            res.provider.models.find((m) => m.enabled && m.model_type === "embedding")?.id || "";
+          if (!nextEmbedModel) nextEmbedProviderId = "";
+          setActiveEmbedProviderId(nextEmbedProviderId);
+          setActiveEmbedModel(nextEmbedModel);
+        }
+        syncToLocalStorage(
+          updatedProviders,
+          activeProviderId,
+          nextActiveModel,
+          nextEmbedProviderId,
+          nextEmbedModel
+        );
+        showToast("success", `已删除模型 ${target.id}`);
+      } catch (e: any) {
+        showToast("error", e.message || "删除模型失败");
+      }
     }
   };
 
-  // Overall Connection test
+  // Overall Connection test (实时读取输入的 formApiKey，避免测旧密钥)
   const handleTestConnection = async () => {
     const url = (formBaseUrl || selectedProvider?.base_url || "").trim();
     if (!url || !url.startsWith("https://")) {
@@ -560,9 +760,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTestingConnection(true);
     setConnectionDiagnostics(null);
     try {
-      let res: { llm_ok: boolean; llm_latency_ms: number; llm_message: string };
-      if (selectedProvider && !isCreatingNew) {
-        res = await api.testProvider(selectedProvider.id, formChatModel || undefined);
+      let res: {
+        llm_ok: boolean;
+        llm_latency_ms: number;
+        llm_message: string;
+        embed_ok?: boolean;
+        embed_latency_ms?: number;
+        embed_message?: string;
+      };
+      // 若用户输入了新 Key，或者处于新建中，优先使用包含实时 Key 的 testConfig 测试
+      if (formApiKey.trim() || isCreatingNew) {
+        if (settingsTab === "embedding") {
+          res = await api.testConfig({
+            embed_base_url: url,
+            embed_api_key: formApiKey.trim(),
+            embed_model:
+              formChatModel.trim() ||
+              draftModels[0]?.id ||
+              selectedProvider?.models[0]?.id ||
+              "",
+          });
+        } else {
+          res = await api.testConfig({
+            llm_base_url: url,
+            llm_api_key: formApiKey.trim(),
+            llm_model: formChatModel.trim() || (draftModels[0]?.id || selectedProvider?.models[0]?.id || "gpt-4o-mini"),
+            api_format: formApiFormat,
+          });
+        }
+      } else if (selectedProvider) {
+        res = await api.testProvider(selectedProvider.id, formChatModel || undefined, settingsTab);
+      } else if (settingsTab === "embedding") {
+        res = await api.testConfig({
+          embed_base_url: url,
+          embed_api_key: formApiKey.trim(),
+          embed_model: formChatModel.trim() || "test",
+        });
       } else {
         res = await api.testConfig({
           llm_base_url: url,
@@ -571,15 +804,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           api_format: formApiFormat,
         });
       }
+      const isEmbeddingTest = settingsTab === "embedding";
+      const ok = isEmbeddingTest ? res.embed_ok === true : res.llm_ok;
+      const latency = isEmbeddingTest ? res.embed_latency_ms || 0 : res.llm_latency_ms;
+      const message = isEmbeddingTest ? res.embed_message || "" : res.llm_message;
       setConnectionDiagnostics({
-        ok: res.llm_ok,
-        latency_ms: res.llm_latency_ms,
-        message: res.llm_message,
+        ok,
+        latency_ms: latency,
+        message,
       });
-      if (res.llm_ok) {
-        showToast("success", `连通性测试通过 (${res.llm_latency_ms}ms)`);
+      if (ok) {
+        showToast("success", `连通性测试通过 (${latency}ms)`);
       } else {
-        showToast("error", `连接失败: ${res.llm_message}`);
+        showToast("error", `连接失败: ${message}`);
       }
     } catch (e: any) {
       setConnectionDiagnostics({
@@ -593,13 +830,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  // Test single model connectivity
+  // Test single model connectivity (同样优先使用实时 Key)
   const handleTestModel = async (modelId: string) => {
     setTestingModelId(modelId);
     try {
-      let res: { llm_ok: boolean; llm_latency_ms: number; llm_message: string };
-      if (selectedProvider && !isCreatingNew) {
-        res = await api.testProvider(selectedProvider.id, modelId);
+      let res: {
+        llm_ok: boolean;
+        llm_latency_ms: number;
+        llm_message: string;
+        embed_ok?: boolean;
+        embed_latency_ms?: number;
+        embed_message?: string;
+      };
+      if (formApiKey.trim() || isCreatingNew) {
+        if (settingsTab === "embedding") {
+          res = await api.testConfig({
+            embed_base_url: formBaseUrl.trim() || selectedProvider?.base_url || "",
+            embed_api_key: formApiKey.trim(),
+            embed_model: modelId,
+          });
+        } else {
+          res = await api.testConfig({
+            llm_base_url: formBaseUrl.trim() || selectedProvider?.base_url || "",
+            llm_api_key: formApiKey.trim(),
+            llm_model: modelId,
+            api_format: formApiFormat,
+          });
+        }
+      } else if (selectedProvider) {
+        res = await api.testProvider(selectedProvider.id, modelId, settingsTab);
+      } else if (settingsTab === "embedding") {
+        res = await api.testConfig({
+          embed_base_url: formBaseUrl.trim(),
+          embed_api_key: formApiKey.trim(),
+          embed_model: modelId,
+        });
       } else {
         res = await api.testConfig({
           llm_base_url: formBaseUrl.trim(),
@@ -608,18 +873,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           api_format: formApiFormat,
         });
       }
+      const ok = settingsTab === "embedding" ? res.embed_ok === true : res.llm_ok;
+      const latency = settingsTab === "embedding" ? res.embed_latency_ms || 0 : res.llm_latency_ms;
+      const message = settingsTab === "embedding" ? res.embed_message || "" : res.llm_message;
       setModelTestResults((prev) => ({
         ...prev,
         [modelId]: {
-          ok: res.llm_ok,
-          latency_ms: res.llm_latency_ms,
-          message: res.llm_message,
+          ok,
+          latency_ms: latency,
+          message,
         },
       }));
-      if (res.llm_ok) {
-        showToast("success", `${modelId} 连接成功: ${res.llm_latency_ms}ms`);
+      if (ok) {
+        showToast("success", `${modelId} 连接成功: ${latency}ms`);
       } else {
-        showToast("error", `${modelId} 连接失败: ${res.llm_message}`);
+        showToast("error", `${modelId} 连接失败: ${message}`);
       }
     } catch (e: any) {
       setModelTestResults((prev) => ({
@@ -653,9 +921,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const newModel: CustomModel = {
         id: modelId,
         name: modelFormName.trim() || modelId,
-        tags: tags.length > 0 ? tags : ["Chat"],
+        tags: tags.length > 0 ? tags : settingsTab === "embedding" ? ["Embedding"] : ["Chat"],
         enabled: true,
-        model_type: "chat",
+        model_type: settingsTab,
       };
       setDraftModels((prev) => [
         ...prev.filter((m) => m.id !== (editingModelOriginalId || modelId)),
@@ -681,17 +949,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         name: modelFormName.trim() || modelId,
         tags: tags,
         enabled: true,
-        model_type: "chat",
+        model_type: settingsTab,
       });
 
       const updatedProviders = providers.map((p) =>
         p.id === selectedProvider.id ? res.provider : p
       );
       setProviders(updatedProviders);
-      syncToLocalStorage(updatedProviders, activeProviderId, activeChatModel || modelId);
-      if (selectedProvider.id === activeProviderId && !activeChatModel) {
-        setActiveChatModel(modelId);
-        setFormChatModel(modelId);
+      if (settingsTab === "chat") {
+        syncToLocalStorage(updatedProviders, activeProviderId, activeChatModel || modelId);
+        if (selectedProvider.id === activeProviderId && !activeChatModel) {
+          setActiveChatModel(modelId);
+          setFormChatModel(modelId);
+        }
+      } else {
+        syncToLocalStorage(
+          updatedProviders,
+          activeProviderId,
+          activeChatModel,
+          activeEmbedProviderId,
+          activeEmbedModel || modelId
+        );
+        if (!activeEmbedModel) {
+          setActiveEmbedModel(modelId);
+          setFormChatModel(modelId);
+        }
       }
       setIsAddModelOpen(false);
       setModelFormId("");
@@ -704,212 +986,129 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  // Delete model
-  const handleDeleteModel = async (modelId: string) => {
-    if (isCreatingNew) {
-      setDraftModels((prev) => prev.filter((m) => m.id !== modelId));
-      if (formChatModel === modelId) {
-        setFormChatModel(draftModels.find((m) => m.id !== modelId)?.id || "");
-      }
-      showToast("success", `已移除模型 ${modelId}`);
-      return;
-    }
-
-    if (!selectedProvider) return;
-    if (!window.confirm(`确认删除模型“${modelId}”？`)) return;
-
-    try {
-      const res = await api.deleteProviderModel(selectedProvider.id, modelId);
-      const updatedProviders = providers.map((p) =>
-        p.id === selectedProvider.id ? res.provider : p
-      );
-      setProviders(updatedProviders);
-      let nextActiveModel = activeChatModel;
-      if (activeChatModel === modelId) {
-        nextActiveModel = res.provider.models[0]?.id || "";
-        setActiveChatModel(nextActiveModel);
-        setFormChatModel(nextActiveModel);
-      }
-      syncToLocalStorage(updatedProviders, activeProviderId, nextActiveModel);
-      showToast("success", `已删除模型 ${modelId}`);
-    } catch (e: any) {
-      showToast("error", e.message || "删除模型失败");
-    }
-  };
-
   if (!isOpen) return null;
 
-  const currentModelList = isCreatingNew
+  const allProviderModels = isCreatingNew
     ? draftModels
     : selectedProvider
     ? selectedProvider.models
     : [];
 
-  // Filtered fetched models list
+  const currentModelList = allProviderModels.filter(
+    (m) => m.model_type === settingsTab
+  );
+
   const filteredFetchedModels = fetchedModels.filter((m) =>
     m.toLowerCase().includes(modelSearchQuery.toLowerCase().trim())
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-zinc-900/40 backdrop-blur-xs animate-fade-in">
       <div
-        className="relative w-full max-w-5xl h-[700px] max-h-[94vh] flex flex-col bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden"
+        className="relative w-full max-w-5xl h-[720px] max-h-[92vh] flex flex-col bg-white border border-zinc-200 rounded-2xl shadow-[0_24px_80px_rgba(24,24,27,0.16)] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Top Header Bar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm z-10">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+        <div className="px-5 sm:px-7 py-5 border-b border-zinc-200/80 bg-white z-10">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-semibold text-zinc-950 tracking-[-0.02em]">
                 模型设置
               </h2>
+              <p className="hidden sm:block text-xs sm:text-sm text-zinc-500 mt-1.5">
+                管理模型供应商，配置后可在聊天时选择使用。
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
               {feedback && (
                 <span
-                  className={`text-xs px-2.5 py-0.5 rounded-full flex items-center gap-1 animate-in fade-in ${
-                    feedback.type === "success"
-                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
-                      : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400 border border-red-200 dark:border-red-800"
+                  className={`hidden sm:inline text-xs ${
+                    feedback.type === "success" ? "text-emerald-600" : "text-rose-600"
                   }`}
                 >
-                  {feedback.type === "success" ? (
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                  ) : (
-                    <AlertCircle className="w-3.5 h-3.5" />
-                  )}
                   {feedback.text}
                 </span>
               )}
+              <button
+                type="button"
+                onClick={refreshProviders}
+                title="重新加载配置"
+                className="p-2 rounded-full text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              </button>
+              <PillButton
+                variant="primary"
+                size="sm"
+                onClick={handleOpenTemplatePicker}
+                icon={<Plus className="w-3.5 h-3.5" />}
+              >
+                添加供应商
+              </PillButton>
+              <button
+                type="button"
+                onClick={onClose}
+                title="关闭"
+                className="p-2 rounded-full text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              管理自定义模型供应商，获取与选择模型，配置后可在聊天时无缝使用。
-            </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={refreshProviders}
-              title="重新加载配置"
-              className="p-1.5 text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            </button>
-            <button
-              onClick={handleStartCreateProvider}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 rounded-lg shadow-sm transition-all cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              添加供应商
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+          <div className="mt-4 inline-flex items-center gap-1 rounded-full bg-zinc-100 p-1">
+            {(["chat", "embedding"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => handleSwitchSettingsTab(tab)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                  settingsTab === tab
+                    ? "bg-white text-zinc-900 shadow-sm"
+                    : "text-zinc-500 hover:text-zinc-800"
+                }`}
+              >
+                {tab === "chat" ? "对话模型" : "向量模型"}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Two-Column Body */}
-        <div className="flex-1 flex min-h-0 divide-x divide-zinc-200 dark:divide-zinc-800 overflow-hidden">
-          {/* Left Column: Custom Providers List Sidebar (~240px) */}
-          <div className="w-60 shrink-0 flex flex-col bg-zinc-50/70 dark:bg-zinc-900/50 p-3">
-            <div className="px-2 py-1 text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">
-              自定义供应商
-            </div>
+        {/* Two-Column Body: Responsive (w-14 on mobile, md:w-56 on desktop) */}
+        <div className="flex-1 flex min-h-0 divide-x divide-zinc-200/80 dark:divide-zinc-800 overflow-hidden">
+          <ProviderSidebar
+            providers={providers}
+            loading={loading}
+            isCreatingNew={isCreatingNew}
+            showTemplatePicker={showTemplatePicker}
+            selectedProviderId={selectedProviderId}
+            activeProviderId={activeProviderId}
+            formName={formName}
+            onSelectProvider={handleSelectProvider}
+            onOpenTemplatePicker={handleOpenTemplatePicker}
+          />
 
-            {loading && providers.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 gap-2">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span className="text-xs">加载供应商...</span>
-              </div>
-            ) : providers.length === 0 && !isCreatingNew ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-4 text-center text-zinc-400 gap-2">
-                <Box className="w-8 h-8 text-zinc-300 dark:text-zinc-700" />
-                <p className="text-xs">暂无自定义供应商</p>
-                <button
-                  onClick={handleStartCreateProvider}
-                  className="mt-2 text-xs text-zinc-800 dark:text-zinc-200 underline font-medium cursor-pointer"
-                >
-                  立即添加
-                </button>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
-                {providers.map((p) => {
-                  const isSelected = !isCreatingNew && p.id === selectedProviderId;
-                  const isActive = p.id === activeProviderId;
-                  const isConfigured = Boolean(p.base_url) && p.enabled;
-
-                  return (
-                    <div
-                      key={p.id}
-                      onClick={() => {
-                        setIsCreatingNew(false);
-                        setSelectedProviderId(p.id);
-                      }}
-                      className={`group relative flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-all ${
-                        isSelected
-                          ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium shadow-sm border border-zinc-200 dark:border-zinc-700"
-                          : "hover:bg-zinc-100 dark:hover:bg-zinc-800/60 text-zinc-600 dark:text-zinc-400"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Box
-                          className={`w-4 h-4 shrink-0 transition-colors ${
-                            isSelected
-                              ? "text-zinc-900 dark:text-zinc-100"
-                              : "text-zinc-400 dark:text-zinc-600"
-                          }`}
-                        />
-                        <span className="text-sm truncate">{p.name}</span>
-                        {isActive && (
-                          <span className="shrink-0 text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-normal">
-                            当前
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span
-                          title={isConfigured ? "已启用" : "未就绪/已禁用"}
-                          className={`w-2 h-2 rounded-full transition-colors ${
-                            isConfigured
-                              ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
-                              : "bg-zinc-300 dark:bg-zinc-600"
-                          }`}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {/* Draft item when creating new provider */}
-                {isCreatingNew && (
-                  <div className="group relative flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-all bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium shadow-sm border border-dashed border-zinc-400 dark:border-zinc-500">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <Plus className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                      <span className="text-sm truncate font-medium">
-                        {formName.trim() || "新建供应商..."}
-                      </span>
-                    </div>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                      新建中
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Right Column: Provider Details & Model Settings */}
+          {/* Right Column: Template Picker OR Provider Details Form */}
           <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-900 overflow-y-auto">
-            {(selectedProvider || isCreatingNew) ? (
-              <div className="p-6 space-y-6">
+            {/* VIEW A: Provider Template Picker (参考 ZCode ProviderTemplatePicker) */}
+            {showTemplatePicker ? (
+              <ProviderTemplatePicker
+                onBack={() => {
+                  setShowTemplatePicker(false);
+                  if (providers.length > 0 && !selectedProviderId) {
+                    setSelectedProviderId(providers[0].id);
+                  }
+                }}
+                onSelect={handleSelectTemplate}
+              />
+            ) : selectedProvider || isCreatingNew ? (
+              /* VIEW B: Provider Detail & Model Management Form */
+              <div className="p-5 sm:p-8 space-y-7 animate-fade-in">
                 {/* Provider Header Toolbar */}
-                <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800">
-                  <div className="flex items-center gap-3 flex-1 min-w-0 mr-4">
-                    <div className="w-10 h-10 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-800 dark:text-zinc-200 shrink-0">
-                      <Cpu className="w-5 h-5" />
+                <div className="flex flex-col items-stretch gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3 min-w-0 sm:flex-1 sm:mr-4">
+                    <div className="w-9 h-9 rounded-lg border border-zinc-200 bg-white flex items-center justify-center text-zinc-700 shrink-0 font-semibold text-xs">
+                      {formName.trim().slice(0, 2).toUpperCase() || <Cpu className="w-5 h-5" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       {isCreatingNew ? (
@@ -918,91 +1117,92 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             type="text"
                             value={formName}
                             onChange={(e) => setFormName(e.target.value)}
-                            placeholder="输入供应商名称 (如: 商汤, stepfun, openrouter)"
+                            placeholder="输入供应商名称 (如: DeepSeek, SiliconFlow)"
                             className="w-full max-w-sm px-3 py-1.5 text-base font-semibold text-zinc-900 dark:text-zinc-100 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 transition-all"
                             autoFocus
                           />
-                          <div className="text-[11px] text-zinc-400 mt-0.5 px-1">
-                            新建自定义供应商 · 直接在此配置生效
+                          <div className="text-[11px] text-zinc-400 mt-0.5 px-0.5 flex flex-wrap items-center gap-2">
+                            <span>新建供应商草稿</span>
+                            <button
+                              type="button"
+                              onClick={handleOpenTemplatePicker}
+                              className="text-zinc-600 dark:text-zinc-300 underline cursor-pointer hover:text-zinc-900"
+                            >
+                              重新选择模板
+                            </button>
                           </div>
                         </div>
                       ) : (
-                        <>
-                          <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                            {formName || selectedProvider?.name}
-                            {selectedProvider?.id === activeProviderId && (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 font-normal">
-                                当前激活
-                              </span>
-                            )}
-                          </h3>
-                          <span className="text-xs text-zinc-400 font-mono">
-                            ID: {selectedProvider?.id}
-                          </span>
-                        </>
+                        <h3 className="text-base font-semibold text-zinc-900 truncate">
+                          {formName || selectedProvider?.name}
+                        </h3>
                       )}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-3 sm:shrink-0">
                     {/* Active Switch */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-zinc-500">
-                        {formEnabled ? "已启用" : "已禁用"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setFormEnabled(!formEnabled)}
-                        className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ease-in-out cursor-pointer ${
-                          formEnabled ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-700"
+                    <button
+                      type="button"
+                      onClick={() => setFormEnabled(!formEnabled)}
+                      title={formEnabled ? "已启用" : "已禁用"}
+                      className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ease-in-out cursor-pointer ${
+                        formEnabled ? "bg-zinc-900" : "bg-zinc-300"
+                      }`}
+                    >
+                      <span
+                        className={`bg-white w-4 h-4 rounded-full shadow-sm transform transition-transform duration-200 ease-in-out ${
+                          formEnabled ? "translate-x-4" : "translate-x-0"
                         }`}
-                      >
-                        <div
-                          className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
-                            formEnabled ? "translate-x-4" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
-                    </div>
+                      />
+                    </button>
 
                     {isCreatingNew ? (
                       <button
                         type="button"
                         onClick={handleCancelCreate}
-                        className="px-2.5 py-1 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+                        className="px-2.5 py-1 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors cursor-pointer"
                       >
                         取消
                       </button>
                     ) : (
                       <>
-                        {selectedProvider?.id !== activeProviderId && (
-                          <button
-                            onClick={() =>
-                              handleSelectModel(formChatModel || selectedProvider?.models[0]?.id || "")
-                            }
-                            className="px-2.5 py-1 text-xs border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
-                          >
-                            设为当前供应商
-                          </button>
-                        )}
-
                         {/* More Action Menu */}
                         <div className="relative">
                           <button
                             onClick={() => setShowMoreMenu(!showMoreMenu)}
-                            className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+                            className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                           >
                             <MoreVertical className="w-4 h-4" />
                           </button>
 
                           {showMoreMenu && (
                             <div
-                              className="absolute right-0 mt-2 w-36 bg-white dark:bg-zinc-800 rounded-xl shadow-lg border border-zinc-200 dark:border-zinc-700 py-1 z-30 animate-in fade-in zoom-in-95"
+                              className="absolute right-0 mt-2 w-40 bg-white border border-zinc-200 rounded-xl shadow-lg py-1.5 z-30 animate-fade-in"
                               onClick={() => setShowMoreMenu(false)}
                             >
+                              {settingsTab === "chat" && selectedProvider?.id !== activeProviderId && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleSelectModel(
+                                      formChatModel || selectedProvider?.models[0]?.id || ""
+                                    )
+                                  }
+                                  className="w-full text-left px-3.5 py-2 text-xs text-zinc-700 hover:bg-zinc-50 cursor-pointer"
+                                >
+                                  设为当前
+                                </button>
+                              )}
                               <button
-                                onClick={() => handleDeleteProvider(selectedProvider!.id)}
-                                className="w-full text-left px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 flex items-center gap-2 cursor-pointer"
+                                onClick={() =>
+                                  setDeleteConfirm({
+                                    type: "provider",
+                                    id: selectedProvider!.id,
+                                    name: selectedProvider!.name,
+                                  })
+                                }
+                                className="w-full text-left px-3.5 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2 cursor-pointer font-medium"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                                 删除供应商
@@ -1015,10 +1215,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* Form Inputs: Base URL, Protocol, API Key */}
-                <div className="space-y-4">
+                <div className="space-y-5 max-w-2xl">
                   <div>
-                    <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">
                       Base URL
                     </label>
                     <input
@@ -1026,161 +1225,135 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       value={formBaseUrl}
                       onChange={(e) => setFormBaseUrl(e.target.value)}
                       placeholder="https://api.openai.com/v1"
-                      className="w-full px-3 py-2 text-sm bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 font-mono"
+                      className="w-full px-3 py-2.5 text-sm bg-white border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10 font-mono"
                     />
-                    <p className="text-[11px] text-zinc-400 mt-1">
-                      API 根路径，要求 HTTPS/443（如 https://openrouter.ai/api/v1 或 https://api.deepseek.com/v1）
-                    </p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                        API 格式 (协议)
-                      </label>
-                      <select
-                        value={formApiFormat}
-                        onChange={(e) => setFormApiFormat(e.target.value as ModelApiFormat)}
-                        className="w-full px-3 py-2 text-sm bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 transition-all"
-                      >
-                        <option value="chat_completions">
-                          OpenAI 兼容 · Chat Completions
-                        </option>
-                        <option value="anthropic_messages">
-                          Claude · Anthropic Messages
-                        </option>
-                        <option value="openai_responses">
-                          OpenAI · Responses API
-                        </option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-                        API Key
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={showApiKey ? "text" : "password"}
-                          value={formApiKey}
-                          onChange={(e) => setFormApiKey(e.target.value)}
-                          placeholder={
-                            !isCreatingNew && selectedProvider?.api_key_set
-                              ? `•••••••••••• (${selectedProvider.masked_api_key || "已保存"})`
-                              : "输入 API Key (如 sk-...)"
-                          }
-                          className="w-full pl-3 pr-10 py-2 text-sm bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 font-mono"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowApiKey(!showApiKey)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-                        >
-                          {showApiKey ? (
-                            <EyeOff className="w-4 h-4" />
-                          ) : (
-                            <Eye className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-zinc-400 mt-1">
-                        留空表示保留已有密钥；修改时输入新密钥自动替换。
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">
+                      API 格式
+                    </label>
+                    <select
+                      value={formApiFormat}
+                      onChange={(e) => setFormApiFormat(e.target.value as ModelApiFormat)}
+                      className="w-full px-3 py-2.5 text-sm bg-white border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                    >
+                      <option value="chat_completions">
+                        OpenAI 兼容 · Chat Completions
+                      </option>
+                      <option value="anthropic_messages">
+                        Claude · Anthropic Messages
+                      </option>
+                      <option value="openai_responses">
+                        OpenAI · Responses API
+                      </option>
+                    </select>
+                    {settingsTab === "embedding" && (
+                      <p className="text-[11px] text-zinc-400 mt-1.5">
+                        向量接口固定使用 OpenAI 兼容 /embeddings。
                       </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">
+                      API Key
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showApiKey ? "text" : "password"}
+                        value={formApiKey}
+                        onChange={(e) => setFormApiKey(e.target.value)}
+                        placeholder={
+                          !isCreatingNew && selectedProvider?.api_key_set
+                            ? `•••••••••••• (${selectedProvider.masked_api_key || "已保存"})`
+                            : "输入 API Key"
+                        }
+                        className="w-full pl-3 pr-10 py-2.5 text-sm bg-white border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-zinc-900/10 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700"
+                      >
+                        {showApiKey ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
                     </div>
+                    <p className="text-[11px] text-zinc-400 mt-1.5">留空保留已有密钥。</p>
                   </div>
                 </div>
 
-                {/* --- MODEL SELECTION & FETCHING SECTION (核心：模型的获取与选择) --- */}
-                <div className="p-4 rounded-2xl bg-zinc-50/80 dark:bg-zinc-800/40 border border-zinc-200/90 dark:border-zinc-700/80 space-y-4">
-                  <div className="flex items-center justify-between">
+                {/* Model Selection & Quick Pills */}
+                <div className="space-y-5 border-t border-zinc-100 pt-6">
+                  <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
-                      <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                        模型选择与获取
+                      <Layers className="w-4 h-4 text-zinc-700" />
+                      <h4 className="text-sm font-semibold text-zinc-900">
+                        模型
                       </h4>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleFetchModels}
-                      disabled={fetchingModels || !formBaseUrl}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-400 text-zinc-800 dark:text-zinc-200 rounded-xl shadow-xs transition-all cursor-pointer"
-                      title="从供应商网关接口拉取全部可用模型"
-                    >
-                      <RefreshCw
-                        className={`w-3.5 h-3.5 ${fetchingModels ? "animate-spin text-blue-600" : ""}`}
-                      />
-                      <span>{fetchingModels ? "正在获取模型..." : "获取模型"}</span>
-                    </button>
-                  </div>
-
-                  {/* Input fields for Chat Model & Embedding Model */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                          当前对话模型 (Chat Model)
-                        </label>
-                        {formChatModel && (
-                          <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400">
-                            已选择
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={formChatModel}
-                          onChange={(e) => setFormChatModel(e.target.value)}
-                          placeholder="如 stealth/union-alpha, deepseek-chat"
-                          className="flex-1 px-3 py-2 text-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                          向量模型 (Embedding Model)
-                        </label>
-                        <span className="text-[10px] text-zinc-400">可选</span>
-                      </div>
-                      <input
-                        type="text"
-                        value={formEmbedModel}
-                        onChange={(e) => setFormEmbedModel(e.target.value)}
-                        placeholder="如 text-embedding-3-small (选填)"
-                        className="w-full px-3 py-2 text-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl font-mono focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-                      />
+                    <div className="flex items-center gap-2">
+                      <PillButton
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleFetchModels}
+                        disabled={fetchingModels || !formBaseUrl}
+                        icon={
+                          <RefreshCw
+                            className={`w-3.5 h-3.5 ${fetchingModels ? "animate-spin text-zinc-900" : ""}`}
+                          />
+                        }
+                      >
+                        {fetchingModels ? "正在获取..." : "获取模型"}
+                      </PillButton>
+                      <PillButton
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setModelFormId("");
+                          setModelFormName("");
+                          setModelFormTags(settingsTab === "embedding" ? "Embedding" : "Chat, 128K");
+                          setEditingModelOriginalId(null);
+                          setIsAddModelOpen(true);
+                        }}
+                        icon={<Plus className="w-3.5 h-3.5" />}
+                      >
+                        添加模型
+                      </PillButton>
                     </div>
                   </div>
 
-                  {/* Quick Selectable Model Chips Area (展开的选择模型列表) */}
-                  {(fetchedModels.length > 0 || currentModelList.length > 0) && (
-                    <div className="pt-2 border-t border-zinc-200/60 dark:border-zinc-700/60 space-y-2">
+                  {settingsTab === "embedding" && (
+                    <p className="text-[11px] text-zinc-400">
+                      切换向量模型可能影响既有向量索引，需要时请重建索引。
+                    </p>
+                  )}
+
+                  {/* Selectable Model Pills */}
+                  {fetchedModels.length > 0 && (
+                    <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                            选择模型
-                          </span>
-                          <span className="text-[11px] text-zinc-400">
-                            (点击模型徽标直接设为当前对话模型)
-                          </span>
-                        </div>
+                        <span className="text-xs text-zinc-500">
+                          {fetchedModels.length > 0 ? "可用模型" : "已添加模型"}
+                        </span>
 
                         {fetchedModels.length > 0 && (
                           <button
                             type="button"
                             onClick={handleImportAllFetched}
-                            className="text-[11px] text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 underline cursor-pointer"
+                            className="text-[11px] text-zinc-500 hover:text-zinc-900 transition-colors"
                           >
-                            全部添加到模型列表
+                            全部添加
                           </button>
                         )}
                       </div>
 
-                      {/* Search / Filter if many models */}
-                      {(fetchedModels.length > 10 || currentModelList.length > 10) && (
+                      {(fetchedModels.length > 8 || currentModelList.length > 8) && (
                         <div className="relative">
                           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
                           <input
@@ -1193,17 +1366,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                       )}
 
-                      {/* Selectable Model Pills */}
                       <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pt-1 pr-1">
-                        {/* 1. Models already in provider */}
                         {currentModelList.map((m) => {
                           const isCurrent = formChatModel === m.id;
                           return (
                             <button
                               key={`p-${m.id}`}
                               type="button"
-                              onClick={() => handleSelectModel(m.id, "chat")}
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                              onClick={() => handleSelectModel(m.id, settingsTab)}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono transition-all cursor-pointer ${
                                 isCurrent
                                   ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-xs"
                                   : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400"
@@ -1215,7 +1386,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           );
                         })}
 
-                        {/* 2. Fetched models that are not yet in provider */}
                         {filteredFetchedModels
                           .filter((fm) => !currentModelList.some((m) => m.id === fm))
                           .map((fm) => {
@@ -1224,8 +1394,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               <button
                                 key={`f-${fm}`}
                                 type="button"
-                                onClick={() => handleSelectModel(fm, "chat")}
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                                onClick={() => handleSelectModel(fm, settingsTab)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all cursor-pointer ${
                                   isCurrent
                                     ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-xs"
                                     : "bg-zinc-100/80 dark:bg-zinc-800 border border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 hover:border-zinc-400"
@@ -1241,63 +1411,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
                 </div>
 
-                {/* Model List Section (管理模型列表) */}
-                <div className="pt-2 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                        模型列表
-                      </h4>
-                      <span className="text-xs text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-full font-mono">
-                        {currentModelList.length} 个模型
-                      </span>
-                    </div>
+                {/* Model List Section */}
+                <div className="space-y-2">
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleFetchModels}
-                        disabled={fetchingModels || !formBaseUrl}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
-                      >
-                        <RefreshCw
-                          className={`w-3.5 h-3.5 ${fetchingModels ? "animate-spin" : ""}`}
-                        />
-                        获取模型
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setModelFormId("");
-                          setModelFormName("");
-                          setModelFormTags("1M, 视觉");
-                          setEditingModelOriginalId(null);
-                          setIsAddModelOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 rounded-lg shadow-sm transition-colors cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        添加模型
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Models Table/Cards */}
                   {currentModelList.length === 0 ? (
-                    <div className="py-8 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl flex flex-col items-center justify-center text-center text-zinc-400 gap-2">
-                      <Layers className="w-6 h-6 text-zinc-300 dark:text-zinc-700" />
-                      <p className="text-xs">该供应商尚未添加任何模型</p>
-                      <p className="text-[11px] text-zinc-400">
-                        点击上方「获取模型」自动拉取或「添加模型」手动创建
-                      </p>
+                    <div className="py-6 border border-dashed border-zinc-200 rounded-xl flex flex-col items-center justify-center text-center text-zinc-400 gap-1.5">
+                      <Layers className="w-5 h-5 text-zinc-300" />
+                      <p className="text-xs">暂无模型</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
                       {currentModelList.map((m) => {
                         const isModelActive =
                           !isCreatingNew &&
-                          selectedProvider?.id === activeProviderId &&
-                          activeChatModel === m.id;
+                          (settingsTab === "chat"
+                            ? selectedProvider?.id === activeProviderId &&
+                              activeChatModel === m.id
+                            : selectedProvider?.id === activeEmbedProviderId &&
+                              activeEmbedModel === m.id);
                         const isCurrentFormModel = formChatModel === m.id;
                         const testState = modelTestResults[m.id];
                         const isTesting = testingModelId === m.id;
@@ -1305,83 +1436,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         return (
                           <div
                             key={m.id}
-                            className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border transition-all ${
+                            className={`flex flex-col items-stretch gap-2 px-3.5 py-2.5 rounded-2xl border transition-all sm:flex-row sm:items-center sm:justify-between ${
                               isModelActive || isCurrentFormModel
                                 ? "bg-zinc-50/90 dark:bg-zinc-800/80 border-zinc-300 dark:border-zinc-600 shadow-xs"
-                                : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300"
+                                : "bg-white dark:bg-zinc-900 border-zinc-200/90 dark:border-zinc-800 hover:border-zinc-300"
                             }`}
                           >
-                            <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 min-w-0 sm:flex-nowrap sm:gap-2.5">
                               <span className="font-mono text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
                                 {m.name || m.id}
                               </span>
 
-                              {/* Tags */}
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 {m.tags.map((tag, idx) => (
                                   <span
                                     key={idx}
-                                    className="text-[11px] font-sans px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
+                                    className="text-[10px] font-sans px-1.5 py-0.5 rounded-md bg-zinc-100 text-zinc-500 border border-zinc-200/60"
                                   >
                                     {tag}
                                   </span>
                                 ))}
                               </div>
 
-                              {/* Active Badge */}
-                              {isModelActive ? (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 font-sans font-medium">
-                                  当前对话模型
-                                </span>
-                              ) : isCurrentFormModel ? (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-400 border border-blue-200 font-sans">
-                                  已选定
-                                </span>
-                              ) : null}
-
-                              {/* Test Result Indicator */}
-                              {testState && (
-                                <span
-                                  className={`text-[11px] font-mono flex items-center gap-1 ${
-                                    testState.ok
-                                      ? "text-emerald-600 dark:text-emerald-400"
-                                      : "text-red-500"
-                                  }`}
-                                  title={testState.message}
-                                >
-                                  {testState.ok ? (
-                                    <>
-                                      <Check className="w-3 h-3" />
-                                      {testState.latency_ms}ms
-                                    </>
-                                  ) : (
-                                    "测试失败"
-                                  )}
-                                </span>
-                              )}
+                              <span className="text-[11px] text-zinc-400">
+                                {isModelActive
+                                  ? "当前"
+                                  : isCurrentFormModel
+                                  ? "已选择"
+                                  : m.model_type}
+                              </span>
                             </div>
 
-                            {/* Actions Right (matching screenshot tools: plug/test, pencil, trash, switch) */}
-                            <div className="flex items-center gap-2 shrink-0">
-                              {/* 设为当前使用 */}
+                            <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
                               {!isModelActive && (
                                 <button
                                   type="button"
-                                  onClick={() => handleSelectModel(m.id, "chat")}
-                                  title="设为此模型对话"
-                                  className="text-xs px-2 py-1 text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors font-medium"
+                                  onClick={() => handleSelectModel(m.id, settingsTab)}
+                                  className="text-xs px-2.5 py-1 rounded-full text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors font-medium cursor-pointer"
                                 >
-                                  选择使用
+                                  使用
                                 </button>
                               )}
 
-                              {/* Test Button (Plug / Zap) */}
                               <button
                                 type="button"
                                 onClick={() => handleTestModel(m.id)}
                                 disabled={isTesting}
-                                title="测试模型响应与网络延迟"
-                                className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+                                title={
+                                  testState
+                                    ? testState.ok
+                                      ? `测试通过 · ${testState.latency_ms}ms`
+                                      : "测试失败"
+                                    : "测试模型响应与延迟"
+                                }
+                                className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                               >
                                 <Zap
                                   className={`w-3.5 h-3.5 ${
@@ -1390,7 +1498,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 />
                               </button>
 
-                              {/* Edit Button */}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1401,17 +1508,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   setIsAddModelOpen(true);
                                 }}
                                 title="编辑模型"
-                                className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+                                className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
 
-                              {/* Delete Button */}
                               <button
                                 type="button"
-                                onClick={() => handleDeleteModel(m.id)}
+                                onClick={() =>
+                                  setDeleteConfirm({
+                                    type: "model",
+                                    id: m.id,
+                                    name: m.name || m.id,
+                                  })
+                                }
                                 title="删除模型"
-                                className="p-1.5 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors cursor-pointer"
+                                className="p-1.5 rounded-full text-zinc-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1426,17 +1538,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {/* Overall Connection Diagnostics */}
                 {connectionDiagnostics && (
                   <div
-                    className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
+                    className={`p-3 rounded-2xl border text-xs flex items-center justify-between ${
                       connectionDiagnostics.ok
                         ? "bg-emerald-50/70 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
-                        : "bg-red-50/70 border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300"
+                        : "bg-rose-50/70 border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300"
                     }`}
                   >
                     <div className="flex items-center gap-2">
                       {connectionDiagnostics.ok ? (
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                       ) : (
-                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                       )}
                       <span>
                         {connectionDiagnostics.ok
@@ -1446,7 +1558,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                     <button
                       onClick={() => setConnectionDiagnostics(null)}
-                      className="text-zinc-400 hover:text-zinc-600 text-[11px]"
+                      className="text-zinc-400 hover:text-zinc-600 text-[11px] cursor-pointer"
                     >
                       关闭
                     </button>
@@ -1454,31 +1566,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
 
                 {/* Bottom Footer Actions */}
-                <div className="flex items-center justify-between pt-4 border-t border-zinc-100 dark:border-zinc-800">
-                  <button
-                    type="button"
+                <div className="flex items-center justify-end gap-2 pt-5 border-t border-zinc-100">
+                  <PillButton
+                    variant="secondary"
+                    size="sm"
                     onClick={handleTestConnection}
                     disabled={testingConnection || !formBaseUrl}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                    icon={
+                      testingConnection ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Activity className="w-3.5 h-3.5" />
+                      )
+                    }
                   >
-                    {testingConnection ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Activity className="w-3.5 h-3.5" />
-                    )}
-                    <span>{testingConnection ? "测试连接中..." : "测试当前配置"}</span>
-                  </button>
+                    {testingConnection ? "测试中..." : "测试"}
+                  </PillButton>
 
                   <div className="flex items-center gap-2">
                     {isCreatingNew ? (
                       <>
-                        <button
-                          type="button"
+                        <PillButton
+                          variant="secondary"
+                          size="sm"
                           onClick={handleCancelCreate}
-                          className="px-3.5 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
                         >
                           取消
-                        </button>
+                        </PillButton>
                         <PillButton
                           variant="primary"
                           size="sm"
@@ -1491,7 +1605,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               创建中...
                             </>
                           ) : (
-                            "保存并生效供应商"
+                            "创建"
                           )}
                         </PillButton>
                       </>
@@ -1508,7 +1622,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             保存中...
                           </>
                         ) : (
-                          "保存配置并持久化"
+                          "保存"
                         )}
                       </PillButton>
                     )}
@@ -1516,21 +1630,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
             ) : (
+              /* VIEW C: Empty State */
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-400 gap-3">
                 <Box className="w-12 h-12 text-zinc-300 dark:text-zinc-700" />
                 <h3 className="text-base font-medium text-zinc-700 dark:text-zinc-300">
-                  未选择任何模型供应商
+                  未选择模型供应商
                 </h3>
                 <p className="text-xs text-zinc-400 max-w-sm">
-                  从左侧列表中选择一个供应商进行配置，或者点击右上角“添加供应商”新建一个。
+                  从左侧列表中选择一个供应商进行配置，或者点击“添加供应商”通过模板新建。
                 </p>
-                <button
-                  onClick={handleStartCreateProvider}
-                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-lg shadow-sm cursor-pointer"
+                <PillButton
+                  variant="primary"
+                  size="sm"
+                  onClick={handleOpenTemplatePicker}
+                  icon={<Plus className="w-3.5 h-3.5" />}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  新建供应商
-                </button>
+                  添加供应商
+                </PillButton>
               </div>
             )}
           </div>
@@ -1538,9 +1654,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Modal: Add/Edit Model Dialog */}
         {isAddModelOpen && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in">
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 backdrop-blur-xs animate-fade-in">
             <div
-              className="w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl p-5 space-y-4"
+              className="w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-xl p-5 space-y-4"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
@@ -1549,7 +1665,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </h3>
                 <button
                   onClick={() => setIsAddModelOpen(false)}
-                  className="p-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+                  className="p-1 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1565,7 +1681,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     value={modelFormId}
                     onChange={(e) => setModelFormId(e.target.value)}
                     disabled={Boolean(editingModelOriginalId)}
-                    placeholder="如 stealth/union-alpha, deepseek-chat"
+                    placeholder="如 deepseek-chat, gpt-4o"
                     className="w-full px-3 py-2 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 font-mono"
                   />
                 </div>
@@ -1578,7 +1694,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="text"
                     value={modelFormName}
                     onChange={(e) => setModelFormName(e.target.value)}
-                    placeholder="如 Union Alpha 1M"
+                    placeholder="如 DeepSeek V3"
                     className="w-full px-3 py-2 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
                   />
                 </div>
@@ -1591,7 +1707,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="text"
                     value={modelFormTags}
                     onChange={(e) => setModelFormTags(e.target.value)}
-                    placeholder="如 1M, 视觉, 推理, Chat"
+                    placeholder="如 128K, 视觉, 推理, Chat"
                     className="w-full px-3 py-2 text-sm bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
                   />
                   <div className="flex gap-1.5 mt-2 flex-wrap">
@@ -1608,7 +1724,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             setModelFormTags([...current, presetTag].join(", "));
                           }
                         }}
-                        className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                        className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
                       >
                         +{presetTag}
                       </button>
@@ -1618,21 +1734,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
+                <PillButton
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setIsAddModelOpen(false)}
-                  className="px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
                 >
                   取消
-                </button>
+                </PillButton>
                 <PillButton variant="primary" size="sm" onClick={handleSaveModel}>
-                  保存
+                  保存模型
                 </PillButton>
               </div>
             </div>
           </div>
         )}
+
+        <DeleteConfirmDialog
+          target={deleteConfirm}
+          onCancel={() => setDeleteConfirm(null)}
+          onConfirm={handleExecuteDelete}
+        />
       </div>
     </div>
   );
 };
+
+export default SettingsModal;

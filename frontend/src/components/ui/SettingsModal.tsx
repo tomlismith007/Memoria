@@ -29,10 +29,6 @@ import type {
 import { PillButton } from "./PillButton";
 import { DeleteConfirmDialog } from "../settings/DeleteConfirmDialog";
 import { ProviderSidebar } from "../settings/ProviderSidebar";
-import {
-  ProviderTemplatePicker,
-  type ProviderTemplate,
-} from "../settings/ProviderTemplatePicker";
 
 const PROVIDERS_STORAGE_KEY = "memoria_custom_providers_cache";
 const ACTIVE_PROVIDER_STORAGE_KEY = "memoria_active_provider_cache";
@@ -76,9 +72,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
-
-  // Template Picker State (参考 ZCode ProviderTemplatePicker)
-  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   // Detail panel form state
   const [formName, setFormName] = useState("");
@@ -152,7 +145,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Populate form when selectedProvider changes
   useEffect(() => {
-    if (selectedProvider && !isCreatingNew && !showTemplatePicker) {
+    if (selectedProvider && !isCreatingNew) {
       setFormName(selectedProvider.name);
       setFormBaseUrl(selectedProvider.base_url);
       setFormApiFormat(selectedProvider.api_format || "chat_completions");
@@ -172,7 +165,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setFetchedModels([]);
       setConnectionDiagnostics(null);
     }
-  }, [selectedProviderId, isCreatingNew, showTemplatePicker, settingsTab]);
+  }, [selectedProviderId, isCreatingNew, settingsTab]);
 
   // Load from backend when modal opens
   const refreshProviders = async () => {
@@ -249,17 +242,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }, 3500);
   };
 
-  // Open Template Picker
-  const handleOpenTemplatePicker = () => {
-    setShowTemplatePicker(true);
-    setIsCreatingNew(false);
+  // Start creating a blank custom provider
+  const handleStartCreate = () => {
+    setIsCreatingNew(true);
+    setSelectedProviderId("");
+    setConnectionDiagnostics(null);
+    setShowApiKey(false);
     setShowMoreMenu(false);
+    setFormName("");
+    setFormBaseUrl("https://");
+    setFormApiFormat("chat_completions");
+    setFormApiKey("");
+    setFormEnabled(true);
+    setFormChatModel("");
+    setDraftModels([]);
+    setFetchedModels([]);
   };
 
   const handleSwitchSettingsTab = (tab: "chat" | "embedding") => {
     setSettingsTab(tab);
     setIsCreatingNew(false);
-    setShowTemplatePicker(false);
     setShowMoreMenu(false);
     setFetchedModels([]);
     setConnectionDiagnostics(null);
@@ -270,41 +272,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setSelectedProviderId(activeId);
   };
 
-  // Select a template from picker
-  const handleSelectTemplate = (template: ProviderTemplate | null) => {
-    setShowTemplatePicker(false);
-    setIsCreatingNew(true);
-    setSelectedProviderId("");
-    setConnectionDiagnostics(null);
-    setShowApiKey(false);
-
-    if (template) {
-      setFormName(template.name);
-      setFormBaseUrl(template.baseUrl);
-      setFormApiFormat(template.apiFormat);
-      setFormApiKey("");
-      setFormEnabled(true);
-      setFormChatModel(template.defaultChatModel);
-      setDraftModels(template.suggestedModels);
-      setFetchedModels([]);
-      showToast("success", `已应用 ${template.name} 预设模板，请输入 API Key`);
-    } else {
-      // Pure Custom Provider
-      setFormName("");
-      setFormBaseUrl("https://");
-      setFormApiFormat("chat_completions");
-      setFormApiKey("");
-      setFormEnabled(true);
-      setFormChatModel("");
-      setDraftModels([]);
-      setFetchedModels([]);
-    }
-  };
-
   // Cancel creation
   const handleCancelCreate = () => {
     setIsCreatingNew(false);
-    setShowTemplatePicker(false);
     if (providers.length > 0) {
       setSelectedProviderId(providers[0].id);
     } else {
@@ -320,7 +290,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
     }
     setIsCreatingNew(false);
-    setShowTemplatePicker(false);
     setSelectedProviderId(id);
   };
 
@@ -1040,7 +1009,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <PillButton
                 variant="primary"
                 size="sm"
-                onClick={handleOpenTemplatePicker}
+                onClick={handleStartCreate}
                 icon={<Plus className="w-3.5 h-3.5" />}
               >
                 添加供应商
@@ -1080,30 +1049,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             providers={providers}
             loading={loading}
             isCreatingNew={isCreatingNew}
-            showTemplatePicker={showTemplatePicker}
             selectedProviderId={selectedProviderId}
             activeProviderId={activeProviderId}
             formName={formName}
             onSelectProvider={handleSelectProvider}
-            onOpenTemplatePicker={handleOpenTemplatePicker}
+            onAddProvider={handleStartCreate}
           />
 
-          {/* Right Column: Template Picker OR Provider Details Form */}
+          {/* Right Column: Provider Details Form OR Empty State */}
           <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-900 overflow-y-auto">
-            {/* VIEW A: Provider Template Picker (参考 ZCode ProviderTemplatePicker) */}
-            {showTemplatePicker ? (
-              <ProviderTemplatePicker
-                onBack={() => {
-                  setShowTemplatePicker(false);
-                  if (providers.length > 0 && !selectedProviderId) {
-                    setSelectedProviderId(providers[0].id);
-                  }
-                }}
-                onSelect={handleSelectTemplate}
-              />
-            ) : selectedProvider || isCreatingNew ? (
+            {selectedProvider || isCreatingNew ? (
               /* VIEW B: Provider Detail & Model Management Form */
-              <div className="p-5 sm:p-8 space-y-7 animate-fade-in">
+              <div className="p-5 sm:p-6 space-y-5 max-w-2xl animate-fade-in">
                 {/* Provider Header Toolbar */}
                 <div className="flex flex-col items-stretch gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3 min-w-0 sm:flex-1 sm:mr-4">
@@ -1112,26 +1069,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                     <div className="flex-1 min-w-0">
                       {isCreatingNew ? (
-                        <div>
-                          <input
-                            type="text"
-                            value={formName}
-                            onChange={(e) => setFormName(e.target.value)}
-                            placeholder="输入供应商名称 (如: DeepSeek, SiliconFlow)"
-                            className="w-full max-w-sm px-3 py-1.5 text-base font-semibold text-zinc-900 dark:text-zinc-100 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:bg-white dark:focus:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 transition-all"
-                            autoFocus
-                          />
-                          <div className="text-[11px] text-zinc-400 mt-0.5 px-0.5 flex flex-wrap items-center gap-2">
-                            <span>新建供应商草稿</span>
-                            <button
-                              type="button"
-                              onClick={handleOpenTemplatePicker}
-                              className="text-zinc-600 dark:text-zinc-300 underline cursor-pointer hover:text-zinc-900"
-                            >
-                              重新选择模板
-                            </button>
-                          </div>
-                        </div>
+                        <input
+                          type="text"
+                          value={formName}
+                          onChange={(e) => setFormName(e.target.value)}
+                          placeholder="输入供应商名称"
+                          className="w-full max-w-sm px-1 -mx-1 py-0.5 text-base font-semibold text-zinc-900 dark:text-zinc-100 bg-transparent rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-300/70 dark:focus:ring-zinc-700 transition-all"
+                        />
                       ) : (
                         <h3 className="text-base font-semibold text-zinc-900 truncate">
                           {formName || selectedProvider?.name}
@@ -1215,7 +1159,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-5 max-w-2xl">
+                <div className="space-y-5">
                   <div>
                     <label className="block text-sm font-medium text-zinc-700 mb-2">
                       Base URL
@@ -1283,7 +1227,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         )}
                       </button>
                     </div>
-                    <p className="text-[11px] text-zinc-400 mt-1.5">留空保留已有密钥。</p>
                   </div>
                 </div>
 
@@ -1412,15 +1355,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 {/* Model List Section */}
-                <div className="space-y-2">
+                <div>
 
                   {currentModelList.length === 0 ? (
-                    <div className="py-6 border border-dashed border-zinc-200 rounded-xl flex flex-col items-center justify-center text-center text-zinc-400 gap-1.5">
+                    <div className="py-6 border border-dashed border-zinc-200 rounded-lg flex flex-col items-center justify-center text-center text-zinc-400 gap-1.5">
                       <Layers className="w-5 h-5 text-zinc-300" />
                       <p className="text-xs">暂无模型</p>
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800 overflow-hidden">
                       {currentModelList.map((m) => {
                         const isModelActive =
                           !isCreatingNew &&
@@ -1436,10 +1379,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         return (
                           <div
                             key={m.id}
-                            className={`flex flex-col items-stretch gap-2 px-3.5 py-2.5 rounded-2xl border transition-all sm:flex-row sm:items-center sm:justify-between ${
+                            className={`flex flex-col items-stretch gap-2 px-3 py-2 transition-colors sm:flex-row sm:items-center sm:justify-between ${
                               isModelActive || isCurrentFormModel
-                                ? "bg-zinc-50/90 dark:bg-zinc-800/80 border-zinc-300 dark:border-zinc-600 shadow-xs"
-                                : "bg-white dark:bg-zinc-900 border-zinc-200/90 dark:border-zinc-800 hover:border-zinc-300"
+                                ? "bg-zinc-50 dark:bg-zinc-800/60"
+                                : "hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40"
                             }`}
                           >
                             <div className="flex flex-wrap items-center gap-2 min-w-0 sm:flex-nowrap sm:gap-2.5">
@@ -1468,16 +1411,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             </div>
 
                             <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
-                              {!isModelActive && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSelectModel(m.id, settingsTab)}
-                                  className="text-xs px-2.5 py-1 rounded-full text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors font-medium cursor-pointer"
-                                >
-                                  使用
-                                </button>
-                              )}
-
                               <button
                                 type="button"
                                 onClick={() => handleTestModel(m.id)}
@@ -1538,7 +1471,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {/* Overall Connection Diagnostics */}
                 {connectionDiagnostics && (
                   <div
-                    className={`p-3 rounded-2xl border text-xs flex items-center justify-between ${
+                    className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
                       connectionDiagnostics.ok
                         ? "bg-emerald-50/70 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
                         : "bg-rose-50/70 border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300"
@@ -1566,7 +1499,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
 
                 {/* Bottom Footer Actions */}
-                <div className="flex items-center justify-end gap-2 pt-5 border-t border-zinc-100">
+                <div className="flex items-center justify-end gap-2 pt-3">
                   <PillButton
                     variant="secondary"
                     size="sm"
@@ -1637,12 +1570,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   未选择模型供应商
                 </h3>
                 <p className="text-xs text-zinc-400 max-w-sm">
-                  从左侧列表中选择一个供应商进行配置，或者点击“添加供应商”通过模板新建。
+                  从左侧列表中选择一个供应商进行配置，或者点击“添加供应商”新建。
                 </p>
                 <PillButton
                   variant="primary"
                   size="sm"
-                  onClick={handleOpenTemplatePicker}
+                  onClick={handleStartCreate}
                   icon={<Plus className="w-3.5 h-3.5" />}
                 >
                   添加供应商

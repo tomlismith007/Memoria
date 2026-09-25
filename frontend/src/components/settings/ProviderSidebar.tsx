@@ -6,24 +6,22 @@ interface ProviderSidebarProps {
   providers: CustomProvider[];
   loading: boolean;
   isCreatingNew: boolean;
-  showTemplatePicker: boolean;
   selectedProviderId: string;
   activeProviderId: string;
   formName: string;
   onSelectProvider: (providerId: string) => void;
-  onOpenTemplatePicker: () => void;
+  onAddProvider: () => void;
 }
 
 export const ProviderSidebar: React.FC<ProviderSidebarProps> = ({
   providers,
   loading,
   isCreatingNew,
-  showTemplatePicker,
   selectedProviderId,
   activeProviderId,
   formName,
   onSelectProvider,
-  onOpenTemplatePicker,
+  onAddProvider,
 }) => {
   return (
     <aside className="w-20 md:w-60 shrink-0 flex flex-col border-r border-zinc-200/80 bg-zinc-50/50 p-2 md:p-4">
@@ -31,7 +29,7 @@ export const ProviderSidebar: React.FC<ProviderSidebarProps> = ({
         <span className="text-xs font-medium text-zinc-500">供应商</span>
         <button
           type="button"
-          onClick={onOpenTemplatePicker}
+          onClick={onAddProvider}
           className="text-zinc-400 hover:text-zinc-900 transition-colors"
           title="添加供应商"
         >
@@ -43,13 +41,13 @@ export const ProviderSidebar: React.FC<ProviderSidebarProps> = ({
         <div className="flex-1 flex items-center justify-center text-zinc-400">
           <Loader2 className="w-4 h-4 animate-spin" />
         </div>
-      ) : providers.length === 0 && !isCreatingNew && !showTemplatePicker ? (
+      ) : providers.length === 0 && !isCreatingNew ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
           <Box className="w-5 h-5 text-zinc-300" />
           <span className="hidden md:block text-xs text-zinc-400">暂无供应商</span>
           <button
             type="button"
-            onClick={onOpenTemplatePicker}
+            onClick={onAddProvider}
             className="hidden md:inline text-xs text-zinc-700 hover:text-black transition-colors"
           >
             添加一个
@@ -59,7 +57,7 @@ export const ProviderSidebar: React.FC<ProviderSidebarProps> = ({
         <div className="flex-1 overflow-y-auto space-y-1">
           {providers.map((provider) => {
             const isSelected =
-              !isCreatingNew && !showTemplatePicker && provider.id === selectedProviderId;
+              !isCreatingNew && provider.id === selectedProviderId;
             const isActive = provider.id === activeProviderId;
             const isConfigured = Boolean(provider.base_url) && provider.enabled;
             const monogram = provider.name.trim().slice(0, 2).toUpperCase() || "LLM";
@@ -70,10 +68,10 @@ export const ProviderSidebar: React.FC<ProviderSidebarProps> = ({
                 key={provider.id}
                 onClick={() => onSelectProvider(provider.id)}
                 title={`${provider.name} (${provider.base_url})`}
-                className={`w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors ${
+                className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
                   isSelected
-                    ? "bg-white text-zinc-900 border border-zinc-300 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
-                    : "border border-transparent text-zinc-600 hover:bg-white/80"
+                    ? "bg-zinc-200/70 text-zinc-900 dark:bg-zinc-800"
+                    : "text-zinc-600 hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
                 }`}
               >
                 <span className="w-6 h-6 rounded-lg border border-zinc-200 bg-white flex items-center justify-center text-[9px] font-semibold shrink-0">

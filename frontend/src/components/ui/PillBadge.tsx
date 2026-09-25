@@ -1,7 +1,7 @@
 import React from "react";
 
 export interface PillBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: "wiki" | "citation" | "protected" | "candidate" | "neutral";
+  variant?: "wiki" | "citation" | "protected" | "candidate" | "warning" | "neutral";
   interactive?: boolean;
 }
 
@@ -20,6 +20,7 @@ export const PillBadge: React.FC<PillBadgeProps> = ({
     citation: "bg-blue-50 text-blue-700 border-blue-200/60 hover:bg-blue-100 font-mono",
     protected: "bg-amber-50 text-amber-800 border-amber-200/80 font-medium",
     candidate: "bg-rose-50 text-rose-700 border-rose-200/60 font-medium",
+    warning: "bg-amber-50 text-amber-800 border-amber-200/80 font-medium",
     neutral: "bg-zinc-100 text-zinc-700 border-zinc-200/80",
   }[variant];
 

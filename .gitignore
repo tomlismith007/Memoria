@@ -6,3 +6,5 @@ data/
 node_modules/
 dist/
 .mimosa/
+.zcode/
+gui-test-screenshots/

@@ -9,6 +9,7 @@ description = "Personal knowledge system: RAG + LLM Wiki + email triage, orchest
 requires-python = ">=3.11"
 dependencies = [
   "langgraph",   # orchestration (feat-007); retrieval core stays hand-written
+  "langgraph-checkpoint-sqlite",  # durable graph state on disk (feat-033)
   "chromadb",    # local vector store (feat-002)
   "pypdf",       # PDF parsing (feat-002)
   "requests",    # Google OAuth transport

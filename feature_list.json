@@ -179,10 +179,10 @@
     {
       "id": "feat-023",
       "name": "Citation integrity follow-up",
-      "description": "后续登记引用完整性增强计划；本 feature 仅登记计划，不实现",
+      "description": "引用完整性校验（红线级）：RAG 回答逐句校验 [n] 引用覆盖，未带引用的回答标记 citations_verified=false 并在 AskView 显示未溯源警告；Wiki 回答必须含 [[页名]] 来源。验收：校验器 + 离线测试；web 响应携带 citations_verified 字段",
       "dependencies": ["feat-022"],
-      "status": "todo",
-      "evidence": "planned only; no implementation in feat-022"
+      "status": "completed",
+      "evidence": "answer.py citations_complete() 逐句校验 [n]（句号后置标记归属前句，越界 [n] 不算覆盖）；wiki/ops.py query 校验 [[页名]]；sync.py HybridAnswer 按 wiki/rag 两段 AND 合成；/api/ask 返回 citations_verified；AskView 增加 amber 未溯源警告徽章。init.ps1 green: 107 pytest (+4) + frontend build; tsc strict 0 diagnostics"
     },
     {
       "id": "feat-024",
@@ -247,6 +247,70 @@
       "dependencies": ["feat-030"],
       "status": "completed",
       "evidence": "init.ps1 green: 103 pytest tests + frontend build; focused Web API tests 33 passed; browser verified manual model inputs removed and vector tab at 1280×720/390×844; evidence in gui-test-screenshots/feat-031/"
+    },
+    {
+      "id": "feat-032",
+      "name": "Document deletion closed loop",
+      "description": "红线落地补口：新增 GET /api/documents（向量库元数据+raw/ 汇总文档列表）与 DELETE /api/documents/{doc_id}——删除该文档全部向量（store.delete_document）+ 对应 raw/ 文件 + log.md 记录；文档视图提供删除确认。验收：删除后 store 无孤儿向量、raw 文件消失、未知 doc 返回 404；离线测试覆盖",
+      "dependencies": ["feat-002"],
+      "status": "completed",
+      "evidence": "GET /api/documents（raw 文件按 doc_id_for_origin 哈希映射 + store.documents() 切块数，vector_only 单列）与 DELETE /api/documents/{doc_id}（删全部向量 → 孤儿向量偏执校验 → 删 raw 文件 → log.md 记录，未知 doc 404）；IngestView 已入库文档列表 + 删除确认。测试：删除后 store.count()==0 且 doc_id 不在 documents()（红线）、raw 消失、无 raw 也可清向量、404。init.ps1 green: 110 pytest (+3) + frontend build; tsc strict 0 diagnostics"
+    },
+    {
+      "id": "feat-033",
+      "name": "Wire LangGraph into Web API (single-track HITL)",
+      "description": "架构红线『用 LangGraph 编排』落到产品：create_app 编译 graph（checkpointer=SqliteSaver 持久化到 data/，新增依赖 langgraph-checkpoint-sqlite）；/api/ask、/api/mail/*、/api/ingest 全部经图执行，web 层只做 HTTP↔state 转换；邮件归档改走 interrupt→Command(resume)（thread_id=分拣会话），删除 web 层 latest_candidates 双轨 HITL 实现；意图由前端显式传入（AskView→问答 / MailView→邮件 / IngestView→ingest），router 节点仅在缺省意图时 LLM 兜底。验收：现有 web 测试迁移后全绿；新增跨请求 interrupt 恢复测试；显式意图不触发路由 LLM 调用",
+      "dependencies": ["feat-007", "feat-010"],
+      "status": "completed",
+      "evidence": "create_app 编译 graph（SqliteSaver 持久化 data/checkpoints.sqlite，JsonPlusSerializer 显式注册 Email/Triage 消除 pickle 警告，activate_settings 切换模型后重编译）；/api/ask、/api/mail/triage、/api/mail/archive、/api/ingest(/file) 全部经图执行；graph qa 节点升级为 hybrid_answer（wiki-first+RAG fallback，feat-008 行为保真），ingest 节点经 source_path 触发 dual_ingest 双写，router 在调用方预置意图时零 LLM 调用；邮件归档改走 interrupt→Command(resume)（thread_id=分拣会话），confirm 节点白名单+protected 复查，web 层 latest_candidates 双轨实现已删除；MailView 保存并回传 thread_id。测试：跨请求 interrupt 恢复、已完成线程重复归档被拒、缺 thread_id 400、幽灵线程（ghost thread）归档全 blocked、SqliteSaver 落盘校验；显式意图不触发路由 LLM（ScriptedChat 断言）。init.ps1 green: 113 pytest + frontend build; tsc strict 0 diagnostics"
+    },
+    {
+      "id": "feat-034",
+      "name": "Conversation memory in graph",
+      "description": "多轮对话记忆：MemoriaState 增加 messages 历史，qa 节点携带最近 N 轮进 prompt；conversation_id 即 thread_id，AskView 连续追问复用同一 id，SqliteSaver 跨重启保留上下文。验收：离线测试断言追问 prompt 包含历史轮次；重启后同 thread 可继续对话",
+      "dependencies": ["feat-033"],
+      "status": "completed",
+      "evidence": "graph state 新增 history（[{question, answer}]，最近 6 轮封顶）；qa 节点把此前轮次以 transcript 形式并入 user 消息（各 LLM 后端与 fake 保持单轮接口，指代可解析）；conversation_id 即 LangGraph thread_id，SqliteSaver 跨重启保留；/api/ask 接受/返回 conversation_id（缺省自动新建）；AskView 生成并持久化 session_id（localStorage），新建会话轮换 id。测试：图级断言追问 prompt 含上一轮问题且 history 追加；web 级断言同 conversation_id 二次提问prompt 含首轮、新 id 记忆干净、缺省自动建线；SqliteSaver 落盘。init.ps1 green; 116 pytest + frontend build; tsc strict 0 diagnostics"
+    },
+    {
+      "id": "feat-035",
+      "name": "LLM retry and error surfacing",
+      "description": "健壮性：graph 内 LLM 节点加 RetryPolicy(max_attempts=3)；瞬时失败自动重试，最终失败映射为用户可读错误（保留 web 502 语义）。验收：模拟前两次失败第三次成功的离线测试",
+      "dependencies": ["feat-033"],
+      "status": "completed",
+      "evidence": "graph LLM 节点（router/qa/mail_triage/ingest）统一挂 langgraph RetryPolicy(max_attempts=3)，默认仅对瞬时错误（连接/超时/429/5xx）重试；confirm_archive/interrupt 节点不重试。测试：FlakyChat 两次 ConnectionError 后成功 → ingest_updated 正常且 llm.calls==3。init.ps1 green; 116 pytest + frontend build; tsc strict 0 diagnostics"
+    },
+    {
+      "id": "feat-036",
+      "name": "Contradiction lint wiring",
+      "description": "知识复利补全之一：/api/wiki/pages 调 wiki_lint(wiki, llm) 启用矛盾检测（max_pairs 限制成本），WikiView lint 面板展示矛盾条目。验收：web 测试断言 contradictions 字段存在且可被填充",
+      "dependencies": ["feat-005"],
+      "status": "completed",
+      "evidence": "/api/wiki/pages 新增 deep 查询参数：deep=true 时 wiki_lint(wiki, llm) 启用 LLM 矛盾检测（每次链接对一次调用，默认关闭控制成本），响应 lint.contradictions 落地；WikiView 新增 AI 矛盾检测按钮（检查中状态），lint 横幅展示矛盾条目（rose 徽章）。测试：默认 lint 无矛盾且不调 LLM；deep=true 用 FakeChat('YES: …') 断言矛盾被捕获; 118 pytest + frontend build; tsc strict 0 diagnostics"
+    },
+    {
+      "id": "feat-037",
+      "name": "Mail fact write-back to Wiki",
+      "description": "知识复利补全之二：MailView 对 通知/待办 邮件提供『摘录进 Wiki』动作（指定目标页 + 事实文本），新增 /api/mail/fact 调 archive_fact（含去重）。验收：web 测试覆盖去重返回与 log.md 记录",
+      "dependencies": ["feat-010"],
+      "status": "completed",
+      "evidence": "新增 POST /api/mail/fact（msg_id/page/fact，页名拒绝路径穿越，fact 去重复用 archive_fact，来源标注 mail:{msg_id}）；MailView 通知/待办邮件新增摘录进 Wiki 内联动作（目标页 + 事实输入，预填摘要），写入结果进状态提示。测试：写入成功含来源、重复摘录 added=false、非法页名 400。init.ps1 green; 118 pytest + frontend build; tsc strict 0 diagnostics"
+    },
+    {
+      "id": "feat-038",
+      "name": "Multi-step ingest as graph loop (optional)",
+      "description": "展示性增强（可选）：ingest 节点拆为 编译→lint→(存在断链且轮次<2→修复→lint) 的图循环，真正用上 LangGraph 控制流表达力。验收：断链被自动修复的离线测试",
+      "dependencies": ["feat-033"],
+      "status": "todo",
+      "evidence": ""
+    },
+    {
+      "id": "feat-039",
+      "name": "SSE streaming answers (optional)",
+      "description": "体验增强（可选）：graph stream_mode='messages' → SSE 端点 → AskView 逐段渲染。验收：SSE 端点单元覆盖 + 浏览器手动验证",
+      "dependencies": ["feat-034"],
+      "status": "todo",
+      "evidence": ""
     }
   ]
 }

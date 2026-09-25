@@ -1,14 +1,19 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  AlertTriangle,
   ArrowUp,
   BookmarkPlus,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Loader2,
   Plus,
   Search,
+  Settings2,
 } from "lucide-react";
 import { api } from "../api";
-import type { AskResponse, Citation } from "../types";
+import type { AskResponse, Citation, CustomProvider } from "../types";
 import { MarkdownRenderer } from "../components/ui/MarkdownRenderer";
 import { PillBadge } from "../components/ui/PillBadge";
 import { PillButton } from "../components/ui/PillButton";
@@ -37,8 +42,29 @@ interface PersistedMessage {
 
 interface PersistedConversation {
   version: number;
+  session_id?: string;
   messages: PersistedMessage[];
 }
+
+const newSessionId = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+const loadSessionId = (): string => {
+  try {
+    const raw = localStorage.getItem(ASK_HISTORY_KEY);
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (isRecord(parsed) && typeof parsed.session_id === "string" && parsed.session_id) {
+        return parsed.session_id;
+      }
+    }
+  } catch {
+    // Corrupt history still loads as an empty conversation below.
+  }
+  return newSessionId();
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
@@ -106,10 +132,11 @@ const loadMessages = (): MessageItem[] => {
   }
 };
 
-const persistMessages = (messages: MessageItem[]): void => {
+const persistMessages = (messages: MessageItem[], sessionId: string): void => {
   try {
     const payload: PersistedConversation = {
       version: ASK_HISTORY_VERSION,
+      session_id: sessionId,
       messages: messages
         .filter((message) => !message.loading && (message.result !== undefined || message.error !== undefined))
         .map(({ id, question, result, error, archivedPage }) => ({
@@ -128,72 +155,190 @@ const persistMessages = (messages: MessageItem[]): void => {
 
 interface AskViewProps {
   onNavigateWiki: (pageName: string) => void;
+  activeModelInfo: { providerName: string; modelName: string };
+  providers: CustomProvider[];
+  activeProviderId: string;
+  activeChatModel: string;
+  onSelectModel: (providerId: string, modelId: string) => void;
+  onOpenSettings: () => void;
 }
 
-export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
+interface ModelPickerBadgeProps {
+  providerName: string;
+  modelName: string;
+  providers: CustomProvider[];
+  activeProviderId: string;
+  activeChatModel: string;
+  onSelectModel: (providerId: string, modelId: string) => void;
+  onOpenSettings: () => void;
+  align?: "center" | "right";
+  placement?: "bottom" | "top";
+}
+
+// Capsule trigger + cascading provider → model picker menu (chat models only).
+const ModelPickerBadge: React.FC<ModelPickerBadgeProps> = ({
+  providerName,
+  modelName,
+  providers,
+  activeProviderId,
+  activeChatModel,
+  onSelectModel,
+  onOpenSettings,
+  align = "center",
+  placement = "bottom",
+}) => {
+  const [open, setOpen] = useState(false);
+  const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null);
+  const expandedProvider = providers.find((p) => p.id === expandedProviderId) || null;
+  const expandedChatModels = expandedProvider
+    ? expandedProvider.models.filter((m) => m.model_type === "chat")
+    : [];
+
+  return (
+    <div className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(!open);
+          setExpandedProviderId(null);
+        }}
+        title="点击切换供应商与模型"
+        className="font-mono text-zinc-800 bg-white border border-zinc-200/80 px-2.5 py-0.5 rounded-full shadow-xs hover:border-zinc-400 transition-colors cursor-pointer flex items-center gap-1 max-w-[300px]"
+      >
+        <span className="truncate">
+          {providerName} / {modelName}
+        </span>
+        <ChevronDown
+          className={`w-3 h-3 text-zinc-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40 cursor-default" onClick={() => setOpen(false)} />
+          <div
+            className={`absolute w-60 bg-white border border-zinc-200 rounded-xl shadow-lg py-1.5 z-50 animate-fade-in text-left ${
+              placement === "top" ? "bottom-full mb-2" : "top-full mt-2"
+            } ${align === "right" ? "right-0" : "left-1/2 -translate-x-1/2"}`}
+          >
+            <div className="px-3 pt-1 pb-1.5">
+              <div className="text-[11px] text-zinc-400">{providerName}</div>
+              <div className="flex items-center gap-1.5 py-0.5 min-w-0">
+                <span className="font-mono text-sm font-medium text-zinc-900 truncate">
+                  {modelName}
+                </span>
+                <Check className="w-3.5 h-3.5 text-zinc-900 shrink-0" />
+              </div>
+            </div>
+
+            <div className="border-t border-zinc-100 my-1" />
+
+            <div className="max-h-60 overflow-y-auto">
+              {providers.length === 0 && (
+                <div className="px-3 py-2 text-xs text-zinc-400">暂无供应商，请在设置中添加</div>
+              )}
+              {providers.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setExpandedProviderId(expandedProviderId === p.id ? null : p.id)}
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-zinc-50 cursor-pointer ${
+                    p.id === activeProviderId ? "text-zinc-900 font-medium" : "text-zinc-700"
+                  }`}
+                >
+                  <span className="truncate">{p.name}</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                </button>
+              ))}
+            </div>
+
+            {expandedProvider && (
+              <div
+                className={`mt-1 sm:mt-0 sm:absolute ${
+                  placement === "top" ? "sm:bottom-0" : "sm:top-0"
+                } ${
+                  align === "right" ? "sm:right-full sm:mr-1" : "sm:left-full sm:ml-1"
+                } w-full sm:w-56 bg-white border border-zinc-200 rounded-xl shadow-lg py-1 z-50`}
+              >
+                {expandedChatModels.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-zinc-400">该供应商暂无对话模型</div>
+                ) : (
+                  expandedChatModels.map((m) => {
+                    const isCurrent =
+                      expandedProvider.id === activeProviderId && m.id === activeChatModel;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectModel(expandedProvider.id, m.id);
+                          setOpen(false);
+                          setExpandedProviderId(null);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 cursor-pointer"
+                      >
+                        <span className="font-mono truncate flex-1 text-left">
+                          {m.name || m.id}
+                        </span>
+                        {m.tags
+                          .filter((t) => t !== "Chat")
+                          .slice(0, 2)
+                          .map((tag) => (
+                            <span
+                              key={tag}
+                              className="text-[10px] px-1.5 py-0.5 rounded-md bg-zinc-100 text-zinc-500 shrink-0"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        {isCurrent && <Check className="w-3.5 h-3.5 text-zinc-900 shrink-0" />}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            <div className="border-t border-zinc-100 my-1" />
+
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onOpenSettings();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-600 hover:bg-zinc-50 cursor-pointer"
+            >
+              <Settings2 className="w-3.5 h-3.5 text-zinc-400" />
+              管理模型
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+export const AskView: React.FC<AskViewProps> = ({
+  onNavigateWiki,
+  activeModelInfo,
+  providers,
+  activeProviderId,
+  activeChatModel,
+  onSelectModel,
+  onOpenSettings,
+}) => {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<MessageItem[]>(() => loadMessages());
+  const [sessionId, setSessionId] = useState<string>(() => loadSessionId());
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const [activeModelInfo, setActiveModelInfo] = useState<{
-    providerName: string;
-    modelName: string;
-  }>(() => {
-    try {
-      const activeId = localStorage.getItem("memoria_active_provider_cache") || "";
-      const activeModel = localStorage.getItem("memoria_active_model_cache") || "";
-      const cachedStr = localStorage.getItem("memoria_custom_providers_cache");
-      if (cachedStr) {
-        const cached = JSON.parse(cachedStr);
-        const p = Array.isArray(cached) ? cached.find((item: any) => item.id === activeId) : null;
-        if (p) {
-          return {
-            providerName: p.name,
-            modelName: activeModel || p.models?.[0]?.id || "未选择模型",
-          };
-        }
-      }
-      if (activeModel) {
-        return { providerName: activeId || "自定义", modelName: activeModel };
-      }
-    } catch {}
-    return { providerName: "自定义供应商", modelName: "默认模型" };
-  });
 
   const hasStarted = messages.length > 0;
 
   useEffect(() => {
-    const updateModelInfo = () => {
-      try {
-        const activeId = localStorage.getItem("memoria_active_provider_cache") || "";
-        const activeModel = localStorage.getItem("memoria_active_model_cache") || "";
-        const cachedStr = localStorage.getItem("memoria_custom_providers_cache");
-        if (cachedStr) {
-          const cached = JSON.parse(cachedStr);
-          const p = Array.isArray(cached) ? cached.find((item: any) => item.id === activeId) : null;
-          if (p) {
-            setActiveModelInfo({
-              providerName: p.name,
-              modelName: activeModel || p.models?.[0]?.id || "未选择模型",
-            });
-            return;
-          }
-        }
-        if (activeModel) {
-          setActiveModelInfo({ providerName: activeId || "自定义", modelName: activeModel });
-        }
-      } catch {}
-    };
-
-    updateModelInfo();
-    window.addEventListener("storage", updateModelInfo);
-    return () => window.removeEventListener("storage", updateModelInfo);
-  }, []);
-
-  useEffect(() => {
-    persistMessages(messages);
-  }, [messages]);
+    persistMessages(messages, sessionId);
+  }, [messages, sessionId]);
 
   useEffect(() => {
     if (hasStarted) {
@@ -216,7 +361,7 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
     setInput("");
 
     try {
-      const res = await api.ask(q);
+      const res = await api.ask(q, sessionId); // conversation_id = graph thread: model sees prior turns
       setMessages((prev) =>
         prev.map((m) =>
           m.id === msgId
@@ -248,6 +393,7 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
     if (!window.confirm("清空当前本地问答历史？已沉淀的 Wiki 页面不会被删除。")) return;
     setMessages([]);
     setInput("");
+    setSessionId(newSessionId()); // fresh conversation => fresh graph memory
     setArchivingId(null);
   };
 
@@ -289,9 +435,15 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
           <div className="flex items-center gap-1.5 text-xs text-zinc-500">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
             <span>当前模型:</span>
-            <span className="font-mono text-zinc-800 bg-white border border-zinc-200/80 px-2.5 py-0.5 rounded-full shadow-xs">
-              {activeModelInfo.providerName} / {activeModelInfo.modelName}
-            </span>
+            <ModelPickerBadge
+              providerName={activeModelInfo.providerName}
+              modelName={activeModelInfo.modelName}
+              providers={providers}
+              activeProviderId={activeProviderId}
+              activeChatModel={activeChatModel}
+              onSelectModel={onSelectModel}
+              onOpenSettings={onOpenSettings}
+            />
           </div>
 
           <form
@@ -395,6 +547,15 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
                         >
                           {msg.result.source === "wiki" ? "Wiki 知识回答" : "RAG 向量混合回答"}
                         </PillBadge>
+                        {msg.result.citations_verified === false && (
+                          <PillBadge
+                            variant="warning"
+                            title="部分内容没有可溯源的出处，请谨慎采信"
+                          >
+                            <AlertTriangle className="w-3 h-3" />
+                            部分内容未溯源
+                          </PillBadge>
+                        )}
                         {msg.result.wiki_pages.map((p) => (
                           <button
                             key={p}
@@ -485,11 +646,19 @@ export const AskView: React.FC<AskViewProps> = ({ onNavigateWiki }) => {
           <div className="fixed bottom-0 left-0 right-0 z-30 pointer-events-none pb-6 pt-10 bg-gradient-to-t from-canvas via-canvas/90 to-transparent">
             <div className="max-w-4xl w-full mx-auto px-3 sm:px-4 pointer-events-auto space-y-2">
               <div className="flex justify-end pr-3">
-                <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 bg-white/90 backdrop-blur-sm border border-zinc-200/80 px-2.5 py-0.5 rounded-full shadow-xs">
+                <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  <span className="font-mono text-zinc-600">
-                    {activeModelInfo.providerName} / {activeModelInfo.modelName}
-                  </span>
+                  <ModelPickerBadge
+                    providerName={activeModelInfo.providerName}
+                    modelName={activeModelInfo.modelName}
+                    providers={providers}
+                    activeProviderId={activeProviderId}
+                    activeChatModel={activeChatModel}
+                    onSelectModel={onSelectModel}
+                    onOpenSettings={onOpenSettings}
+                    align="right"
+                    placement="top"
+                  />
                 </div>
               </div>
               <form

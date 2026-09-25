@@ -3,6 +3,7 @@ import type {
   Citation,
   CustomModel,
   CustomProvider,
+  DocumentListResponse,
   IngestResponse,
   MailItem,
   ModelApiFormat,
@@ -29,13 +30,20 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  ask: (question: string) =>
+  ask: (question: string, conversationId: string) =>
     request<AskResponse>("/api/ask", {
       method: "POST",
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, conversation_id: conversationId }),
     }),
 
-  getWikiPages: () => request<WikiListResponse>("/api/wiki/pages"),
+  getWikiPages: (deep = false) =>
+    request<WikiListResponse>(`/api/wiki/pages${deep ? "?deep=true" : ""}`),
+
+  archiveMailFact: (msgId: string, page: string, fact: string) =>
+    request<{ page: string; added: boolean; message: string }>("/api/mail/fact", {
+      method: "POST",
+      body: JSON.stringify({ msg_id: msgId, page, fact }),
+    }),
 
   getWikiPage: (name: string) =>
     request<WikiPageDetail>(`/api/wiki/page/${encodeURIComponent(name)}`),
@@ -47,16 +55,21 @@ export const api = {
     }),
 
   getMailTriage: () =>
-    request<{ triages: MailItem[]; error?: string }>("/api/mail/triage"),
+    request<{
+      triages: MailItem[];
+      thread_id: string;
+      pending: string[];
+      error?: string;
+    }>("/api/mail/triage"),
 
-  archiveMail: (confirmed_ids: string[]) =>
+  archiveMail: (confirmed_ids: string[], thread_id: string) =>
     request<{
       archived: string[];
       blocked: string[];
       message: string;
     }>("/api/mail/archive", {
       method: "POST",
-      body: JSON.stringify({ confirmed_ids }),
+      body: JSON.stringify({ confirmed_ids, thread_id }),
     }),
 
   ingestText: (text: string, origin: string = "web_input.md") =>
@@ -64,6 +77,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text, origin }),
     }),
+
+  listDocuments: () => request<DocumentListResponse>("/api/documents"),
+
+  deleteDocument: (docId: string) =>
+    request<{ deleted: string; raw_removed: string | null }>(
+      `/api/documents/${encodeURIComponent(docId)}`,
+      { method: "DELETE" }
+    ),
 
   ingestFile: async (file: File): Promise<IngestResponse> => {
     const formData = new FormData();

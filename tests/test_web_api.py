@@ -1,6 +1,7 @@
-"""Tests for feat-010: Web API service (FastAPI). 100% offline."""
+"""Tests for feat-010/feat-033: Web API service (FastAPI), fully graph-backed. 100% offline."""
 
 import pytest
+from langgraph.checkpoint.memory import MemorySaver
 from starlette.testclient import TestClient
 
 from memoria.mail import Email
@@ -10,7 +11,11 @@ from memoria.wiki import Wiki
 
 
 class SmartChat:
+    def __init__(self):
+        self.calls: list[tuple[str, str]] = []
+
     def chat(self, system, user):
+        self.calls.append((system, user))
         if "Wiki 维护者" in system or "更新相关页面" in user:
             return "## [[服务到期]]\n# 服务到期\n\n2027 到期。\n"
         if "Wiki 检索器" in system:
@@ -40,6 +45,7 @@ def api_client(tmp_path):
         "llm": llm,
         "wiki": wiki,
         "emails": emails,
+        "checkpointer": MemorySaver(),
     })
     return TestClient(app), wiki, store
 
@@ -49,6 +55,60 @@ def test_health(api_client):
     resp = client.get("/api/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok", "version": "0.1.0"}
+
+
+def test_default_checkpointer_is_sqlite(tmp_path):
+    """feat-033: without an override the graph persists on disk via SqliteSaver."""
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    app = create_app({
+        "store": ChromaStore(path=str(tmp_path / "chroma")),
+        "embedder": FakeEmbedder(),
+        "llm": SmartChat(),
+        "wiki": wiki,
+        "checkpoint_db": str(tmp_path / "cp.sqlite"),
+    })
+    client = TestClient(app)
+    assert client.get("/api/health").status_code == 200
+    assert (tmp_path / "cp.sqlite").exists()  # graph state lands on disk, not memory
+
+
+def test_ask_conversation_memory(tmp_path):
+    """feat-034: same conversation_id replays prior turns into the follow-up prompts."""
+    llm = SmartChat()
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    app = create_app({
+        "store": ChromaStore(path=str(tmp_path / "chroma")),
+        "embedder": FakeEmbedder(),
+        "llm": llm,
+        "wiki": wiki,
+        "checkpointer": MemorySaver(),
+    })
+    client = TestClient(app)
+
+    first = client.post(
+        "/api/ask", json={"question": "服务 A 何时到期？", "conversation_id": "conv-1"}
+    ).json()
+    assert first["conversation_id"] == "conv-1"
+
+    n_first = len(llm.calls)
+    follow = client.post(
+        "/api/ask", json={"question": "那要提前多久？", "conversation_id": "conv-1"}
+    ).json()
+    assert follow["conversation_id"] == "conv-1"
+    recent = "\n".join(u for _, u in llm.calls[n_first:])
+    assert "服务 A 何时到期" in recent  # prior turn reached the model
+
+    # A fresh conversation id starts with a clean memory.
+    n_fresh = len(llm.calls)
+    client.post("/api/ask", json={"question": "换个话题", "conversation_id": "conv-2"})
+    fresh = "\n".join(u for _, u in llm.calls[n_fresh:])
+    assert "服务 A 何时到期" not in fresh
+
+    # Omitting conversation_id mints a new thread instead of failing.
+    auto = client.post("/api/ask", json={"question": "服务 A 何时到期？"}).json()
+    assert auto["conversation_id"] not in {"", "conv-1", "conv-2"}
 
 
 def test_frontend_static_serving(api_client):
@@ -725,6 +785,58 @@ def test_provider_rejects_invalid_urls_and_errors(api_client):
     assert client.post("/api/config/providers/activate", json={"provider_id": "missing"}).status_code == 404
 
 
+def _ingest_raw(client, wiki, name, body):
+    """Upload + dual-ingest a raw file through the public API; returns doc_id."""
+    resp = client.post(
+        "/api/ingest",
+        json={"text": body, "origin": name},
+    )
+    assert resp.status_code == 200
+    return resp.json()["doc_id"]
+
+
+def test_documents_list_and_delete_no_orphan_vectors(api_client, tmp_path):
+    client, wiki, store = api_client
+    doc_id = _ingest_raw(client, wiki, "note-a.md", "服务 A 将于 2027-01-01 到期。" * 10)
+    assert store.count() > 0
+    assert doc_id in store.documents()  # chunked into several vectors
+
+    listing = client.get("/api/documents").json()
+    entry = next(d for d in listing["documents"] if d["doc_id"] == doc_id)
+    assert entry["name"] == "note-a.md" and entry["chunks"] > 0
+
+    resp = client.delete(f"/api/documents/{doc_id}")
+    assert resp.status_code == 200
+    assert resp.json()["raw_removed"] == "note-a.md"
+
+    # Red line: not a single vector of the deleted doc may remain.
+    assert store.count() == 0 and doc_id not in store.documents()
+    assert not (wiki.raw_dir / "note-a.md").exists()
+    assert "删除文档" in (wiki.read_page("log") or "")
+
+    after = client.get("/api/documents").json()
+    assert all(d["doc_id"] != doc_id for d in after["documents"])
+
+
+def test_delete_document_without_raw_file_still_purges_vectors(api_client):
+    client, wiki, store = api_client
+    doc_id = _ingest_raw(client, wiki, "note-b.md", "内容内容内容。" * 10)
+    (wiki.raw_dir / "note-b.md").unlink()  # raw already gone, vectors remain
+
+    resp = client.delete(f"/api/documents/{doc_id}")
+    assert resp.status_code == 200
+    assert resp.json()["raw_removed"] is None
+    assert store.count() == 0
+    vector_only = client.get("/api/documents").json()["vector_only"]
+    assert all(d["doc_id"] != doc_id for d in vector_only)
+
+
+def test_delete_unknown_document_404(api_client):
+    client, _, _ = api_client
+    resp = client.delete("/api/documents/deadbeefdeadbeef")
+    assert resp.status_code == 404
+
+
 def test_ask_endpoint(api_client):
     client, wiki, _ = api_client
     wiki.write_page("服务到期", "# 服务到期\n\n2027 到期。\n")
@@ -736,6 +848,7 @@ def test_ask_endpoint(api_client):
     assert data["source"] == "wiki"
     assert "2027" in data["text"]
     assert "服务到期" in data["wiki_pages"]
+    assert data["citations_verified"] is True
 
 
 def test_wiki_pages_and_detail(api_client):
@@ -777,7 +890,10 @@ def test_mail_triage_and_archive_red_line(api_client):
     client, _, _ = api_client
     resp = client.get("/api/mail/triage")
     assert resp.status_code == 200
-    items = resp.json()["triages"]
+    data = resp.json()
+    thread_id = data["thread_id"]
+    assert thread_id
+    items = data["triages"]
     assert len(items) == 2
 
     # m1 is OTP verification -> must be protected
@@ -788,11 +904,13 @@ def test_mail_triage_and_archive_red_line(api_client):
     # m2 is marketing -> candidate
     mkt_item = next(i for i in items if i["id"] == "m2")
     assert mkt_item["protected"] is False
+    assert mkt_item["can_archive"] is True
+    assert data["pending"] == ["m2"]  # graph interrupt carries exactly this whitelist
 
     # Attempt to archive m1 (protected) + m2 (marketing)
     arch_resp = client.post(
         "/api/mail/archive",
-        json={"confirmed_ids": ["m1", "m2"]},
+        json={"confirmed_ids": ["m1", "m2"], "thread_id": thread_id},
     )
     assert arch_resp.status_code == 200
     arch_data = arch_resp.json()
@@ -800,22 +918,91 @@ def test_mail_triage_and_archive_red_line(api_client):
     assert "m1" in arch_data["blocked"]
     assert "m2" in arch_data["archived"]
 
+    # The triage thread is finished: another archive round-trip is a no-op.
+    again = client.post(
+        "/api/mail/archive",
+        json={"confirmed_ids": ["m2"], "thread_id": thread_id},
+    )
+    assert again.status_code == 200
+    assert again.json()["archived"] == []
+
     # Confirmed candidates are single-use.
-    replay = client.post("/api/mail/archive", json={"confirmed_ids": ["m2"]}).json()
+    replay = client.post(
+        "/api/mail/archive",
+        json={"confirmed_ids": ["m2"], "thread_id": thread_id},
+    ).json()
     assert replay["archived"] == []
     assert "m2" in replay["blocked"]
+
+
+def test_wiki_deep_lint_flags_contradictions(api_client, tmp_path):
+    """feat-036: deep=true runs the LLM contradiction check; default stays free."""
+    client, wiki, _ = api_client
+    wiki.write_page("A", "# A\n\n见 [[B]]。\n")
+    wiki.write_page("B", "# B\n\n回链 [[A]]。\n")
+    wiki.build_index()
+
+    plain = client.get("/api/wiki/pages").json()
+    assert plain["lint"]["contradictions"] == []
+
+    # A dedicated app whose LLM always says YES surfaces the contradiction.
+    from memoria.llm import FakeChat
+
+    yes_app = create_app({
+        "store": ChromaStore(path=str(tmp_path / "chroma")),
+        "embedder": FakeEmbedder(),
+        "llm": FakeChat("YES: A 说免费，B 说收费"),
+        "wiki": wiki,
+        "checkpointer": MemorySaver(),
+    })
+    deep = TestClient(yes_app).get("/api/wiki/pages?deep=true").json()
+    assert len(deep["lint"]["contradictions"]) == 1
+    assert "[[A]] vs [[B]]" in deep["lint"]["contradictions"][0]
+
+
+def test_mail_fact_writes_back_to_wiki(api_client):
+    """feat-037: email-derived facts compound into wiki pages, deduped."""
+    client, wiki, _ = api_client
+    resp = client.post(
+        "/api/mail/fact",
+        json={"msg_id": "m9", "page": "服务到期", "fact": "服务 A 到期日 2027-01-01"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["added"] is True
+    body = wiki.read_page("服务到期") or ""
+    assert "2027-01-01" in body and "mail:m9" in body
+
+    dup = client.post(
+        "/api/mail/fact",
+        json={"msg_id": "m9", "page": "服务到期", "fact": "服务 A 到期日 2027-01-01"},
+    ).json()
+    assert dup["added"] is False
+
+    bad = client.post(
+        "/api/mail/fact",
+        json={"msg_id": "m9", "page": "../escape", "fact": "x"},
+    )
+    assert bad.status_code == 400
 
 
 def test_mail_archive_rejects_ids_without_fresh_triage(api_client):
     client, _, _ = api_client
 
-    without_triage = client.post("/api/mail/archive", json={"confirmed_ids": ["m2"]})
+    missing_thread = client.post("/api/mail/archive", json={"confirmed_ids": ["m2"]})
+    assert missing_thread.status_code == 400  # no triage session -> no archive at all
+
+    without_triage = client.post(
+        "/api/mail/archive", json={"confirmed_ids": ["m2"], "thread_id": "ghost-thread"}
+    )
     assert without_triage.status_code == 200
     assert without_triage.json()["archived"] == []
     assert "m2" in without_triage.json()["blocked"]
 
-    assert client.get("/api/mail/triage").status_code == 200
-    unknown = client.post("/api/mail/archive", json={"confirmed_ids": ["unknown"]})
+    triage = client.get("/api/mail/triage").json()
+    unknown = client.post(
+        "/api/mail/archive",
+        json={"confirmed_ids": ["unknown"], "thread_id": triage["thread_id"]},
+    )
     assert unknown.status_code == 200
     assert unknown.json()["archived"] == []
     assert "unknown" in unknown.json()["blocked"]

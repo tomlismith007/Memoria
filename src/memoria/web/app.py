@@ -7,18 +7,24 @@ Supports dependency injection for 100% offline, deterministic testing.
 from __future__ import annotations
 
 import os
+import sqlite3
+import uuid
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from memoria.graph import build_graph
 from memoria.llm import ChatLLM, OpenAICompatibleChat
-from memoria.mail import Email, archive, classify, fetch_messages, is_protected, request_archive
-from memoria.rag import ChromaStore, Citation, OpenAICompatibleEmbedder
-from memoria.sync import archive_qa, dual_ingest, hybrid_answer
+from memoria.mail import Email, request_archive
+from memoria.rag import ChromaStore, Citation, OpenAICompatibleEmbedder, doc_id_for_origin
+from memoria.sync import archive_qa, archive_fact
 from memoria.web.config import Settings
 from memoria.web.config_routes import register_config_routes
 from memoria.wiki import Wiki, extract_links, lint as wiki_lint
@@ -26,6 +32,7 @@ from memoria.wiki import Wiki, extract_links, lint as wiki_lint
 
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1)
+    conversation_id: str = ""  # empty -> new conversation thread (its id is returned)
 
 
 class ArchiveQARequest(BaseModel):
@@ -36,6 +43,13 @@ class ArchiveQARequest(BaseModel):
 
 class MailArchiveRequest(BaseModel):
     confirmed_ids: list[str]
+    thread_id: str = ""  # triage session; the graph interrupt lives on this thread
+
+
+class MailFactRequest(BaseModel):
+    msg_id: str
+    page: str
+    fact: str = Field(..., min_length=1)
 
 
 class IngestTextRequest(BaseModel):
@@ -87,16 +101,38 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     wiki.ensure_layout()
     mail_service = overrides.get("mail_service")
     cached_emails: list[Email] = overrides.get("emails", [])
-    latest_candidates: set[str] = set()
+
+    checkpointer = overrides.get("checkpointer")
+    if checkpointer is None:
+        checkpoint_db = overrides.get("checkpoint_db") or os.environ.get(
+            "MEMORIA_CHECKPOINT_DB", "./data/checkpoints.sqlite"
+        )
+        checkpointer = SqliteSaver(
+            sqlite3.connect(checkpoint_db, check_same_thread=False),
+            serde=JsonPlusSerializer(
+                allowed_msgpack_modules=[
+                    ("memoria.mail.classify", "Email"),
+                    ("memoria.mail.classify", "Triage"),
+                ]
+            ),
+        )
+
+    def build_compiled():
+        return build_graph(store, embedder, llm, wiki, mail_service).compile(
+            checkpointer=checkpointer
+        )
+
+    compiled_graph = build_compiled()
 
     def activate_settings(settings: Settings) -> None:
-        nonlocal llm, embedder
+        nonlocal llm, embedder, compiled_graph
         if settings.demo_mode:
             from memoria.llm import FakeChat
             from memoria.rag import FakeEmbedder
 
             llm = FakeChat()
             embedder = FakeEmbedder()
+            compiled_graph = build_compiled()
             return
         llm_base_url = settings.llm_base_url
         llm_api_key = settings.llm_api_key
@@ -153,6 +189,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                 api_key=embed_api_key or "no-key",
                 model=embed_model,
             )
+        compiled_graph = build_compiled()
 
     register_config_routes(app, activate_settings=activate_settings)
 
@@ -162,31 +199,40 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
 
     @app.post("/api/ask")
     def api_ask(req: AskRequest):
+        # conversation_id is the LangGraph thread: the checkpointer replays the
+        # prior turns (feat-034) and survives restarts via SqliteSaver.
+        conversation_id = req.conversation_id or uuid.uuid4().hex
+        config = {"configurable": {"thread_id": conversation_id}}
         try:
-            ans = hybrid_answer(req.question, wiki, llm, store, embedder)
-            return {
-                "text": ans.text,
-                "source": ans.source,
-                "wiki_pages": ans.wiki_pages,
-                "citations": [
-                    {
-                        "ref": c.ref,
-                        "doc_id": c.doc_id,
-                        "chunk": c.chunk,
-                        "start": c.start,
-                    }
-                    for c in ans.citations
-                ],
-            }
+            result = compiled_graph.invoke(
+                {"text": req.question, "intent": "问答"}, config
+            )
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"LLM 接口调用失败: {str(e)[:180]}")
+        return {
+            "text": result["answer_text"],
+            "conversation_id": conversation_id,
+            "source": result.get("answer_source", "rag+wiki"),
+            "wiki_pages": result.get("answer_wiki_pages", []),
+            "citations_verified": result.get("answer_verified", False),
+            "citations": [
+                {
+                    "ref": c.ref,
+                    "doc_id": c.doc_id,
+                    "chunk": c.chunk,
+                    "start": c.start,
+                }
+                for c in result.get("answer_citations", [])
+            ],
+        }
 
     @app.get("/api/wiki/pages")
-    def api_wiki_pages():
+    def api_wiki_pages(deep: bool = False):
+        # deep=true adds the LLM contradiction check (costs one call per linked pair).
         pages = wiki.list_pages()
-        report = wiki_lint(wiki)
+        report = wiki_lint(wiki, llm=llm if deep else None)
         details = []
         for p in pages:
             body = wiki.read_page(p) or ""
@@ -197,6 +243,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             "lint": {
                 "broken": report.broken,
                 "orphans": report.orphans,
+                "contradictions": report.contradictions,
             },
         }
 
@@ -236,66 +283,140 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
 
     @app.get("/api/mail/triage")
     def api_mail_triage():
-        latest_candidates.clear()
-        emails = list(cached_emails)
-        if mail_service is not None:
-            try:
-                emails = fetch_messages(mail_service)
-            except Exception as e:
-                return {"triages": [], "error": str(e)}
+        thread_id = uuid.uuid4().hex
+        config = {"configurable": {"thread_id": thread_id}}
+        try:
+            result = compiled_graph.invoke(
+                {"intent": "邮件", "emails": list(cached_emails)}, config
+            )
+        except Exception as e:
+            return {"triages": [], "thread_id": thread_id, "pending": [], "error": str(e)}
 
-        results = []
-        candidate_ids: set[str] = set()
-        for e in emails:
-            t = classify(e, llm)
-            can_archive = request_archive(t) is not None
-            if can_archive:
-                candidate_ids.add(t.email.msg_id)
-            results.append({
-                "id": t.email.msg_id,
-                "msg_id": t.email.msg_id,
-                "subject": t.email.subject,
-                "sender": t.email.sender,
-                "snippet": t.email.snippet,
-                "category": t.category,
-                "summary": t.summary,
-                "protected": t.protected,
-                "can_archive": can_archive,
-            })
-        latest_candidates.update(candidate_ids)
-        return {"triages": results}
+        triages = result.get("triages", [])
+        pending = [mid for t in triages if (mid := request_archive(t))]
+        return {
+            "thread_id": thread_id,
+            "pending": pending,
+            "triages": [
+                {
+                    "id": t.email.msg_id,
+                    "msg_id": t.email.msg_id,
+                    "subject": t.email.subject,
+                    "sender": t.email.sender,
+                    "snippet": t.email.snippet,
+                    "category": t.category,
+                    "summary": t.summary,
+                    "protected": t.protected,
+                    "can_archive": request_archive(t) is not None,
+                }
+                for t in triages
+            ],
+        }
 
     @app.post("/api/mail/archive")
     def api_mail_archive(req: MailArchiveRequest):
-        """Archives selected emails after strict human confirmation.
+        """Archives selected emails after strict human confirmation (graph interrupt).
 
-        Red Line Enforced: Protected emails cannot be archived under any circumstances.
+        Red Line Enforced: the confirm_archive node whitelists confirmed ids against
+        the pending set and re-checks the protected flag; protected mail can never
+        reach the archive node under any circumstances.
         """
-        archived: list[str] = []
-        blocked: list[str] = []
-        email_map = {e.msg_id: e for e in cached_emails}
-
-        for mid in req.confirmed_ids:
-            if mid not in latest_candidates:
-                blocked.append(mid)
-                continue
-            e = email_map.get(mid)
-            if e and is_protected(e.subject, e.snippet):
-                blocked.append(mid)
-                continue
-            if mail_service is not None:
-                try:
-                    archive(mail_service, mid, confirmed=True)
-                except Exception:
-                    blocked.append(mid)
-                    continue
-            archived.append(mid)
-            latest_candidates.discard(mid)
-
+        if not req.thread_id:
+            raise HTTPException(status_code=400, detail="thread_id is required")
+        config = {"configurable": {"thread_id": req.thread_id}}
+        snapshot = compiled_graph.get_state(config)
+        if not any(t.interrupts for t in snapshot.tasks):
+            return {
+                "archived": [],
+                "blocked": list(req.confirmed_ids),
+                "message": "No pending confirmation on this triage session.",
+            }
+        try:
+            result = compiled_graph.invoke(
+                Command(resume={"approved": req.confirmed_ids}), config
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"归档失败: {str(e)[:180]}")
+        archived = list(result.get("archived", []))
+        blocked = [mid for mid in req.confirmed_ids if mid not in archived]
         return {
             "archived": archived,
             "blocked": blocked,
             "message": f"Archived {len(archived)} message(s). Blocked {len(blocked)} protected item(s).",
+        }
+
+    @app.get("/api/documents")
+    def api_documents():
+        vector_docs = store.documents()
+        documents = []
+        for f in sorted(wiki.raw_dir.iterdir()):
+            if not f.is_file():
+                continue
+            doc_id = doc_id_for_origin(str(f.resolve()))
+            documents.append({
+                "doc_id": doc_id,
+                "name": f.name,
+                "size": f.stat().st_size,
+                "chunks": vector_docs.pop(doc_id, 0),  # 0 = uploaded but not yet ingested
+            })
+        # Vectors whose raw source is a URL or was already removed from raw/.
+        vector_only = [
+            {"doc_id": doc_id, "chunks": chunks} for doc_id, chunks in sorted(vector_docs.items())
+        ]
+        return {"documents": documents, "vector_only": vector_only}
+
+    @app.delete("/api/documents/{doc_id}")
+    def api_delete_document(doc_id: str):
+        """Red line: deletion removes the doc's raw file AND all of its vectors."""
+        raw_target = None
+        for f in wiki.raw_dir.iterdir():
+            if f.is_file() and doc_id_for_origin(str(f.resolve())) == doc_id:
+                raw_target = f
+                break
+        if raw_target is None and doc_id not in store.documents():
+            raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+        store.delete_document(doc_id)
+        if doc_id in store.documents():  # paranoia guard on the red line
+            raise HTTPException(status_code=500, detail="Orphan vectors remain after deletion")
+        raw_name = raw_target.name if raw_target else None
+        if raw_target is not None:
+            raw_target.unlink()  # source came from raw_dir iteration, so path-safe
+        wiki.append_log(f"删除文档 {doc_id}：全部向量与 raw 文件（{raw_name or '无'}）已清除")
+        return {"deleted": doc_id, "raw_removed": raw_name}
+
+    @app.post("/api/mail/fact")
+    def api_mail_fact(req: MailFactRequest):
+        """Writes an email-derived fact into a wiki page (compounding loop, feat-008)."""
+        page = req.page.strip()
+        fact = req.fact.strip()
+        if not page or "/" in page or "\\" in page or ".." in page:
+            raise HTTPException(status_code=400, detail="Invalid wiki page name")
+        if not fact:
+            raise HTTPException(status_code=400, detail="Fact must not be empty")
+        added = archive_fact(page, fact, f"mail:{req.msg_id}", wiki)
+        return {
+            "page": page,
+            "added": added,
+            "message": (
+                f"已摘录进 [[{page}]]" if added else f"[[{page}]] 已存在相同摘录，未重复写入"
+            ),
+        }
+
+    def run_ingest(source_path: Path, origin: str) -> dict:
+        config = {"configurable": {"thread_id": uuid.uuid4().hex}}
+        try:
+            result = compiled_graph.invoke(
+                {"intent": "ingest", "source_path": str(source_path), "origin": origin},
+                config,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"摄入失败: {str(e)[:180]}")
+        return {
+            "doc_id": result.get("doc_id"),
+            "chunks": result.get("chunks", 0),
+            "wiki_pages": result.get("ingest_updated", []),
+            "origin": origin,
         }
 
     @app.post("/api/ingest")
@@ -303,26 +424,16 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         # User inputs are written once; LLM/agent compilation treats raw/ as read-only.
         temp_source = _safe_raw_path(wiki.raw_dir, req.origin)
         temp_source.write_text(req.text, encoding="utf-8")
-        res = dual_ingest(str(temp_source), store, embedder, wiki, llm)
-        return {
-            "doc_id": res.doc_id,
-            "chunks": res.chunks,
-            "wiki_pages": res.wiki_pages,
-            "origin": req.origin,
-        }
+        return run_ingest(temp_source, req.origin)
 
     @app.post("/api/ingest/file")
     async def api_ingest_file(file: UploadFile = File(...)):
         target_path = _safe_raw_path(wiki.raw_dir, file.filename or "")
         content = await file.read()
         target_path.write_bytes(content)
-        res = dual_ingest(str(target_path), store, embedder, wiki, llm)
-        return {
-            "doc_id": res.doc_id,
-            "chunks": res.chunks,
-            "wiki_pages": res.wiki_pages,
-            "filename": file.filename,
-        }
+        response = run_ingest(target_path, file.filename or "")
+        response["filename"] = file.filename
+        return response
 
     # Mount frontend static files if built
     frontend_dist = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist"

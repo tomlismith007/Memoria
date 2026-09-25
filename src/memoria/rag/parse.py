@@ -19,7 +19,8 @@ class Document:
     origin: str  # file path or URL
 
 
-def _doc_id(origin: str) -> str:
+def doc_id_for_origin(origin: str) -> str:
+    """Public doc_id mapping so deletion can resolve a doc back to its source path."""
     return hashlib.sha256(origin.encode("utf-8")).hexdigest()[:16]
 
 
@@ -28,14 +29,14 @@ def load_document(source: str) -> Document:
     if source.startswith("http://"):
         raise SafeRequestError("URL must use HTTPS")
     if source.startswith("https://"):
-        return Document(_doc_id(source), _parse_url(source), source)
+        return Document(doc_id_for_origin(source), _parse_url(source), source)
     path = Path(source)
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         text = _parse_pdf(path)
     else:  # .md / .markdown / .txt / anything else: best-effort UTF-8 read
         text = path.read_text(encoding="utf-8")
-    return Document(_doc_id(str(path)), text, str(path))
+    return Document(doc_id_for_origin(str(path)), text, str(path))
 
 
 def _parse_pdf(path: Path) -> str:

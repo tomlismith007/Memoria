@@ -1,13 +1,15 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   CheckCircle2,
   FileUp,
+  FileText,
   Loader2,
+  Trash2,
   UploadCloud,
   FileCode,
 } from "lucide-react";
 import { api } from "../api";
-import type { IngestResponse } from "../types";
+import type { DocumentListResponse, IngestResponse } from "../types";
 import { PillBadge } from "../components/ui/PillBadge";
 import { PillButton } from "../components/ui/PillButton";
 import { RoundedCard } from "../components/ui/RoundedCard";
@@ -22,6 +24,39 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<IngestResponse | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [docs, setDocs] = useState<DocumentListResponse | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const loadDocs = useCallback(async () => {
+    try {
+      setDocs(await api.listDocuments());
+    } catch {
+      // The library listing is an enhancement; ingest still works without it.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDocs();
+  }, [loadDocs]);
+
+  const handleDelete = async (docId: string, name: string) => {
+    if (
+      !window.confirm(
+        `删除文档「${name}」？其全部向量切块与 raw 原文将被清除，已编译的 Wiki 页面保留。`
+      )
+    ) {
+      return;
+    }
+    setDeletingId(docId);
+    try {
+      await api.deleteDocument(docId);
+      await loadDocs();
+    } catch (err: any) {
+      alert(`删除失败: ${err.message}`);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const handleIngestText = async () => {
     if (!text.trim()) return;
@@ -31,6 +66,7 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
       const res = await api.ingestText(text, origin || "note.md");
       setResult(res);
       setText("");
+      await loadDocs();
     } catch (err: any) {
       alert(`文档双写摄入失败: ${err.message}`);
     } finally {
@@ -44,6 +80,7 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
     try {
       const res = await api.ingestFile(file);
       setResult(res);
+      await loadDocs();
     } catch (err: any) {
       alert(`文件上传双写失败: ${err.message}`);
     } finally {
@@ -196,6 +233,71 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
               )}
             </div>
           </div>
+        </RoundedCard>
+      )}
+
+      {/* Document Library: list + deletion (red line: vectors + raw purged together) */}
+      {docs && (docs.documents.length > 0 || docs.vector_only.length > 0) && (
+        <RoundedCard variant="primary" className="space-y-3">
+          <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
+            <FileText className="w-4 h-4 text-zinc-500" />
+            已入库文档（{docs.documents.length + docs.vector_only.length}）
+          </span>
+
+          <div className="divide-y divide-zinc-100 rounded-2xl border border-zinc-100">
+            {docs.documents.map((d) => (
+              <div key={d.doc_id} className="flex items-center gap-3 px-3 py-2.5 text-xs min-w-0">
+                <FileText className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                <span className="font-mono text-zinc-800 truncate flex-1 min-w-0">{d.name}</span>
+                <span className="font-mono text-zinc-400 truncate max-w-[110px] hidden sm:inline">
+                  {d.doc_id}
+                </span>
+                <PillBadge variant={d.chunks > 0 ? "citation" : "neutral"}>
+                  {d.chunks > 0 ? `${d.chunks} 切块` : "未入库"}
+                </PillBadge>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(d.doc_id, d.name)}
+                  disabled={deletingId === d.doc_id}
+                  title="删除该文档的全部向量与 raw 原文"
+                  className="rounded-full p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40 shrink-0"
+                >
+                  {deletingId === d.doc_id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+            ))}
+
+            {docs.vector_only.map((d) => (
+              <div key={d.doc_id} className="flex items-center gap-3 px-3 py-2.5 text-xs min-w-0">
+                <FileText className="w-3.5 h-3.5 text-zinc-300 shrink-0" />
+                <span className="font-mono text-zinc-400 truncate flex-1 min-w-0">
+                  {d.doc_id}（raw 原文已不在）
+                </span>
+                <PillBadge variant="citation">{d.chunks} 切块</PillBadge>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(d.doc_id, d.doc_id)}
+                  disabled={deletingId === d.doc_id}
+                  title="清除残留向量"
+                  className="rounded-full p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40 shrink-0"
+                >
+                  {deletingId === d.doc_id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-[11px] text-zinc-400">
+            删除会同时清除该文档的全部向量与 raw 原文（无孤儿向量）；已编译的 Wiki 页面保留。
+          </p>
         </RoundedCard>
       )}
     </div>

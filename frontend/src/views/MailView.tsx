@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Archive,
+  BookOpen,
   CheckCircle2,
   Inbox,
   Mail,
@@ -14,6 +15,12 @@ import { PillBadge } from "../components/ui/PillBadge";
 import { PillButton } from "../components/ui/PillButton";
 import { RoundedCard } from "../components/ui/RoundedCard";
 
+interface FactDraft {
+  msgId: string;
+  page: string;
+  fact: string;
+}
+
 export const MailView: React.FC = () => {
   const [mails, setMails] = useState<MailItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -21,6 +28,9 @@ export const MailView: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string>("");
+  const [factDraft, setFactDraft] = useState<FactDraft | null>(null);
+  const [savingFact, setSavingFact] = useState(false);
 
   const loadMails = async () => {
     setLoading(true);
@@ -28,6 +38,7 @@ export const MailView: React.FC = () => {
     try {
       const data = await api.getMailTriage();
       setMails(data.triages || []);
+      setThreadId(data.thread_id || ""); // the graph interrupt lives on this thread
     } catch (err: any) {
       alert(`获取邮件列表失败: ${err.message}`);
     } finally {
@@ -61,7 +72,7 @@ export const MailView: React.FC = () => {
     if (selectedIds.length === 0) return;
     setArchiving(true);
     try {
-      const res = await api.archiveMail(selectedIds);
+      const res = await api.archiveMail(selectedIds, threadId);
       setStatusMessage(res.message);
       setModalOpen(false);
       setSelectedIds([]);
@@ -70,6 +81,24 @@ export const MailView: React.FC = () => {
       alert(`归档操作失败: ${err.message}`);
     } finally {
       setArchiving(false);
+    }
+  };
+
+  const startFactDraft = (m: MailItem) => {
+    setFactDraft({ msgId: m.id, page: "", fact: m.summary });
+  };
+
+  const submitFact = async () => {
+    if (!factDraft || !factDraft.page.trim() || !factDraft.fact.trim()) return;
+    setSavingFact(true);
+    try {
+      const res = await api.archiveMailFact(factDraft.msgId, factDraft.page, factDraft.fact);
+      setStatusMessage(res.message);
+      setFactDraft(null);
+    } catch (err: any) {
+      alert(`摘录失败: ${err.message}`);
+    } finally {
+      setSavingFact(false);
     }
   };
 
@@ -255,16 +284,63 @@ export const MailView: React.FC = () => {
           </div>
           <div className="space-y-2">
             {normalMails.map((m) => (
-              <RoundedCard key={m.id} variant="item" className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <PillBadge variant="neutral">{m.category}</PillBadge>
-                  <span className="font-medium text-xs text-zinc-900">
-                    {m.subject}
-                  </span>
+              <RoundedCard key={m.id} variant="item" className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <PillBadge variant="neutral">{m.category}</PillBadge>
+                    <span className="min-w-0 break-words font-medium text-xs text-zinc-900">
+                      {m.subject}
+                    </span>
+                  </div>
+                  <PillButton
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      factDraft?.msgId === m.id ? setFactDraft(null) : startFactDraft(m)
+                    }
+                    icon={<BookOpen className="w-3.5 h-3.5" />}
+                  >
+                    摘录进 Wiki
+                  </PillButton>
                 </div>
                 <div className="text-xs text-zinc-600">
                   {m.summary}
                 </div>
+
+                {factDraft?.msgId === m.id && (
+                  <div className="space-y-2 rounded-2xl border border-zinc-100 bg-zinc-50/70 p-3">
+                    <div className="flex flex-col items-stretch gap-2 sm:flex-row">
+                      <input
+                        type="text"
+                        value={factDraft.page}
+                        onChange={(e) =>
+                          setFactDraft({ ...factDraft, page: e.target.value })
+                        }
+                        placeholder="目标 Wiki 页名，如：服务到期"
+                        className="w-full min-w-0 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-900 outline-none focus:border-zinc-400 sm:w-56"
+                      />
+                      <input
+                        type="text"
+                        value={factDraft.fact}
+                        onChange={(e) =>
+                          setFactDraft({ ...factDraft, fact: e.target.value })
+                        }
+                        placeholder="要沉淀的事实（一句话）"
+                        className="w-full min-w-0 flex-1 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-900 outline-none focus:border-zinc-400"
+                      />
+                      <PillButton
+                        size="sm"
+                        onClick={submitFact}
+                        disabled={savingFact || !factDraft.page.trim() || !factDraft.fact.trim()}
+                      >
+                        {savingFact ? "写入中..." : "写入"}
+                      </PillButton>
+                    </div>
+                    <p className="text-[11px] text-zinc-400">
+                      事实将以（来源：mail:{m.id}）写进目标页面；重复摘录自动去重。
+                    </p>
+                  </div>
+                )}
               </RoundedCard>
             ))}
           </div>

@@ -46,6 +46,7 @@ class HybridAnswer:
     source: str  # "wiki" | "rag+wiki"
     wiki_pages: list[str] = field(default_factory=list)
     citations: list[Citation] = field(default_factory=list)
+    citations_verified: bool = True
 
 
 def hybrid_answer(
@@ -59,10 +60,21 @@ def hybrid_answer(
     wans: WikiAnswer = wiki_query(question, wiki, llm)
     verdict = llm.chat(GATE_SYSTEM, f"问题：{question}\n\nWiki 回答：{wans.text}")
     if "补充" not in verdict and "充分" in verdict:
-        return HybridAnswer(text=wans.text, source="wiki", wiki_pages=wans.pages)
+        return HybridAnswer(
+            text=wans.text,
+            source="wiki",
+            wiki_pages=wans.pages,
+            citations_verified=wans.citations_verified,
+        )
     rans: Answer = rag_answer(question, store, embedder, llm)
     text = f"{wans.text}\n\n补充细节：\n{rans.text}"
-    return HybridAnswer(text=text, source="rag+wiki", wiki_pages=wans.pages, citations=rans.citations)
+    return HybridAnswer(
+        text=text,
+        source="rag+wiki",
+        wiki_pages=wans.pages,
+        citations=rans.citations,
+        citations_verified=wans.citations_verified and rans.citations_verified,
+    )
 
 
 def _safe_name(question: str) -> str:

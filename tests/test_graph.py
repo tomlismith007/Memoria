@@ -93,6 +93,98 @@ def test_router_fallback_to_qa(tmp_path):
     assert out["intent"] == "问答"
 
 
+def test_qa_route_wiki_sufficient_and_router_skipped(tmp_path):
+    store, wiki = _kb(tmp_path)
+    wiki.write_page("服务到期", "# 服务到期\n\n2027 年到期。\n")
+    wiki.build_index()
+    llm = ScriptedChat("[[服务到期]]", "服务 A 2027 年到期。[[服务到期]]", "充分")
+    g = build_graph(store, FakeEmbedder(), llm, wiki).compile()
+    out = g.invoke({"text": "服务 A 何时到期", "intent": "问答"})
+    assert out["answer_source"] == "wiki"
+    assert out["answer_verified"] is True
+    assert "意图路由" not in llm.calls[0][0]  # preset intent skipped the router LLM
+
+
+def test_ingest_route_source_path_dual_writes(tmp_path):
+    store, wiki = _kb(tmp_path)
+    src = tmp_path / "raw-note.md"
+    src.write_text("服务 A 2027 年到期，请及时续费。" * 5, encoding="utf-8")
+    llm = ScriptedChat("## [[服务到期]]\n# 服务到期\n\n2027 年到期。\n")
+    g = build_graph(store, FakeEmbedder(), llm, wiki).compile()
+    out = g.invoke(
+        {"intent": "ingest", "source_path": str(src), "origin": "raw-note.md"}
+    )
+    assert out["doc_id"] and out["chunks"] > 0
+    assert store.count() > 0  # vectors written through the graph (feat-008 dual write)
+    assert out["ingest_updated"] == ["服务到期"]
+
+
+def test_qa_route_wiki_sufficient_and_router_skipped(tmp_path):
+    store, wiki = _kb(tmp_path)
+    wiki.write_page("服务到期", "# 服务到期\n\n2027 年到期。\n")
+    wiki.build_index()
+    llm = ScriptedChat("[[服务到期]]", "服务 A 2027 年到期。[[服务到期]]", "充分")
+    g = build_graph(store, FakeEmbedder(), llm, wiki).compile()
+    out = g.invoke({"text": "服务 A 何时到期", "intent": "问答"})
+    assert out["answer_source"] == "wiki"
+    assert out["answer_verified"] is True
+    assert "意图路由" not in llm.calls[0][0]  # preset intent skipped the router LLM
+
+
+def test_ingest_route_source_path_dual_writes(tmp_path):
+    store, wiki = _kb(tmp_path)
+    src = tmp_path / "raw-note.md"
+    src.write_text("服务 A 2027 年到期，请及时续费。" * 5, encoding="utf-8")
+    llm = ScriptedChat("## [[服务到期]]\n# 服务到期\n\n2027 年到期。\n")
+    g = build_graph(store, FakeEmbedder(), llm, wiki).compile()
+    out = g.invoke(
+        {"intent": "ingest", "source_path": str(src), "origin": "raw-note.md"}
+    )
+    assert out["doc_id"] and out["chunks"] > 0
+    assert store.count() > 0  # vectors written through the graph (feat-008 dual write)
+    assert out["ingest_updated"] == ["服务到期"]
+
+
+def test_qa_route_carries_history_for_follow_ups(tmp_path):
+    store, wiki = _kb(tmp_path)
+    llm = ScriptedChat("[[不存在的页]]", "无相关页面。", "补充", "2027 年到期。[1]")
+    g = build_graph(store, FakeEmbedder(), llm, wiki).compile(checkpointer=MemorySaver())
+    cfg = {"configurable": {"thread_id": "conv-1"}}
+    first = g.invoke({"text": "服务 A 何时到期", "intent": "问答"}, cfg)
+    assert first["history"][0]["question"] == "服务 A 何时到期"
+
+    n_first = len(llm.calls)
+    follow = g.invoke({"text": "那需要提前多久续费？", "intent": "问答"}, cfg)
+    recent = "\n".join(u for _, u in llm.calls[n_first:])
+    assert "服务 A 何时到期" in recent  # prior turn reached the follow-up prompts
+    assert "那需要提前多久续费" in recent
+    assert len(follow["history"]) == 2  # turn appended, not replaced
+
+
+def test_llm_nodes_retry_transient_failures(tmp_path):
+    store, wiki = _kb(tmp_path)
+
+    class FlakyChat:
+        """Fails twice with a transient gateway error, then answers normally."""
+
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, system, user):
+            self.calls += 1
+            if self.calls <= 2:
+                raise ConnectionError("gateway hiccup")
+            return "## [[服务到期]]\n# 服务到期\n\n2027 年到期。\n"
+
+    llm = FlakyChat()
+    g = build_graph(store, FakeEmbedder(), llm, wiki).compile()
+    out = g.invoke(
+        {"intent": "ingest", "material": "服务 A 2027 年到期", "origin": "raw/x.txt"}
+    )
+    assert out["ingest_updated"] == ["服务到期"]
+    assert llm.calls == 3  # two transient failures retried, third attempt landed
+
+
 def test_mail_route_pauses_for_human(tmp_path):
     store, wiki = _kb(tmp_path)
     svc = StubService()

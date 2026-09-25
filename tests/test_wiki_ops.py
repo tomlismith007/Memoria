@@ -70,6 +70,15 @@ def test_query_unknown_page_names_filtered(wiki):
     assert ans.pages == ["A"]
 
 
+def test_query_citation_verification(wiki):
+    wiki.write_page("A", "# A\n\n内容。\n")
+    wiki.build_index()
+    cited = query("问", wiki, ScriptedChat("[[A]]", "答案。[[A]]"))
+    assert cited.citations_verified is True
+    uncited = query("问", wiki, ScriptedChat("[[A]]", "答案。"))
+    assert uncited.citations_verified is False  # claims without a [[页名]] source
+
+
 def test_lint_broken_and_orphans_no_llm(wiki):
     wiki.write_page("A", "# A\n\n见 [[B]] 和 [[ Ghost ]]。\n")
     wiki.write_page("B", "# B\n\n回链 [[A]]。\n")

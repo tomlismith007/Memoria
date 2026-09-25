@@ -9,6 +9,7 @@ from memoria.llm import ChatLLM
 from memoria.wiki.pages import Wiki, extract_links
 
 SECTION_RE = re.compile(r"^## \[\[([^\[\]]+)\]\]\s*$", re.M)
+_WIKI_REF_RE = re.compile(r"\[\[[^\]]+\]\]")
 
 
 def _parse_sections(text: str) -> list[tuple[str, str]]:
@@ -62,6 +63,7 @@ def ingest(
 class WikiAnswer:
     text: str
     pages: list[str] = field(default_factory=list)
+    citations_verified: bool = True
 
 
 def query(question: str, wiki: Wiki, llm: ChatLLM) -> WikiAnswer:
@@ -82,7 +84,10 @@ def query(question: str, wiki: Wiki, llm: ChatLLM) -> WikiAnswer:
         "你是 Wiki 问答助手。只根据提供的页面回答，注明 [[页名]] 来源；答不上就直说。",
         f"问题：{question}\n\n页面：\n{context or '（无相关页面）'}",
     )
-    return WikiAnswer(text=text, pages=selected)
+    # Conservative: a wiki answer without any [[页名]] source is unverified, even refusals.
+    return WikiAnswer(
+        text=text, pages=selected, citations_verified=bool(_WIKI_REF_RE.search(text))
+    )
 
 
 @dataclass

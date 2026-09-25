@@ -42,6 +42,17 @@ def test_hybrid_wiki_sufficient_skips_rag(tmp_path):
     assert ans.source == "wiki"
     assert ans.wiki_pages == ["服务到期"]
     assert ans.citations == [] and store.count() == 0  # RAG never touched
+    assert ans.citations_verified is True  # wiki answer carries [[页名]]
+
+
+def test_hybrid_flags_unsourced_wiki_answer(tmp_path):
+    store, wiki = _env(tmp_path)
+    wiki.write_page("服务到期", "# 服务到期\n\n2027 年到期。\n")
+    wiki.build_index()
+    llm = ScriptedChat("[[服务到期]]", "服务 A 2027 年到期。", "充分")  # answer lacks [[页名]]
+    ans = hybrid_answer("服务 A 何时到期", wiki, llm, store, FakeEmbedder())
+    assert ans.source == "wiki"
+    assert ans.citations_verified is False
 
 
 def test_hybrid_falls_back_to_rag_for_details(tmp_path):
@@ -61,6 +72,24 @@ def test_hybrid_falls_back_to_rag_for_details(tmp_path):
     assert ans.source == "rag+wiki"
     assert "补充细节" in ans.text and "https://x" in ans.text
     assert len(ans.citations) == 1  # rag citations carried through
+    assert ans.citations_verified is True  # both halves carry sources
+
+
+def test_hybrid_requires_both_halves_cited(tmp_path):
+    store, wiki = _env(tmp_path)
+    src = tmp_path / "raw.md"
+    src.write_text("服务 A 将于 2027-01-01 到期，续费链接为 https://x 。" * 5, encoding="utf-8")
+    ingest_document(str(src), store, FakeEmbedder(), chunk_size=60, chunk_overlap=5)
+    wiki.write_page("服务到期", "# 服务到期\n\n2027 年到期。\n")
+    wiki.build_index()
+    llm = ScriptedChat(
+        "[[服务到期]]",
+        "服务 A 2027 年到期。",  # wiki half: no [[页名]]
+        "补充",
+        "续费链接为 https://x 。[1]",
+    )
+    ans = hybrid_answer("续费链接是什么", wiki, llm, store, FakeEmbedder())
+    assert ans.citations_verified is False  # rag half cited, wiki half not
 
 
 def test_archive_qa_creates_synthesis_page(tmp_path):

@@ -7,9 +7,28 @@ export interface Citation {
 
 export interface AskResponse {
   text: string;
+  conversation_id?: string;
   source: "wiki" | "rag+wiki";
   wiki_pages: string[];
   citations: Citation[];
+  citations_verified?: boolean;
+}
+
+export interface DocumentInfo {
+  doc_id: string;
+  name: string;
+  size: number;
+  chunks: number;
+}
+
+export interface VectorOnlyDoc {
+  doc_id: string;
+  chunks: number;
+}
+
+export interface DocumentListResponse {
+  documents: DocumentInfo[];
+  vector_only: VectorOnlyDoc[];
 }
 
 export interface WikiPageSummary {
@@ -23,6 +42,7 @@ export interface WikiListResponse {
   lint: {
     broken: [string, string][];
     orphans: string[];
+    contradictions: string[];
   };
 }
 

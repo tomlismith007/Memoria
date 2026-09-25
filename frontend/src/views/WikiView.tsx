@@ -24,12 +24,14 @@ export const WikiView: React.FC<WikiViewProps> = ({ initialPage }) => {
   const [pageDetail, setPageDetail] = useState<WikiPageDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [search, setSearch] = useState("");
 
-  const loadList = async () => {
-    setLoading(true);
+  const loadList = async (deep = false) => {
+    if (deep) setChecking(true);
+    else setLoading(true);
     try {
-      const data = await api.getWikiPages();
+      const data = await api.getWikiPages(deep);
       setListData(data);
       if (!selectedPage && data.pages.length > 0) {
         setSelectedPage(data.pages[0].name);
@@ -38,6 +40,7 @@ export const WikiView: React.FC<WikiViewProps> = ({ initialPage }) => {
       console.error(err);
     } finally {
       setLoading(false);
+      setChecking(false);
     }
   };
 
@@ -87,27 +90,48 @@ export const WikiView: React.FC<WikiViewProps> = ({ initialPage }) => {
             由大模型自动编译与维护的原子 Markdown 页面，以双向链接与全局索引构建知识复利。
           </p>
         </div>
-        <PillButton
-          variant="outline"
-          size="sm"
-          onClick={loadList}
-          disabled={loading}
-          icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />}
-        >
-          刷新索引
-        </PillButton>
+        <div className="flex flex-wrap items-center gap-2">
+          <PillButton
+            variant="outline"
+            size="sm"
+            onClick={() => loadList(true)}
+            disabled={checking || loading}
+            icon={<Search className={`w-3.5 h-3.5 ${checking ? "animate-spin" : ""}`} />}
+          >
+            {checking ? "矛盾检测中..." : "AI 矛盾检测"}
+          </PillButton>
+          <PillButton
+            variant="outline"
+            size="sm"
+            onClick={() => loadList()}
+            disabled={loading || checking}
+            icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />}
+          >
+            刷新索引
+          </PillButton>
+        </div>
       </div>
 
-      {/* Lint Diagnostics Banner if any broken/orphans */}
-      {listData && (listData.lint.broken.length > 0 || listData.lint.orphans.length > 0) && (
+      {/* Lint Diagnostics Banner if any broken/orphans/contradictions */}
+      {listData &&
+        (listData.lint.broken.length > 0 ||
+          listData.lint.orphans.length > 0 ||
+          listData.lint.contradictions.length > 0) && (
         <div className="bg-amber-50/70 border border-amber-200/70 rounded-2xl p-4 flex flex-col items-start gap-2 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
-              <strong>Wiki Lint 诊断</strong>：发现 {listData.lint.broken.length} 个断链，{listData.lint.orphans.length} 个孤立页面。
+              <strong>Wiki Lint 诊断</strong>：发现 {listData.lint.broken.length} 个断链，{listData.lint.orphans.length} 个孤立页面
+              {listData.lint.contradictions.length > 0 &&
+                `，${listData.lint.contradictions.length} 处矛盾`}。
             </span>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {listData.lint.contradictions.map((c, i) => (
+              <PillBadge key={`c-${i}`} variant="candidate" className="max-w-full break-all">
+                ⚠ {c}
+              </PillBadge>
+            ))}
             {listData.lint.broken.map(([src, dst], i) => (
               <PillBadge key={i} variant="candidate" className="max-w-full break-all">
                 {src} ➔ ?[[{dst}]]

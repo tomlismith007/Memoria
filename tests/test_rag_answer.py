@@ -63,6 +63,7 @@ def test_answer_maps_citations_to_real_chunks(tmp_path):
     c = ans.citations[0]
     assert (c.ref, c.doc_id) == (1, doc_id)  # citation resolves to the real doc/chunk
     assert "到期" in llm.calls[0][1]  # retrieved context was fed to the LLM
+    assert ans.citations_verified is True
 
 
 def test_answer_empty_store_skips_llm(tmp_path):
@@ -72,6 +73,23 @@ def test_answer_empty_store_skips_llm(tmp_path):
     assert "无法回答" in ans.text
     assert ans.citations == []
     assert llm.calls == []  # no retrieval -> no LLM call, no hallucination
+    assert ans.citations_verified is True  # refusal makes no claims to trace
+
+
+def test_answer_flags_uncovered_sentences(tmp_path):
+    store = ChromaStore(path=str(tmp_path / "chroma"))
+    src = _write(tmp_path / "note.md", "服务 A 将于 2027-01-01 到期，请提前续费。" * 10)
+    ingest_document(src, store, FakeEmbedder(), chunk_size=60, chunk_overlap=5)
+
+    cases = [
+        ("服务 A 2027 年到期。[1]", True),
+        ("服务 A 2027 年到期。[1] 续费很便宜。", False),  # second sentence uncited
+        ("胡说八道的内容。[9]", False),  # out-of-range ref is not a source
+        ("第一句有据。[1]\n第二句裸奔。", False),  # newline-separated bullet must cite too
+    ]
+    for reply, expected in cases:
+        ans = answer("服务 A 何时到期", store, FakeEmbedder(), FakeChat(reply=reply), k=4, top_n=2)
+        assert ans.citations_verified is expected, reply
 
 
 def test_answer_ignores_out_of_range_refs(tmp_path):

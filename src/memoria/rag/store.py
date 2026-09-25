@@ -33,6 +33,16 @@ class ChromaStore:
         """Red line: deleting a doc deletes ALL of its vectors."""
         self.collection.delete(where={"doc_id": doc_id})
 
+    def documents(self) -> dict[str, int]:
+        """doc_id -> chunk count across the whole collection."""
+        res = self.collection.get(include=["metadatas"])
+        counts: dict[str, int] = {}
+        for meta in res.get("metadatas") or []:
+            doc = (meta or {}).get("doc_id")
+            if doc:
+                counts[doc] = counts.get(doc, 0) + 1
+        return counts
+
     def search(self, vector: list[float], k: int = 5) -> list[dict]:
         res = self.collection.query(query_embeddings=[vector], n_results=k)
         hits = []

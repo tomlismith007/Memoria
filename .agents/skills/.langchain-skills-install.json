@@ -1,0 +1,20 @@
+{
+  "source": "https://github.com/langchain-ai/langchain-skills",
+  "org_verified": "langchain-ai = official LangChain GitHub org (hosts langchain/langgraph repos)",
+  "commit": "f179d57c66da0911556ce4960b55dd1f3f3b8480",
+  "commit_date": "2026-09-23T15:56:51Z",
+  "license": "MIT",
+  "verification": "each file git-blob-sha1 matched the official repo tree at pinned commit",
+  "files": {
+    "config/skills/ecosystem-primer/SKILL.md": "88bc543c9a73c850ee507ec4b7fd09653f066d32",
+    "config/skills/langchain-dependencies/SKILL.md": "ec9e0d6cd8bef087996390820201a78f2d3f6151",
+    "config/skills/langchain-fundamentals/SKILL.md": "ab44392344fa0d7114f2a6de589aafe5b80d3918",
+    "config/skills/langchain-middleware/SKILL.md": "1760245dc34354d0475cd3a434f759370d395068",
+    "config/skills/langchain-rag/SKILL.md": "1ca5cf6660726785eab15d2808524653d08ff0fe",
+    "config/skills/langgraph-fundamentals/SKILL.md": "adf7bff81897aa99d9505195a1196fced6047b97",
+    "config/skills/langgraph-fundamentals/references/python.md": "d99c5c1ad732c520724f9fb480fb1726a5223bf1",
+    "config/skills/langgraph-fundamentals/references/typescript.md": "d98ee2e082d3ab126cd7293af7442a5723111298",
+    "config/skills/langgraph-human-in-the-loop/SKILL.md": "d762f2a170c30310b5641642af3e19ce7866a28a",
+    "config/skills/langgraph-persistence/SKILL.md": "bbcf0ea77bf2b374a99e5d08cae147c12da03e82"
+  }
+}

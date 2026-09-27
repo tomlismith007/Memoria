@@ -1,4 +1,4 @@
-"""Graph state. In-memory objects only; MemorySaver pickles them between steps."""
+"""Graph state. In-memory objects; SqliteSaver serialises them between steps."""
 
 from __future__ import annotations
 
@@ -17,6 +17,11 @@ class MemoriaState(TypedDict, total=False):
     answer_wiki_pages: list
     answer_citations: list
     answer_verified: bool
+    # ponytail: history deliberately has NO operator.add reducer. The checkpointer
+    # replays the accumulated turns back into the node, which trims them to
+    # KEEP_RECENT_TOKENS and writes the trimmed list back. Adding a reducer here
+    # would double-append on every turn. Upgrade path: adopt LangGraph's
+    # add_messages semantics instead of hand-rolled trimming.
     history: list  # prior turns of this thread: [{"question": str, "answer": str}]
 
     # mail branch

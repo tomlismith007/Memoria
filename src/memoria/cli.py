@@ -1,9 +1,15 @@
-"""Thin CLI: argparse -> existing modules. No logic here; deps injectable for tests."""
+"""Thin CLI: argparse -> the LangGraph orchestrator. No logic here; deps injectable.
+
+Every subcommand runs through the compiled graph, the same one the Web API uses
+(feat-045). Calling sync.py directly would make the CLI a second, unverified
+orchestration path.
+"""
 
 from __future__ import annotations
 
 import argparse
 import os
+import uuid
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,6 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument("question")
 
     sub.add_parser("lint", help="wiki broken-links / orphans check")
+
+    agent = sub.add_parser("agent", help="free-text request; the graph router picks the branch")
+    agent.add_argument("text")
     return p
 
 
@@ -39,24 +48,59 @@ def _deps(args, overrides: dict | None):
     )
 
 
+def _graph(args, store, embedder, llm, wiki, overrides: dict | None):
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from memoria.graph.graph import build_graph
+
+    overrides = overrides or {}
+    return build_graph(store, embedder, llm, wiki).compile(
+        checkpointer=overrides.get("checkpointer") or MemorySaver()
+    )
+
+
 def main(argv: list[str] | None = None, deps: dict | None = None) -> int:
-    from memoria.sync import dual_ingest, hybrid_answer
     from memoria.wiki import lint as wiki_lint
 
     args = build_parser().parse_args(argv)
     store, embedder, llm, wiki = _deps(args, deps)
+    deps = deps or {}
 
-    if args.cmd == "ingest":
-        res = dual_ingest(args.source, store, embedder, wiki, llm)
-        print(f"doc={res.doc_id} chunks={res.chunks} wiki={res.wiki_pages}")
-    elif args.cmd == "ask":
-        ans = hybrid_answer(args.question, wiki, llm, store, embedder)
-        print(f"[{ans.source}] {ans.text}")
-        for c in ans.citations:
-            print(f"  [{c.ref}] {c.doc_id}#{c.chunk} @ {c.start}")
-        for p in ans.wiki_pages:
-            print(f"  wiki: [[{p}]]")
-    elif args.cmd == "lint":
+    # lint has no graph branch; it is a read-only audit over the wiki files.
+    if args.cmd == "lint":
         report = wiki_lint(wiki)
         print(f"broken={report.broken} orphans={report.orphans}")
+        return 0
+
+    g = _graph(args, store, embedder, llm, wiki, deps)
+    cfg = {"configurable": {"thread_id": uuid.uuid4().hex}}
+
+    if args.cmd == "ingest":
+        result = g.invoke(
+            {"intent": "ingest", "source_path": args.source, "origin": args.source}, cfg
+        )
+        print(
+            f"doc={result.get('doc_id')} chunks={result.get('chunks', 0)} "
+            f"wiki={result.get('ingest_updated', [])}"
+        )
+    elif args.cmd == "ask":
+        result = g.invoke({"text": args.question, "intent": "问答"}, cfg)
+        print(f"[{result.get('answer_source', 'rag+wiki')}] {result.get('answer_text', '')}")
+        for c in result.get("answer_citations", []):
+            print(f"  [{c.ref}] {c.doc_id}#{c.chunk} @ {c.start}")
+        for p in result.get("answer_wiki_pages", []):
+            print(f"  wiki: [[{p}]]")
+    elif args.cmd == "agent":
+        # No `intent`: the graph's router node decides, same as POST /api/agent.
+        result = g.invoke({"text": args.text}, cfg)
+        intent = result.get("intent", "问答")
+        print(f"[intent={intent}]")
+        if intent == "问答":
+            print(f"[{result.get('answer_source', 'rag+wiki')}] {result.get('answer_text', '')}")
+            for c in result.get("answer_citations", []):
+                print(f"  [{c.ref}] {c.doc_id}#{c.chunk} @ {c.start}")
+        elif intent == "ingest":
+            print(f"doc={result.get('doc_id')} chunks={result.get('chunks', 0)}")
+        else:
+            print(f"pending_archive={result.get('pending_archive', [])}")
     return 0

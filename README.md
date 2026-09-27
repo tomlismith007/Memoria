@@ -92,7 +92,20 @@ python run_web.py
 
 *(首次进入可点击右上角「设置」配置您的 API Key，并使用「获取模型」与「测试连接」验证连通性)*
 
-### 3. 可选：配置 Gmail 真实邮件拉取
+### 3. 命令行入口（与 Web 共用同一张 LangGraph 图）
+
+CLI 不含业务逻辑，所有子命令都经由编译后的图执行，与 Web API 是同一条编排路径：
+
+```bash
+python -m memoria ask "服务 A 何时到期"      # 混合检索问答，预设 intent，跳过 router
+python -m memoria ingest 资料.pdf             # 双写摄入
+python -m memoria lint                        # Wiki 断链 / 孤立页体检
+python -m memoria agent "帮我看看最近的邮件"   # 自由文本，由图内 router 决定分支
+```
+
+`agent` 子命令刻意不预设意图，会多付一次 router 的 LLM 往返换取自动分流；其余子命令的意图已由参数表明，直接走对应分支。
+
+### 4. 可选：配置 Gmail 真实邮件拉取
 
 若需要连接个人 Gmail 邮箱进行邮件分拣：
 1. 在 [Google Cloud Console](https://console.cloud.google.com/) 启用 Gmail API 并创建桌面应用客户端凭据，下载保存为 `data/credentials.json`。
@@ -117,7 +130,7 @@ python run_web.py
 ```
 
 手动执行单项检验：
-- **后端单元测试**（95 项测试，含 RAG 向量原子删除、LangGraph 中断恢复、Wiki 断链体检、Web API 代理与公网 HTTPS/443 配置安全等）：
+- **后端单元测试**（137 项测试，含 RAG 向量原子删除、LangGraph 中断恢复与 router 动态路由、Wiki 断链体检、Web API 代理与公网 HTTPS/443 配置安全等）：
   ```bash
   python -m pytest -q
   ```
@@ -137,16 +150,18 @@ Memoria/
 │   ├── wiki/                # Wiki 模块: pages, ops (ingest/query/lint)
 │   ├── mail/                # Mail 模块: rules, classify, gmail, auth
 │   ├── graph/               # LangGraph 编排: state, nodes, graph
-│   ├── web/                 # Web API 服务: app.py, config.py
+│   ├── web/                 # Web API 服务: app.py, config.py, config_routes.py
+│   ├── net.py               # 出站 HTTPS 安全层 (SSRF 防护, IP 锁定, 重定向/体积上限)
+│   ├── llm.py               # 供应商无关的 Chat LLM 客户端 (三种协议)
 │   ├── sync.py              # RAG × Wiki 双写、混合查询与知识沉淀
-│   └── cli.py               # 命令行工具
+│   └── cli.py               # 命令行工具 (与 Web 同一张图；agent 子命令走 router)
 ├── frontend/                # 前端工程 (React 19 + TypeScript + Tailwind)
 │   ├── src/
 │   │   ├── components/ui/   # 胶囊圆角组件系统 (PillButton, RoundedCard, SettingsModal...)
 │   │   ├── views/           # 页面视图 (AskView, WikiView, MailView, IngestView)
 │   │   └── api.ts           # 前端 API 封装
 │   └── tailwind.config.js   # 骨白、黑曜石黑与高阶圆角主题配置
-├── tests/                   # 离线自动化测试套件 (95 passed)
+├── tests/                   # 离线自动化测试套件 (137 passed)
 ├── scripts/                 # 工具脚本 (auth_gmail.py)
 ├── docs/                    # 架构与设计规范文档 (ARCHITECTURE.md, DESIGN.md)
 ├── data/                    # 本地数据持久化 (Chroma 库、Wiki 纯文本)

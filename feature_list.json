@@ -12,7 +12,9 @@
       "id": "feat-002",
       "name": "RAG ingest pipeline",
       "description": "Upload → parse (PDF/Markdown/网页) → chunk → embed → vector store; incremental update including full vector deletion for a removed document (red line: no orphan vectors)",
-      "dependencies": ["feat-001"],
+      "dependencies": [
+        "feat-001"
+      ],
       "status": "completed",
       "evidence": "tests/test_rag_ingest.py: 7 tests pass (ingest/search/delete/re-ingest dedup/citations); src/memoria/rag/{parse,chunk,embed,store,ingest}.py"
     },
@@ -20,7 +22,9 @@
       "id": "feat-003",
       "name": "RAG query with citations",
       "description": "Hybrid retrieval (vector + rerank, ~100 lines hand-written core) → generation where every answer sentence cites (document, paragraph/chunk)",
-      "dependencies": ["feat-002"],
+      "dependencies": [
+        "feat-002"
+      ],
       "status": "completed",
       "evidence": "rag/retrieve.py + rag/answer.py + llm.py; tests/test_rag_answer.py 6 tests pass; 14 passed total"
     },
@@ -28,7 +32,9 @@
       "id": "feat-004",
       "name": "LLM Wiki structure",
       "description": "raw/ (read-only) → wiki/ pages with [[双向链接]], index.md, log.md → schema.md writing spec for the LLM",
-      "dependencies": ["feat-001"],
+      "dependencies": [
+        "feat-001"
+      ],
       "status": "completed",
       "evidence": "wiki/pages.py (Wiki + extract_links + DEFAULT_SCHEMA_MD); tests/test_wiki_structure.py 7 tests pass; 21 passed total"
     },
@@ -36,7 +42,9 @@
       "id": "feat-005",
       "name": "Wiki operations: ingest / query / lint",
       "description": "ingest: read new source, update ~10 related pages; query: read index.md first then deep answer; lint: broken [[links]], orphan pages, contradictions",
-      "dependencies": ["feat-004"],
+      "dependencies": [
+        "feat-004"
+      ],
       "status": "completed",
       "evidence": "wiki/ops.py (ingest/query/lint); tests/test_wiki_ops.py 7 tests pass; 28 passed total"
     },
@@ -44,7 +52,9 @@
       "id": "feat-006",
       "name": "Email classification (two-stage)",
       "description": "Gmail API pull → rule layer first (验证码/交易 pass-through, NEVER auto-archive — red line) → LLM classify (营销/通知/待办) + one-line summary → marketing archive requires human confirm click, never automatic",
-      "dependencies": ["feat-001"],
+      "dependencies": [
+        "feat-001"
+      ],
       "status": "completed",
       "evidence": "mail/{rules,classify,gmail}.py; tests/test_mail_triage.py 6 tests pass; 34 passed total"
     },
@@ -52,7 +62,11 @@
       "id": "feat-007",
       "name": "LangGraph orchestration",
       "description": "State graph: intent routing (问答/邮件/ingest), multi-step ingest (读→写多页→更新索引→lint), human-confirm node before any archive. Core retrieval stays hand-written; LangChain only for integrations (vector store connectors, doc loaders)",
-      "dependencies": ["feat-002", "feat-005", "feat-006"],
+      "dependencies": [
+        "feat-002",
+        "feat-005",
+        "feat-006"
+      ],
       "status": "completed",
       "evidence": "graph/{state,nodes,graph}.py; tests/test_graph.py 5 tests pass incl. interrupt/resume; 39 passed total"
     },
@@ -60,7 +74,11 @@
       "id": "feat-008",
       "name": "RAG × Wiki integration",
       "description": "(1) Dual-write ingest: vectorize AND compile wiki pages from same document; (2) Hybrid query: Wiki index.md first, fall back to vector retrieval for details; (3) Feedback loop: high-quality Q&A archived as wiki synthesis pages, email-derived facts written into wiki",
-      "dependencies": ["feat-003", "feat-005", "feat-007"],
+      "dependencies": [
+        "feat-003",
+        "feat-005",
+        "feat-007"
+      ],
       "status": "completed",
       "evidence": "sync.py (dual_ingest/hybrid_answer/archive_qa/archive_fact) + IngestResult.text; tests/test_sync.py 5 tests pass; 44 passed total"
     },
@@ -68,7 +86,9 @@
       "id": "feat-009",
       "name": "CLI entry",
       "description": "python -m memoria {ingest|ask|lint} thin wrapper over sync/wiki modules; real clients from env, deps injectable for offline tests",
-      "dependencies": ["feat-008"],
+      "dependencies": [
+        "feat-008"
+      ],
       "status": "completed",
       "evidence": "cli.py + __main__.py; tests/test_cli.py 4 tests pass; 48 passed total"
     },
@@ -76,7 +96,10 @@
       "id": "feat-010",
       "name": "Web API service",
       "description": "FastAPI service exposing /api/ask, /api/wiki, /api/mail, /api/ingest over existing sync, wiki, and graph modules; CORS and static serving ready",
-      "dependencies": ["feat-008", "feat-009"],
+      "dependencies": [
+        "feat-008",
+        "feat-009"
+      ],
       "status": "completed",
       "evidence": "src/memoria/web/app.py + tests/test_web_api.py: 6 tests pass; 54 passed total"
     },
@@ -84,7 +107,9 @@
       "id": "feat-011",
       "name": "Frontend scaffold and design system",
       "description": "Vite + React + TS + Tailwind CSS app based on docs/DESIGN.md: rounded-2xl/3xl cards, rounded-full pill buttons, muted pastel palette, tab navigation",
-      "dependencies": ["feat-010"],
+      "dependencies": [
+        "feat-010"
+      ],
       "status": "completed",
       "evidence": "frontend/ package.json + tailwind.config.js + src/components/ui/{PillButton,RoundedCard,PillBadge,SegmentedNav,ConfirmModal}; npm run build passes"
     },
@@ -92,7 +117,9 @@
       "id": "feat-012",
       "name": "RAG and Wiki interactive views",
       "description": "Hybrid query interface with sentence citation chips, Wiki explorer with [[backlinks]], and synthesis Q&A archive action",
-      "dependencies": ["feat-011"],
+      "dependencies": [
+        "feat-011"
+      ],
       "status": "completed",
       "evidence": "src/views/AskView.tsx + src/views/WikiView.tsx; interactive citation preview, [[wiki]] pill routing, Q&A synthesis archive"
     },
@@ -100,7 +127,9 @@
       "id": "feat-013",
       "name": "Mail triage and ingest views",
       "description": "Mail triage board (protected vs candidate), human-in-the-loop confirmation modal (never auto-archive), and document dual-ingest uploader",
-      "dependencies": ["feat-011"],
+      "dependencies": [
+        "feat-011"
+      ],
       "status": "completed",
       "evidence": "src/views/MailView.tsx + src/views/IngestView.tsx; strict red line protected items display, human confirmation modal, dual write uploader"
     },
@@ -108,7 +137,9 @@
       "id": "feat-014",
       "name": "Conversation thread and rich Markdown rendering",
       "description": "Multi-turn Q&A conversation thread in AskView with auto-scroll; rich typography Markdown renderer supporting [[Wiki]] links and [n] citations",
-      "dependencies": ["feat-012"],
+      "dependencies": [
+        "feat-012"
+      ],
       "status": "completed",
       "evidence": "MarkdownRenderer.tsx + AskView.tsx conversation thread; full typography, interactive [[wiki]] & [n] pills; npm run build OK"
     },
@@ -116,7 +147,9 @@
       "id": "feat-015",
       "name": "Model and environment configuration panel",
       "description": "Settings drawer & backend /api/config with Fetch Models (auto model picker) and Test Connectivity (latency & status diagnostics) for public HTTPS/443 custom gateways",
-      "dependencies": ["feat-010"],
+      "dependencies": [
+        "feat-010"
+      ],
       "status": "completed",
       "evidence": "src/memoria/web/config.py + app.py /api/config + SettingsModal.tsx; tests/test_web_api.py (test_config_endpoints, test_fetch_models_endpoint, test_test_config_endpoint) all pass (58 passed total)"
     },
@@ -124,7 +157,9 @@
       "id": "feat-016",
       "name": "Gmail local OAuth helper",
       "description": "scripts/auth_gmail.py + memoria/mail/auth.py for turnkey local OAuth token generation and authorized service bootstrapping",
-      "dependencies": ["feat-006"],
+      "dependencies": [
+        "feat-006"
+      ],
       "status": "completed",
       "evidence": "src/memoria/mail/auth.py + scripts/auth_gmail.py turnkey runner; pyproject google-auth-oauthlib"
     },
@@ -132,7 +167,9 @@
       "id": "feat-017",
       "name": "Model settings persistence & history presets",
       "description": "模型设置历史持久化：自动记忆保存 Base URL、API Key 与 Model 配置，页面刷新后自动恢复；支持多配置历史预设管理与快速切换",
-      "dependencies": ["feat-015"],
+      "dependencies": [
+        "feat-015"
+      ],
       "status": "completed",
       "evidence": "init.ps1 green: 73 pytest tests passed; frontend npm run build passed; up to 10 server-side config presets with redacted responses, save/apply/delete flows, and legacy settings.json compatibility"
     },
@@ -140,7 +177,9 @@
       "id": "feat-018",
       "name": "Conversation message history persistence",
       "description": "历史消息与对话流持久化：问答时间线与多轮会话本地持久化，页面刷新后无缝恢复历史消息、逐句溯源切片与归档状态；支持新建会话与清空历史",
-      "dependencies": ["feat-014"],
+      "dependencies": [
+        "feat-014"
+      ],
       "status": "completed",
       "evidence": "init.ps1 green: 73 pytest tests passed; frontend npm run build passed; browser smoke verified refresh/tab restoration, archived state, new-session clearing, and corrupt JSON fallback"
     },
@@ -148,7 +187,11 @@
       "id": "feat-019",
       "name": "Local Web security boundary",
       "description": "本地 Web 安全边界：配置 API Key 脱敏与空值保留、严格 CORS、邮件归档新鲜候选门禁、raw 摄入路径穿越防护",
-      "dependencies": ["feat-010", "feat-013", "feat-015"],
+      "dependencies": [
+        "feat-010",
+        "feat-013",
+        "feat-015"
+      ],
       "status": "completed",
       "evidence": "init.ps1 green: 70 pytest tests passed; frontend npm run build passed; config secrets redacted, empty keys preserved, CORS allowlist enforced, stale/unknown mail IDs blocked, unsafe ingest paths rejected"
     },
@@ -156,7 +199,10 @@
       "id": "feat-020",
       "name": "Mobile responsive UI",
       "description": "移动端响应式优化：窄屏图标导航、44px 触控区域、Header 收缩、Ask/Wiki/Mail/Ingest/Settings 长文本与窄屏重排，消除 390px/320px 横向滚动",
-      "dependencies": ["feat-011", "feat-014"],
+      "dependencies": [
+        "feat-011",
+        "feat-014"
+      ],
       "status": "completed",
       "evidence": "init.ps1 green: 73 pytest tests passed; frontend npm run build passed; browser verification at 390x844 and 320x800 found no page-level horizontal overflow across Ask/Wiki/Mail/Ingest/Settings; desktop text navigation preserved at 1280x720"
     },
@@ -164,7 +210,11 @@
       "id": "feat-021",
       "name": "SSRF-safe outbound requests",
       "description": "统一标准库出站请求；公网 HTTPS/443、全量 DNS 校验与 IP pinning、同源重定向和响应大小/压缩限制",
-      "dependencies": ["feat-002", "feat-003", "feat-015"],
+      "dependencies": [
+        "feat-002",
+        "feat-003",
+        "feat-015"
+      ],
       "status": "completed",
       "evidence": "src/memoria/net.py + callers migrated; tests/test_net.py covers public HTTPS/443 policy, internal IPv4/IPv6, mixed DNS, redirects, size/compression limits, pinned IP and original SNI/Host"
     },
@@ -172,7 +222,11 @@
       "id": "feat-022",
       "name": "Public HTTPS gateway-only model configuration",
       "description": "彻底删除本地模型供应商路线；LLM 与 embedding 配置、保存/预设/模型列表/连通性入口即时校验公网 HTTPS/443 网关，保留标准 data[].id 模型列表和脱敏历史预设",
-      "dependencies": ["feat-015", "feat-017", "feat-021"],
+      "dependencies": [
+        "feat-015",
+        "feat-017",
+        "feat-021"
+      ],
       "status": "completed",
       "evidence": "init.ps1 green: 95 pytest tests passed; frontend npm run build passed; public HTTPS-only outbound client, legacy filtering, API rejection coverage, and tracked-source residue search verified"
     },
@@ -180,7 +234,9 @@
       "id": "feat-023",
       "name": "Citation integrity follow-up",
       "description": "引用完整性校验（红线级）：RAG 回答逐句校验 [n] 引用覆盖，未带引用的回答标记 citations_verified=false 并在 AskView 显示未溯源警告；Wiki 回答必须含 [[页名]] 来源。验收：校验器 + 离线测试；web 响应携带 citations_verified 字段",
-      "dependencies": ["feat-022"],
+      "dependencies": [
+        "feat-022"
+      ],
       "status": "completed",
       "evidence": "answer.py citations_complete() 逐句校验 [n]（句号后置标记归属前句，越界 [n] 不算覆盖）；wiki/ops.py query 校验 [[页名]]；sync.py HybridAnswer 按 wiki/rag 两段 AND 合成；/api/ask 返回 citations_verified；AskView 增加 amber 未溯源警告徽章。init.ps1 green: 107 pytest (+4) + frontend build; tsc strict 0 diagnostics"
     },
@@ -188,7 +244,11 @@
       "id": "feat-024",
       "name": "Custom model provider management and dual-layer persistence",
       "description": "纯自定义供应商管理界面重构与刷新零丢失双重持久化：两栏式供应商布局（左侧供应商列表/状态指示点，右侧Base URL、格式、API Key及模型列表维护，模型测试与标签管理），后端 settings.json 与前端 localStorage 双重持久化，AskView 对话端当前模型展示与直接切换",
-      "dependencies": ["feat-015", "feat-017", "feat-022"],
+      "dependencies": [
+        "feat-015",
+        "feat-017",
+        "feat-022"
+      ],
       "status": "completed",
       "evidence": "init.ps1 green: 97 pytest tests passed; frontend npm run build passed (0 errors); SettingsModal.tsx two-column layout + full localStorage & backend /api/config/providers synchronization + unit tests in tests/test_web_api.py"
     },
@@ -196,7 +256,10 @@
       "id": "feat-025",
       "name": "Multi-protocol custom model providers",
       "description": "供应商协议贯通：OpenAI Chat Completions、Claude/Anthropic Messages、OpenAI Responses 三种协议可选择并持久化；模型列表、连通性测试和实际聊天按协议请求",
-      "dependencies": ["feat-015", "feat-024"],
+      "dependencies": [
+        "feat-015",
+        "feat-024"
+      ],
       "status": "completed",
       "evidence": "init.sh green: 102 pytest tests passed; frontend npm run build passed; protocol request/response matrix, provider persistence, auth headers, legacy default and unknown-format rejection covered"
     },
@@ -204,7 +267,10 @@
       "id": "feat-026",
       "name": "Inline custom provider creation without modal popup",
       "description": "点击添加供应商时直接在右侧面板展示全新空白设置表单，彻底移除模态弹窗；支持直接在右侧配置供应商名称、Base URL、协议、API Key、一键获取/选择模型、测试连接与保存生效",
-      "dependencies": ["feat-024", "feat-025"],
+      "dependencies": [
+        "feat-024",
+        "feat-025"
+      ],
       "status": "completed",
       "evidence": "init.ps1 green: 102 pytest tests passed; frontend npm run build passed (0 errors); SettingsModal inline isCreatingNew state, handleStartCreateProvider, draftModels, pre-save config test API, and eliminated isAddProviderOpen dialog"
     },
@@ -220,7 +286,9 @@
       "id": "feat-028",
       "name": "Audit-driven cleanup and configuration route split",
       "description": "按 2026-09-24 代码审查报告执行低风险死代码清理、配置协议校验收敛、邮件类别单一来源和 HTTP 入口收紧；将 14 个配置路由拆出 web/app.py，保留动态运行时激活与 API 契约",
-      "dependencies": ["feat-027"],
+      "dependencies": [
+        "feat-027"
+      ],
       "status": "completed",
       "evidence": "init.ps1 green: 101 pytest tests passed and frontend npm run build passed; focused Web API tests 31 passed; git diff --check passed; SettingsModal.tsx existing changes untouched"
     },
@@ -228,7 +296,9 @@
       "id": "feat-029",
       "name": "SettingsModal pure-UI split and mobile layout fix",
       "description": "将 ProviderTemplatePicker、ProviderSidebar、DeleteConfirmDialog 拆为纯受控组件，保留全部状态/API/localStorage 流程在主容器；修复 390px Provider 头部和模型行横向挤压",
-      "dependencies": ["feat-028"],
+      "dependencies": [
+        "feat-028"
+      ],
       "status": "completed",
       "evidence": "SettingsModal.tsx 1932→1642 lines; strict TypeScript 0 diagnostics; init.ps1 green: 101 pytest tests + frontend build; browser smoke verified template picker, sidebar, delete confirmation, and 390px layout; evidence in gui-test-screenshots/feat-029/"
     },
@@ -236,7 +306,9 @@
       "id": "feat-030",
       "name": "Minimal model settings interface",
       "description": "按用户参考图重构模型设置视觉：页面级标题、安静 Provider 侧栏、纵向基础字段、单一模型区、紧凑模板选择器和模型行；保留全部 Provider/Model 状态、API、激活、测试和删除流程",
-      "dependencies": ["feat-029"],
+      "dependencies": [
+        "feat-029"
+      ],
       "status": "completed",
       "evidence": "SettingsModal.tsx 1642→1571 lines; strict TypeScript 0 diagnostics; init.ps1 green: 101 pytest tests + frontend build; browser acceptance passed at 1280×720 and 390×844; evidence in gui-test-screenshots/feat-030/"
     },
@@ -244,7 +316,9 @@
       "id": "feat-031",
       "name": "Independent chat and embedding provider pages",
       "description": "删除对话/向量手填输入框；设置页新增对话模型与向量模型页签；后端以 active_embed_provider_id 独立解析向量供应商，向量 Provider 保存/激活/删除不再劫持对话状态",
-      "dependencies": ["feat-030"],
+      "dependencies": [
+        "feat-030"
+      ],
       "status": "completed",
       "evidence": "init.ps1 green: 103 pytest tests + frontend build; focused Web API tests 33 passed; browser verified manual model inputs removed and vector tab at 1280×720/390×844; evidence in gui-test-screenshots/feat-031/"
     },
@@ -252,7 +326,9 @@
       "id": "feat-032",
       "name": "Document deletion closed loop",
       "description": "红线落地补口：新增 GET /api/documents（向量库元数据+raw/ 汇总文档列表）与 DELETE /api/documents/{doc_id}——删除该文档全部向量（store.delete_document）+ 对应 raw/ 文件 + log.md 记录；文档视图提供删除确认。验收：删除后 store 无孤儿向量、raw 文件消失、未知 doc 返回 404；离线测试覆盖",
-      "dependencies": ["feat-002"],
+      "dependencies": [
+        "feat-002"
+      ],
       "status": "completed",
       "evidence": "GET /api/documents（raw 文件按 doc_id_for_origin 哈希映射 + store.documents() 切块数，vector_only 单列）与 DELETE /api/documents/{doc_id}（删全部向量 → 孤儿向量偏执校验 → 删 raw 文件 → log.md 记录，未知 doc 404）；IngestView 已入库文档列表 + 删除确认。测试：删除后 store.count()==0 且 doc_id 不在 documents()（红线）、raw 消失、无 raw 也可清向量、404。init.ps1 green: 110 pytest (+3) + frontend build; tsc strict 0 diagnostics"
     },
@@ -260,7 +336,10 @@
       "id": "feat-033",
       "name": "Wire LangGraph into Web API (single-track HITL)",
       "description": "架构红线『用 LangGraph 编排』落到产品：create_app 编译 graph（checkpointer=SqliteSaver 持久化到 data/，新增依赖 langgraph-checkpoint-sqlite）；/api/ask、/api/mail/*、/api/ingest 全部经图执行，web 层只做 HTTP↔state 转换；邮件归档改走 interrupt→Command(resume)（thread_id=分拣会话），删除 web 层 latest_candidates 双轨 HITL 实现；意图由前端显式传入（AskView→问答 / MailView→邮件 / IngestView→ingest），router 节点仅在缺省意图时 LLM 兜底。验收：现有 web 测试迁移后全绿；新增跨请求 interrupt 恢复测试；显式意图不触发路由 LLM 调用",
-      "dependencies": ["feat-007", "feat-010"],
+      "dependencies": [
+        "feat-007",
+        "feat-010"
+      ],
       "status": "completed",
       "evidence": "create_app 编译 graph（SqliteSaver 持久化 data/checkpoints.sqlite，JsonPlusSerializer 显式注册 Email/Triage 消除 pickle 警告，activate_settings 切换模型后重编译）；/api/ask、/api/mail/triage、/api/mail/archive、/api/ingest(/file) 全部经图执行；graph qa 节点升级为 hybrid_answer（wiki-first+RAG fallback，feat-008 行为保真），ingest 节点经 source_path 触发 dual_ingest 双写，router 在调用方预置意图时零 LLM 调用；邮件归档改走 interrupt→Command(resume)（thread_id=分拣会话），confirm 节点白名单+protected 复查，web 层 latest_candidates 双轨实现已删除；MailView 保存并回传 thread_id。测试：跨请求 interrupt 恢复、已完成线程重复归档被拒、缺 thread_id 400、幽灵线程（ghost thread）归档全 blocked、SqliteSaver 落盘校验；显式意图不触发路由 LLM（ScriptedChat 断言）。init.ps1 green: 113 pytest + frontend build; tsc strict 0 diagnostics"
     },
@@ -268,7 +347,9 @@
       "id": "feat-034",
       "name": "Conversation memory in graph",
       "description": "多轮对话记忆：MemoriaState 增加 messages 历史，qa 节点携带最近 N 轮进 prompt；conversation_id 即 thread_id，AskView 连续追问复用同一 id，SqliteSaver 跨重启保留上下文。验收：离线测试断言追问 prompt 包含历史轮次；重启后同 thread 可继续对话",
-      "dependencies": ["feat-033"],
+      "dependencies": [
+        "feat-033"
+      ],
       "status": "completed",
       "evidence": "graph state 新增 history（[{question, answer}]，最近 6 轮封顶）；qa 节点把此前轮次以 transcript 形式并入 user 消息（各 LLM 后端与 fake 保持单轮接口，指代可解析）；conversation_id 即 LangGraph thread_id，SqliteSaver 跨重启保留；/api/ask 接受/返回 conversation_id（缺省自动新建）；AskView 生成并持久化 session_id（localStorage），新建会话轮换 id。测试：图级断言追问 prompt 含上一轮问题且 history 追加；web 级断言同 conversation_id 二次提问prompt 含首轮、新 id 记忆干净、缺省自动建线；SqliteSaver 落盘。init.ps1 green; 116 pytest + frontend build; tsc strict 0 diagnostics"
     },
@@ -276,7 +357,9 @@
       "id": "feat-035",
       "name": "LLM retry and error surfacing",
       "description": "健壮性：graph 内 LLM 节点加 RetryPolicy(max_attempts=3)；瞬时失败自动重试，最终失败映射为用户可读错误（保留 web 502 语义）。验收：模拟前两次失败第三次成功的离线测试",
-      "dependencies": ["feat-033"],
+      "dependencies": [
+        "feat-033"
+      ],
       "status": "completed",
       "evidence": "graph LLM 节点（router/qa/mail_triage/ingest）统一挂 langgraph RetryPolicy(max_attempts=3)，默认仅对瞬时错误（连接/超时/429/5xx）重试；confirm_archive/interrupt 节点不重试。测试：FlakyChat 两次 ConnectionError 后成功 → ingest_updated 正常且 llm.calls==3。init.ps1 green; 116 pytest + frontend build; tsc strict 0 diagnostics"
     },
@@ -284,7 +367,9 @@
       "id": "feat-036",
       "name": "Contradiction lint wiring",
       "description": "知识复利补全之一：/api/wiki/pages 调 wiki_lint(wiki, llm) 启用矛盾检测（max_pairs 限制成本），WikiView lint 面板展示矛盾条目。验收：web 测试断言 contradictions 字段存在且可被填充",
-      "dependencies": ["feat-005"],
+      "dependencies": [
+        "feat-005"
+      ],
       "status": "completed",
       "evidence": "/api/wiki/pages 新增 deep 查询参数：deep=true 时 wiki_lint(wiki, llm) 启用 LLM 矛盾检测（每次链接对一次调用，默认关闭控制成本），响应 lint.contradictions 落地；WikiView 新增 AI 矛盾检测按钮（检查中状态），lint 横幅展示矛盾条目（rose 徽章）。测试：默认 lint 无矛盾且不调 LLM；deep=true 用 FakeChat('YES: …') 断言矛盾被捕获; 118 pytest + frontend build; tsc strict 0 diagnostics"
     },
@@ -292,7 +377,9 @@
       "id": "feat-037",
       "name": "Mail fact write-back to Wiki",
       "description": "知识复利补全之二：MailView 对 通知/待办 邮件提供『摘录进 Wiki』动作（指定目标页 + 事实文本），新增 /api/mail/fact 调 archive_fact（含去重）。验收：web 测试覆盖去重返回与 log.md 记录",
-      "dependencies": ["feat-010"],
+      "dependencies": [
+        "feat-010"
+      ],
       "status": "completed",
       "evidence": "新增 POST /api/mail/fact（msg_id/page/fact，页名拒绝路径穿越，fact 去重复用 archive_fact，来源标注 mail:{msg_id}）；MailView 通知/待办邮件新增摘录进 Wiki 内联动作（目标页 + 事实输入，预填摘要），写入结果进状态提示。测试：写入成功含来源、重复摘录 added=false、非法页名 400。init.ps1 green; 118 pytest + frontend build; tsc strict 0 diagnostics"
     },
@@ -300,7 +387,9 @@
       "id": "feat-038",
       "name": "Multi-step ingest as graph loop (optional)",
       "description": "展示性增强（可选）：ingest 节点拆为 编译→lint→(存在断链且轮次<2→修复→lint) 的图循环，真正用上 LangGraph 控制流表达力。验收：断链被自动修复的离线测试",
-      "dependencies": ["feat-033"],
+      "dependencies": [
+        "feat-033"
+      ],
       "status": "todo",
       "evidence": ""
     },
@@ -308,9 +397,69 @@
       "id": "feat-039",
       "name": "SSE streaming answers (optional)",
       "description": "体验增强（可选）：graph stream_mode='messages' → SSE 端点 → AskView 逐段渲染。验收：SSE 端点单元覆盖 + 浏览器手动验证",
-      "dependencies": ["feat-034"],
+      "dependencies": [
+        "feat-034"
+      ],
       "status": "todo",
       "evidence": ""
+    },
+    {
+      "id": "feat-040",
+      "name": "Split wiki ingest prompt into cacheable prefix + variable suffix",
+      "description": "P0（与 feat-041 必须成对）。wiki/ops.py ingest() 当前把全部页面正文拼进 prompt 且排在 material 之后，导致前缀每次全变、缓存永不命中。改为三段式：固定 system + 稳定 index_block（仅页面名列表）+ 变动 material + top-K 选中页正文。页面选择复用 rag/retrieve.py 的 keyword_score（已支持 CJK 二元组），不新增算法。验收：既有 3 个 ingest 测试全绿；新增测试断言页面数>10 时 prompt 不含未选中页正文；中英文查询均能选出相关页；log 记录选中页数。详见 docs/UPGRADE_SPEC.md §3.1",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "wiki/ops.py: 新增 _select_relevant() 复用 rag.retrieve.keyword_score（已支持 CJK 二元组）；ingest() 改为三段式 prompt（稳定目录 index_block -> 变动 material -> top-K 选中页正文），目录排在最前形成可缓存前缀；log 记录「展开 N/M 页正文」。新增 5 个测试：只发送选中页正文、页数不超 max_pages 时不截断、目录前缀位于变动块之前、跨两次 ingest 目录块保持逐字不变、_select_relevant 处理中英文。pytest tests/test_wiki_ops.py 13 passed"
+    },
+    {
+      "id": "feat-041",
+      "name": "Send explicit prompt cache markers",
+      "description": "P0（依赖 feat-040，单独做无收益）。llm.py 全文无 cache_control / prompt_cache_key，8 个 llm.chat() 全走裸 HTTP，5 个固定 SYSTEM 常量的可缓存前缀未被利用。在 build_chat_request 按协议下发：anthropic_messages 用 system 数组 + cache_control:{type:ephemeral}；chat_completions 的 prompt_cache_key 需先确认目标网关支持，不支持则不发。范围对齐 ZCode（仅对确认支持的协议下发）。验收：新增测试断言 anthropic 路径 system 结构；既有 build_chat_request 测试全绿；设置页「测试连接」对 anthropic 网关仍成功。详见 docs/UPGRADE_SPEC.md §3.2",
+      "dependencies": [
+        "feat-040"
+      ],
+      "status": "completed",
+      "evidence": "llm.py build_chat_request: anthropic_messages 路径的 system 由字符串改为 [{type:text, text, cache_control:{type:ephemeral}}] 数组；chat_completions 与 openai_responses 保持原样不发明标记（无法假定任意网关支持 prompt_cache_key）。新增 2 个测试：标记只出现在支持的协议上、system 为空时不发 system 块。修正 test_rag_answer.py 既有的请求契约断言。pytest tests/test_rag_answer.py 12 passed"
+    },
+    {
+      "id": "feat-042",
+      "name": "Budget history by tokens, not turn count",
+      "description": "P1。graph/nodes.py:37 的 state.get('history', [])[-6:] 按轮数截断，中英文混排下 6 轮可能 3k 也可能 20k token，与 context window 无关。改为 KEEP_RECENT_TOKENS = 20_000（对齐 pi 默认值），从尾部累加 len(question)+len(answer) 超出即停，系数 1.5 取 CJK 保守侧。必须加 ponytail: 注释说明是字符估算非真 tokenizer，升级路径是接 tiktoken。验收：既有 test_qa_route_carries_history_for_follow_ups 全绿；新增测试覆盖超长截断与短历史不误伤。详见 docs/UPGRADE_SPEC.md §3.3",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "graph/nodes.py: 新增 _recent_turns()，按 KEEP_RECENT_TOKENS=20_000（对齐 pi 默认值）从最新往回累加，超预算即丢最旧；系数 1.5 char/token 取 CJK 保守侧。qa() 的 [-6:] 轮数截断替换为 _recent_turns()。已加 ponytail: 注释声明是字符估算非真 tokenizer，升级路径为接 tiktoken。新增 1 个测试覆盖超长截断 / 保留最新 / 短历史不误伤 / 空历史安全 / 实际占用不超预算。pytest tests/test_graph.py 10 passed"
+    },
+    {
+      "id": "feat-043",
+      "name": "Batch mail classification into one LLM call",
+      "description": "P1。graph/nodes.py:61 的 [classify(e, llm) for e in emails] 是 N 次 HTTP 往返，20 封邮件 = 20 次。合并为一次调用返回多行，扩展 classify.py 的 _parse 为 _parse_batch，沿用已有的正则抽取 + fallback 容错思路。红线约束：is_protected 规则层必须逐封独立执行，批量只作用于 LLM 分类与摘要那一步，不得因批量而跳过保护判定。验收：新增测试断言 10 封邮件只产生 1 次 LLM 调用；新增测试覆盖 LLM 返回部分行时缺失项走 fallback；既有 test_mail_triage.py 与全部红线测试全绿。详见 docs/UPGRADE_SPEC.md §3.4",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "mail/classify.py: 新增 classify_batch()（classify() 单封签名保留，既有测试不受影响）。10 封邮件由 10 次 HTTP 降为 1 次。_parse_batch() 按编号跨行累积——类别与摘要在不同行时不会丢摘要（实现过程中由此测试发现并修正了一处真实 bug）。红线：is_protected 仍逐封独立执行，批量只折叠 LLM 调用，不允许一次调用决定整批保护状态；单封时回退到 classify() 以免白付批量 prompt 成本。新增 4 个测试：10 封仅 1 次调用、保护状态逐封独立（LLM 全标营销仍拦住验证码与交易）、回复残缺时安全回退、单封与 classify() 一致。同步更新 test_web_api.py 的 SmartChat fixture 使其识别批量提示词格式。pytest tests/test_mail_triage.py 10 passed"
+    },
+    {
+      "id": "feat-044",
+      "name": "Lock the history reducer decision with a comment",
+      "description": "P1。state.py 全字段无 Annotated/reducer，history 靠节点内手工截断写回。若后人给 history 加 operator.add，会与节点内的 turns + [新] 形成双重累加。本项只加 ponytail: 注释不改行为，说明为何故意不用 reducer，并给出升级路径（改用 LangGraph add_messages 语义）。验收：注释存在；test_graph.py 全绿。详见 docs/UPGRADE_SPEC.md §3.5",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "graph/state.py: history 字段加 ponytail: 注释，说明故意不用 operator.add reducer（checkpointer 回放已传入累积 turns，节点内自行裁剪，加 reducer 会双重累加），并给出升级路径（改用 add_messages 语义）。仅注释，无行为变更。顺带修正同一 docstring 的陈旧事实：原文写 MemorySaver，实际 app.py 用 SqliteSaver。pytest tests/test_graph.py 10 passed"
+    },
+    {
+      "id": "feat-045",
+      "name": "Decide the fate of the dead router node",
+      "description": "P2，需产品决策，不由实现者拍板。app.py 四个 invoke 全部预设 intent，router 的 LLM 分支在生产环境从不执行，graph.py 的动态路由能力从未被真实流量验证。方案 A（保守，推荐）：保留 router，注释说明是为自由文本入口预留，并新增 /api/agent 端点使其可达。方案 B（激进）：删除 router 节点，add_conditional_edges 改静态边，承认 Web 按 endpoint 分流的事实。须与 CODE_AUDIT_2026-09-24.md 提出的「LangGraph 是否必须成为正式生产编排器」一并决策。详见 docs/UPGRADE_SPEC.md §3.6",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "用户决策（2026-09-27）：LangGraph 必须成为正式生产编排器。方案 A 落地。\n(1) 新增 POST /api/agent（web/app.py）：自由文本入口，不预设 intent，由图内 router 节点经 LLM 决定分支；响应按 intent 返回 qa / ingest / 邮件 三种形态，邮件分支停在人工确认中断并返回 thread_id 供 /api/mail/archive 使用。这是生产环境中唯一真正走通 add_conditional_edges 的路径。\n(2) cli.py 全面改为经图编排：新增 agent 子命令；ingest/ask 由直调 sync.dual_ingest / sync.hybrid_answer 改为 compiled_graph.invoke；lint 因图中无对应分支仍直调 wiki.lint（只读审计，非编排路径）。结构化子命令继续预设 intent 以省掉 router 往返。\n(3) nodes.py router 注释改写，说明「预设即跳过」是有意设计而非偶然。\n新增 7 个测试：test_cli.py 4 个（agent 子命令解析、CLI 不得直调 sync.py 的守卫——通过 monkeypatch 让 hybrid_answer/dual_ingest 抛错来证明、agent 会跑 router、ask 不跑 router）；test_web_api.py 3 个（/api/agent 触发 router 并返回 qa 形态、预设 intent 可跳过 router、ingest 分支返回正确形态）。测试用 SmartChat fixture 补了「意图路由」分支。\npytest -q → 137 passed（基线 130，+7）"
+    },
+    {
+      "id": "feat-046",
+      "name": "Architecture gate CI (assessed: not doing it)",
+      "description": "P2，结论是不做。ZCode 有 architecture-policy.yaml + pnpm architecture:check 机械强制（单文件<=400 行、契约<=300、公开方法<=12、禁循环依赖），存量违规进 baseline。评估结论：Memoria 是单人项目，CI 门禁维护成本高于收益；config_routes.py 555 行已超 400 行门槛但无实际阻塞。替代方案是在 AGENTS.md 加「单文件超 400 行需在 commit message 说明理由」，用纪律替代门禁。本项标记 wont-fix 并记录理由，避免后续重复讨论。详见 docs/UPGRADE_SPEC.md §3.7",
+      "dependencies": [],
+      "status": "wont-fix",
+      "evidence": "已评估并记录为 wont-fix。ZCode 的 architecture-policy.yaml 门禁对单人项目成本高于收益；config_routes.py 555 行超 400 行门槛但无实际阻塞。详见 docs/UPGRADE_SPEC.md §3.7"
     }
   ]
 }

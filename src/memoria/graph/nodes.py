@@ -6,19 +6,45 @@ from langgraph.types import interrupt
 
 from memoria.graph.state import INTENTS
 from memoria.llm import ChatLLM
-from memoria.mail import Email, archive, classify, fetch_messages, request_archive
+from memoria.mail import Email, archive, classify_batch, fetch_messages, request_archive
 from memoria.rag import ChromaStore, Embedder
 from memoria.sync import dual_ingest, hybrid_answer
 from memoria.wiki import Wiki, ingest as wiki_ingest, lint as wiki_lint
 
 ROUTER_SYSTEM = "你是意图路由。只回一个词：问答、邮件、ingest，无多余解释。"
 
+# ponytail: character estimate, not a real tokenizer. 1.5 chars/token is the CJK
+# side (English would allow ~4), so this errs toward keeping fewer turns than a
+# tokenizer would. Upgrade path: swap in tiktoken if a turn ever needs exact
+# budgeting against a model-reported context window.
+KEEP_RECENT_TOKENS = 20_000
+_CHARS_PER_TOKEN = 1.5
+
+
+def _recent_turns(history: list, budget: int = KEEP_RECENT_TOKENS) -> list:
+    """Newest turns that fit the token budget; the oldest are dropped first."""
+    kept: list = []
+    used = 0.0
+    for turn in reversed(history):
+        cost = (len(turn.get("question", "")) + len(turn.get("answer", ""))) / _CHARS_PER_TOKEN
+        if used + cost > budget and kept:
+            break
+        kept.append(turn)
+        used += cost
+    kept.reverse()
+    return kept
+
 
 def make_router(llm: ChatLLM):
     def router(state: dict) -> dict:
         preset = state.get("intent")
         if preset in INTENTS:
-            return {}  # caller already knows the intent; skip the LLM round-trip
+            # Structured endpoints (/api/ask, /api/ingest, /api/mail) already state
+            # their intent in the URL, so re-asking the model would be a wasted
+            # round-trip. /api/agent omits `intent` and is the path that pays for
+            # the LLM call below — that keeps the conditional edges exercised in
+            # production rather than only in tests.
+            return {}
         text = state.get("text", "")
         reply = llm.chat(ROUTER_SYSTEM, f"用户输入：{text}")
         for intent in INTENTS:
@@ -34,7 +60,7 @@ def make_qa(store: ChromaStore, embedder: Embedder, llm: ChatLLM, wiki: Wiki):
         question = state.get("text", "")
         # Follow-up turns ride along as a transcript so 指代 ("那它呢") resolves;
         # the transcript lives in the user message, so every backend/fake stays single-turn.
-        turns = state.get("history", [])[-6:]
+        turns = _recent_turns(state.get("history", []))
         transcript = "\n\n".join(
             f"用户：{t['question']}\n助手：{t['answer']}" for t in turns
         )
@@ -58,7 +84,7 @@ def make_mail_triage(llm: ChatLLM, service=None):
         emails: list[Email] = list(state.get("emails", []))
         if service is not None:
             emails = fetch_messages(service)
-        triages = [classify(e, llm) for e in emails]
+        triages = classify_batch(emails, llm)
         pending = [mid for t in triages if (mid := request_archive(t))]
         return {"triages": triages, "pending_archive": pending}
 

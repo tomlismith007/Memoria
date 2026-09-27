@@ -51,6 +51,68 @@ def test_ingest_ignores_garbage_output(wiki):
     assert wiki.list_pages() == []
 
 
+def test_ingest_only_sends_selected_page_bodies(wiki):
+    """feat-040: the prompt carries a stable name index plus only the relevant bodies."""
+    # max_pages=2 forces truncation; the relevant page must win the top-2 cut.
+    for i in range(6):
+        wiki.write_page(f"P{i}", f"# P{i}\n\nUNIQUE-MARKER-{i} 的正文。\n")
+    llm = ScriptedChat("## [[P4]]\n# P4\n\n更新。\n")
+    ingest("关于 UNIQUE-MARKER-4 的新资料", "raw/x.txt", wiki, llm, max_pages=2)
+    prompt = llm.calls[0][1]
+    assert "UNIQUE-MARKER-4" in prompt  # relevant page body is present
+    assert "UNIQUE-MARKER-1" not in prompt  # unrelated bodies are not
+    # The name index still lists every page, so the LLM knows what else exists.
+    assert "- [[P1]]" in prompt and "- [[P5]]" in prompt
+
+
+def test_ingest_sends_every_body_when_pages_fit(wiki):
+    """Under max_pages the selection is a no-op: nothing is silently withheld."""
+    for i in range(3):
+        wiki.write_page(f"P{i}", f"# P{i}\n正文{i}。\n")
+    llm = ScriptedChat("## [[P0]]\n# P0\n\n更新。\n")
+    ingest("资料", "raw/x.txt", wiki, llm, max_pages=10)
+    prompt = llm.calls[0][1]
+    for i in range(3):
+        assert f"正文{i}。" in prompt
+
+
+def test_ingest_index_prefix_precedes_variable_blocks(wiki):
+    """feat-040: the stable name index must come first so the cached prefix stays put."""
+    for i in range(3):
+        wiki.write_page(f"P{i}", f"# P{i}\n正文{i}\n")
+    llm = ScriptedChat("## [[P0]]\n# P0\n\n更新。\n")
+    ingest("资料", "raw/x.txt", wiki, llm)
+    prompt = llm.calls[0][1]
+    assert prompt.index("现有页面目录") < prompt.index("新资料")
+    assert prompt.index("新资料") < prompt.index("相关页面正文")
+
+
+def test_ingest_index_is_stable_across_ingests(wiki):
+    """feat-040: the index block must not change when only page bodies change."""
+    wiki.write_page("A", "# A\n原始内容。\n")
+    first = ScriptedChat("## [[A]]\n# A\n\n改写。\n")
+    ingest("资料一", "raw/1.txt", wiki, first)
+    index_1 = first.calls[0][1].split("新资料")[0]
+
+    second = ScriptedChat("## [[A]]\n# A\n\n再改写。\n")
+    ingest("资料二", "raw/2.txt", wiki, second)
+    index_2 = second.calls[0][1].split("新资料")[0]
+    assert index_1 == index_2
+
+
+def test_select_relevant_handles_cjk_and_ascii(wiki):
+    from memoria.wiki.ops import _select_relevant
+
+    pages = {
+        "服务到期": "2027 年到期，提前 30 天续费。",
+        "团队": "members and onboarding notes",
+        "无关": "天气预报与股票行情。",
+    }
+    picked = _select_relevant(pages, "服务什么时候到期", k=2)
+    assert "服务到期" in picked
+    assert picked and set(picked).issubset(pages)
+
+
 def test_query_index_first_then_deep(wiki):
     wiki.write_page("服务到期", "# 服务到期\n\n2027 年到期。\n")
     wiki.write_page("天气", "# 天气\n\n晴。\n")

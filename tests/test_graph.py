@@ -119,32 +119,6 @@ def test_ingest_route_source_path_dual_writes(tmp_path):
     assert out["ingest_updated"] == ["服务到期"]
 
 
-def test_qa_route_wiki_sufficient_and_router_skipped(tmp_path):
-    store, wiki = _kb(tmp_path)
-    wiki.write_page("服务到期", "# 服务到期\n\n2027 年到期。\n")
-    wiki.build_index()
-    llm = ScriptedChat("[[服务到期]]", "服务 A 2027 年到期。[[服务到期]]", "充分")
-    g = build_graph(store, FakeEmbedder(), llm, wiki).compile()
-    out = g.invoke({"text": "服务 A 何时到期", "intent": "问答"})
-    assert out["answer_source"] == "wiki"
-    assert out["answer_verified"] is True
-    assert "意图路由" not in llm.calls[0][0]  # preset intent skipped the router LLM
-
-
-def test_ingest_route_source_path_dual_writes(tmp_path):
-    store, wiki = _kb(tmp_path)
-    src = tmp_path / "raw-note.md"
-    src.write_text("服务 A 2027 年到期，请及时续费。" * 5, encoding="utf-8")
-    llm = ScriptedChat("## [[服务到期]]\n# 服务到期\n\n2027 年到期。\n")
-    g = build_graph(store, FakeEmbedder(), llm, wiki).compile()
-    out = g.invoke(
-        {"intent": "ingest", "source_path": str(src), "origin": "raw-note.md"}
-    )
-    assert out["doc_id"] and out["chunks"] > 0
-    assert store.count() > 0  # vectors written through the graph (feat-008 dual write)
-    assert out["ingest_updated"] == ["服务到期"]
-
-
 def test_qa_route_carries_history_for_follow_ups(tmp_path):
     store, wiki = _kb(tmp_path)
     llm = ScriptedChat("[[不存在的页]]", "无相关页面。", "补充", "2027 年到期。[1]")
@@ -159,6 +133,32 @@ def test_qa_route_carries_history_for_follow_ups(tmp_path):
     assert "服务 A 何时到期" in recent  # prior turn reached the follow-up prompts
     assert "那需要提前多久续费" in recent
     assert len(follow["history"]) == 2  # turn appended, not replaced
+
+
+def test_recent_turns_drops_oldest_until_budget_fits():
+    """feat-042: history is trimmed by token budget, newest turns kept first."""
+    from memoria.graph.nodes import KEEP_RECENT_TOKENS, _recent_turns
+
+    def turn(i, size):
+        return {"question": f"q{i}", "answer": "答" * size}
+
+    # Each turn costs (2 + 6000) / 1.5 ≈ 4001.3 tokens, so 4 fit and a 5th would exceed.
+    history = [turn(i, 6000) for i in range(10)]
+    kept = _recent_turns(history)
+    assert len(kept) == 4
+    assert kept[-1]["question"] == "q9"  # newest survives
+    assert kept[0]["question"] == "q6"  # the six oldest are dropped
+
+    # The kept turns must actually fit the budget they claim to respect.
+    total = sum(len(t["question"]) + len(t["answer"]) for t in kept) / 1.5
+    assert total <= KEEP_RECENT_TOKENS
+
+    # A short history is never truncated.
+    short = [turn(i, 10) for i in range(3)]
+    assert _recent_turns(short) == short
+
+    # Empty history is safe.
+    assert _recent_turns([]) == []
 
 
 def test_llm_nodes_retry_transient_failures(tmp_path):

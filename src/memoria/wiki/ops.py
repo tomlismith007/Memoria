@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, field
 
 from memoria.llm import ChatLLM
+from memoria.rag.retrieve import keyword_score
 from memoria.wiki.pages import Wiki, extract_links
 
 SECTION_RE = re.compile(r"^## \[\[([^\[\]]+)\]\]\s*$", re.M)
@@ -35,15 +36,35 @@ def _parse_names(text: str, valid: set[str]) -> list[str]:
     return names
 
 
+def _select_relevant(pages: dict[str, str | None], material: str, k: int) -> list[str]:
+    """Top-k pages by keyword overlap with the new material. Reuses the RAG scorer."""
+    scored = [
+        (keyword_score(material, f"{name} {body or ''}"), name)
+        for name, body in pages.items()
+        if body
+    ]
+    scored.sort(key=lambda pair: (-pair[0], pair[1]))  # ties break on name, not dict order
+    return [name for _, name in scored[:k]]
+
+
 def ingest(
     material: str, origin: str, wiki: Wiki, llm: ChatLLM, max_pages: int = 10
 ) -> list[str]:
-    """LLM reads new material, rewrites related pages. Returns updated page names."""
+    """LLM reads new material, rewrites related pages. Returns updated page names.
+
+    The prompt is laid out cache-first: the page-name index is a stable prefix that
+    only changes when pages are added or removed, and it sits ahead of the variable
+    material/body blocks. The previous layout inlined every page body after the
+    material, so each ingest rewrote the whole prompt and prefix caching never hit.
+    """
     pages = {n: wiki.read_page(n) for n in wiki.list_pages()}
-    known = "\n\n".join(f"## [[{n}]]\n{body}" for n, body in pages.items() if body)
+    selected = _select_relevant(pages, material, k=max_pages)
+    index_block = "\n".join(f"- [[{n}]]" for n in sorted(pages)) or "（空）"
+    bodies = "\n\n".join(f"## [[{n}]]\n{pages[n]}" for n in selected) or "（无相关页面）"
     user = (
+        f"现有页面目录：\n{index_block}\n\n"
         f"新资料（来源：{origin}）：\n{material}\n\n"
-        f"现有页面：\n{known or '（空）'}\n\n"
+        f"相关页面正文：\n{bodies}\n\n"
         "请更新相关页面（新建+修改，总数不超过 "
         f"{max_pages}），每个页面用 `## [[页名]]` 开头输出完整新内容。"
     )
@@ -53,7 +74,10 @@ def ingest(
         wiki.write_page(name, body + "\n")
         updated.append(name)
     wiki.build_index()
-    wiki.append_log(f"ingest {origin}：更新 {len(updated)} 页 {updated}")
+    wiki.append_log(
+        f"ingest {origin}：更新 {len(updated)} 页 {updated}"
+        f"（展开 {len(selected)}/{len(pages)} 页正文）"
+    )
     if len(sections) > max_pages:
         wiki.append_log(f"ingest {origin}：{len(sections) - max_pages} 页超出上限未写")
     return updated

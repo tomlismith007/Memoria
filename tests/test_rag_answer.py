@@ -177,9 +177,69 @@ def test_chat_protocols_build_provider_specific_requests(
     elif api_format == "anthropic_messages":
         assert seen["headers"]["x-api-key"] == "secret"
         assert seen["headers"]["anthropic-version"] == "2023-06-01"
-        assert seen["json_body"]["system"] == "system prompt"
+        assert seen["json_body"]["system"] == [
+            {
+                "type": "text",
+                "text": "system prompt",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
         assert [item["role"] for item in seen["json_body"]["messages"]] == ["user"]
     else:
         assert seen["headers"]["Authorization"] == "Bearer secret"
         assert seen["json_body"]["instructions"] == "system prompt"
         assert seen["json_body"]["input"] == "hello"
+
+
+def test_cache_marker_only_on_protocols_that_support_it():
+    """feat-041: a compatible endpoint must never be handed an unknown cache field."""
+    from memoria.llm import build_chat_request
+
+    _, _, anthropic_body = build_chat_request(
+        "https://api.anthropic.com",
+        "k",
+        "m",
+        api_format="anthropic_messages",
+        system="sys",
+        user="hi",
+    )
+    assert anthropic_body["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+    # chat_completions keeps a plain string system: no marker is emitted, because
+    # whether a given gateway honours prompt_cache_key is not something we can assume.
+    _, _, chat_body = build_chat_request(
+        "https://gw.example/v1",
+        "k",
+        "m",
+        api_format="chat_completions",
+        system="sys",
+        user="hi",
+    )
+    assert chat_body["messages"][0] == {"role": "system", "content": "sys"}
+    assert "cache_control" not in str(chat_body)
+
+    _, _, responses_body = build_chat_request(
+        "https://gw.example/v1",
+        "k",
+        "m",
+        api_format="openai_responses",
+        system="sys",
+        user="hi",
+    )
+    assert responses_body["instructions"] == "sys"
+    assert "cache_control" not in str(responses_body)
+
+
+def test_anthropic_omits_system_block_when_empty():
+    """No system prompt means no cache marker — the field must stay absent."""
+    from memoria.llm import build_chat_request
+
+    _, _, body = build_chat_request(
+        "https://api.anthropic.com",
+        "k",
+        "m",
+        api_format="anthropic_messages",
+        system="",
+        user="hi",
+    )
+    assert "system" not in body

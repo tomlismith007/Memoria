@@ -61,7 +61,13 @@ def build_chat_request(
             "messages": [{"role": "user", "content": user}],
         }
         if system:
-            body["system"] = system
+            # feat-041: mark the system prompt cacheable. Every Memoria prompt leads
+            # with a fixed system block, so this is the reusable prefix. Only sent on
+            # protocols that accept the marker — a compatible endpoint must not be
+            # handed an unknown field.
+            body["system"] = [
+                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+            ]
         return f"{root}/messages", {key: value for key, value in headers.items() if value}, body
 
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}

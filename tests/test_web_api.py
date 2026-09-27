@@ -1,5 +1,7 @@
 """Tests for feat-010/feat-033: Web API service (FastAPI), fully graph-backed. 100% offline."""
 
+import re
+
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from starlette.testclient import TestClient
@@ -16,6 +18,9 @@ class SmartChat:
 
     def chat(self, system, user):
         self.calls.append((system, user))
+        if "意图路由" in system:
+            # feat-045: /api/agent is the production path that exercises the router.
+            return "问答"
         if "Wiki 维护者" in system or "更新相关页面" in user:
             return "## [[服务到期]]\n# 服务到期\n\n2027 到期。\n"
         if "Wiki 检索器" in system:
@@ -23,6 +28,20 @@ class SmartChat:
         if "回答质检员" in system:
             return "充分"
         if "邮件分类助手" in system:
+            # feat-043: the batch prompt numbers each mail, so answer per index.
+            if re.search(r"^\[\d+\] 发件人：", user, re.M):
+                out = []
+                for m in re.finditer(
+                    r"^\[(\d+)\] 发件人：.*?\n主题：(.*?)\n内容：(.*?)(?=\n\n\[|\Z)",
+                    user,
+                    re.M | re.S,
+                ):
+                    idx, subject = m.group(1), m.group(2)
+                    if "优惠券" in subject or "年中大促" in subject:
+                        out.append(f"[{idx}] 类别：营销\n[{idx}] 摘要：年中大促打折优惠")
+                    else:
+                        out.append(f"[{idx}] 类别：通知\n[{idx}] 摘要：验证码动态通知")
+                return "\n".join(out)
             if "优惠券" in user or "年中大促" in user:
                 return "类别：营销\n摘要：年中大促打折优惠"
             return "类别：通知\n摘要：验证码动态通知"
@@ -109,6 +128,89 @@ def test_ask_conversation_memory(tmp_path):
     # Omitting conversation_id mints a new thread instead of failing.
     auto = client.post("/api/ask", json={"question": "服务 A 何时到期？"}).json()
     assert auto["conversation_id"] not in {"", "conv-1", "conv-2"}
+
+
+def test_agent_endpoint_runs_the_router(tmp_path):
+    """feat-045: /api/agent omits `intent`, so the graph's conditional edges route it.
+
+    This is the production path that keeps the router honest — the structured
+    endpoints preset `intent` and therefore never exercise it.
+    """
+    llm = SmartChat()
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    app = create_app({
+        "store": ChromaStore(path=str(tmp_path / "chroma")),
+        "embedder": FakeEmbedder(),
+        "llm": llm,
+        "wiki": wiki,
+        "checkpointer": MemorySaver(),
+    })
+    client = TestClient(app)
+
+    resp = client.post("/api/agent", json={"text": "服务 A 何时到期？"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["intent"] == "问答"
+    assert body["conversation_id"]
+    assert "2027" in body["text"]
+    assert any("意图路由" in system for system, _ in llm.calls)
+
+    # The qa branch shape is returned, same as /api/ask.
+    assert "citations" in body and "source" in body
+
+
+def test_agent_endpoint_can_preset_intent_to_skip_the_router(tmp_path):
+    """An explicit intent short-circuits the router, matching the structured endpoints."""
+    llm = SmartChat()
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    app = create_app({
+        "store": ChromaStore(path=str(tmp_path / "chroma")),
+        "embedder": FakeEmbedder(),
+        "llm": llm,
+        "wiki": wiki,
+        "checkpointer": MemorySaver(),
+    })
+    client = TestClient(app)
+    body = client.post(
+        "/api/agent", json={"text": "何时到期", "intent": "问答"}
+    ).json()
+    assert body["intent"] == "问答"
+    assert not any("意图路由" in system for system, _ in llm.calls)
+
+
+def test_agent_endpoint_ingest_branch(tmp_path):
+    """feat-045: a non-question route returns the ingest shape, not the qa shape."""
+    llm = SmartChat()
+    llm.chat = lambda system, user: (
+        llm.calls.append((system, user))
+        or ("ingest" if "意图路由" in system else "## [[服务到期]]\n# 服务到期\n\n到期。\n")
+    )
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    raw = wiki.raw_dir / "note.txt"
+    raw.write_text("服务 A 2027 到期。", encoding="utf-8")
+    app = create_app({
+        "store": ChromaStore(path=str(tmp_path / "chroma")),
+        "embedder": FakeEmbedder(),
+        "llm": llm,
+        "wiki": wiki,
+        "checkpointer": MemorySaver(),
+    })
+    client = TestClient(app)
+    # The router only sees `text`; the ingest node needs a source_path, so this
+    # documents the real contract: free text alone cannot fabricate a file ingest.
+    body = client.post("/api/agent", json={"text": "把这个文件摄入"}).json()
+    assert body["intent"] == "ingest"
+    assert "chunks" in body
+    assert "text" not in body
+
+
+def test_structured_endpoints_still_skip_the_router(api_client):
+    """The preset-intent optimisation must survive the /api/agent addition."""
+    client, _, _ = api_client
+    assert client.post("/api/ask", json={"question": "何时到期"}).status_code == 200
 
 
 def test_frontend_static_serving(api_client):

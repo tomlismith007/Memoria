@@ -35,6 +35,14 @@ class AskRequest(BaseModel):
     conversation_id: str = ""  # empty -> new conversation thread (its id is returned)
 
 
+class AgentRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    conversation_id: str = ""
+    # Force a branch instead of paying for the router LLM call. Empty = let the
+    # graph's router node decide, which is the point of this endpoint.
+    intent: str = ""
+
+
 class ArchiveQARequest(BaseModel):
     question: str
     answer: str
@@ -207,8 +215,6 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             result = compiled_graph.invoke(
                 {"text": req.question, "intent": "问答"}, config
             )
-        except HTTPException:
-            raise
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"LLM 接口调用失败: {str(e)[:180]}")
         return {
@@ -227,6 +233,59 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                 for c in result.get("answer_citations", [])
             ],
         }
+
+    @app.post("/api/agent")
+    def api_agent(req: AgentRequest):
+        """Free-text entry point: the graph's router node decides the branch.
+
+        The other endpoints preset `intent` because their URL already states it
+        (/api/ask is a question, /api/ingest is a document). This one does not, so it
+        is the path that actually exercises LangGraph's conditional edges in
+        production — the routing the graph was built for.
+        """
+        conversation_id = req.conversation_id or uuid.uuid4().hex
+        config = {"configurable": {"thread_id": conversation_id}}
+        payload: dict[str, Any] = {"text": req.text}
+        if req.intent:
+            payload["intent"] = req.intent
+        try:
+            result = compiled_graph.invoke(payload, config)
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Agent 调用失败: {str(e)[:180]}")
+
+        intent = result.get("intent", "问答")
+        response: dict[str, Any] = {
+            "intent": intent,
+            "conversation_id": conversation_id,
+        }
+        if intent == "问答":
+            response.update(
+                {
+                    "text": result.get("answer_text", ""),
+                    "source": result.get("answer_source", "rag+wiki"),
+                    "wiki_pages": result.get("answer_wiki_pages", []),
+                    "citations_verified": result.get("answer_verified", False),
+                    "citations": [
+                        {"ref": c.ref, "doc_id": c.doc_id, "chunk": c.chunk, "start": c.start}
+                        for c in result.get("answer_citations", [])
+                    ],
+                }
+            )
+        elif intent == "ingest":
+            response.update(
+                {
+                    "doc_id": result.get("doc_id"),
+                    "chunks": result.get("chunks", 0),
+                    "wiki_pages": result.get("ingest_updated", []),
+                }
+            )
+        elif intent == "邮件":
+            # Triage stops at the human-confirmation interrupt, so nothing is
+            # archived here. The caller must POST /api/mail/archive with this id.
+            response["thread_id"] = conversation_id
+            response["pending_archive"] = result.get("pending_archive", [])
+            response["message"] = "邮件分拣已暂停，等待人工确认。"
+        return response
 
     @app.get("/api/wiki/pages")
     def api_wiki_pages(deep: bool = False):

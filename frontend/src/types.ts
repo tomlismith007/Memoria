@@ -14,14 +14,14 @@ export interface AskResponse {
   citations_verified?: boolean;
 }
 
-export interface DocumentInfo {
+interface DocumentInfo {
   doc_id: string;
   name: string;
   size: number;
   chunks: number;
 }
 
-export interface VectorOnlyDoc {
+interface VectorOnlyDoc {
   doc_id: string;
   chunks: number;
 }
@@ -31,7 +31,7 @@ export interface DocumentListResponse {
   vector_only: VectorOnlyDoc[];
 }
 
-export interface WikiPageSummary {
+interface WikiPageSummary {
   name: string;
   links: string[];
   length: number;

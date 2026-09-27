@@ -1,7 +1,7 @@
 # Design System: Memoria
 
 > **Visual Theme**: Utilitarian Minimalism · Rounded Cards · Capsule & Pill Architecture  
-> **Tech Stack**: React 19 + TypeScript + Tailwind CSS v4 / v3 + Lucide/Radix Icons (Clean SVG primitives)  
+> **Tech Stack**: React 19 + TypeScript 5.7 + Tailwind CSS v3 + Lucide Icons (Clean SVG primitives)  
 > **Aesthetic Reference**: Apple Dynamic Island / Linear / Notion / Craft editorial style. Clean, tactile, breathing, distraction-free.
 
 ---
@@ -38,10 +38,12 @@ Memoria 的前端界面追求 **“克制、高级、触觉感明确的编辑级
 
 ## 3. 排版体系 (Typography)
 
-- **主字体 (Sans-Serif)**: `Geist Sans`, `Plus Jakarta Sans`, 或 `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
-  - 标题注重字间距收敛：`tracking-tight`（`-0.02em`）
+- **主字体 (Sans-Serif)**: 系统字体栈，无网络字体依赖
+  - 实际取值（`tailwind.config.js` → `fontFamily.sans`）：`-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+  - 标题注重字间距收敛：`tracking-tight`（`-0.02em`）；全局 `body` 字距为 `-0.01em`
   - 正文排版：`line-height: 1.6`（`leading-relaxed`），最大阅读宽度限制为 `max-w-3xl`
-- **等宽字体 (Monospace)**: `Geist Mono`, `SF Mono`, `JetBrains Mono`
+  - 如需引入 Geist Sans / Plus Jakarta Sans，须同时补 `@font-face` 或网络字体加载，并更新本节
+- **等宽字体 (Monospace)**: `SF Mono`, `JetBrains Mono`, `monospace`（系统栈，无网络字体依赖）
   - 用于代码块、`doc_id` 散列值、段落偏移量、时间戳与快捷键指示（`<kbd>`）
 - **禁止项**: 严禁在界面中使用默认 `Times New Roman`、`Georgia` 等老式通用衬线字体；严禁使用通用表情符号（Emoji）。
 
@@ -82,11 +84,11 @@ Memoria 的前端界面追求 **“克制、高级、触觉感明确的编辑级
 
 ### 5.1 顶部浮动胶囊导航 (Floating Pill Navigation)
 - 居中悬浮胶囊栏：`rounded-full bg-white/90 backdrop-blur-md border border-zinc-200/80 p-1.5 shadow-sm inline-flex items-center gap-1`
-- 四大核心 Tab 切换：
-  - 🔍 **问答与综合 (Ask)**：知识检索与混合回答
-  - 📖 **知识漫游 (Wiki)**：双向链接页面浏览与断链审计
-  - ✉️ **邮件分拣 (Mail)**：受保护邮件与人工归档门禁
-  - 📥 **文档摄入 (Ingest)**：拖拽上传与双写进度
+- 四大核心 Tab 切换（图标一律使用 Lucide SVG 矢量图标，禁止 Emoji）：
+  - **问答与综合 (Ask)**：知识检索与混合回答
+  - **知识漫游 (Wiki)**：双向链接页面浏览与断链审计
+  - **邮件分拣 (Mail)**：受保护邮件与人工归档门禁
+  - **文档摄入 (Ingest)**：拖拽上传与双写进度
 
 ### 5.2 问答与引文溯源界面 (Ask View)
 - **居中探索区**：输入框周围保持充裕的呼吸空间。

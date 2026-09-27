@@ -8,7 +8,6 @@ from memoria.rag import (
     FakeEmbedder,
     OpenAICompatibleEmbedder,
     chunk_text,
-    delete_document,
     ingest_document,
     load_document,
 )
@@ -58,7 +57,7 @@ def test_delete_document_removes_all_vectors(tmp_path, store, embedder):
     src = _write_doc(tmp_path / "note.md", "待删除的内容。" * 20)
     result = ingest_document(src, store, embedder, chunk_size=50, chunk_overlap=5)
     assert store.count() > 0
-    delete_document(result.doc_id, store)
+    store.delete_document(result.doc_id)
     assert store.count() == 0  # red line: no orphan vectors
 
 

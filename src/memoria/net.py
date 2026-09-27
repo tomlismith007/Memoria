@@ -145,7 +145,7 @@ def _resolve(hostname: str, port: int) -> tuple[str, int]:
     return addresses[0][1], port
 
 
-def _host_header(hostname: str, port: int) -> str:
+def _host_header(hostname: str) -> str:
     try:
         hostname.encode("ascii")
         display = hostname
@@ -153,7 +153,7 @@ def _host_header(hostname: str, port: int) -> str:
         display = hostname.encode("idna").decode("ascii")
     if ":" in display:
         display = f"[{display}]"
-    return display if port == _PUBLIC_PORT else f"{display}:{port}"
+    return display
 
 
 def _validate_content_length(headers: http.client.HTTPMessage, max_bytes: int) -> None:
@@ -276,7 +276,7 @@ def safe_request(
         parsed = urlsplit(current_url)
         path = urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
         request_headers = dict(current_headers)
-        request_headers["Host"] = _host_header(hostname, port)
+        request_headers["Host"] = _host_header(hostname)
         result = _request_once(
             scheme,
             hostname,

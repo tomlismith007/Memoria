@@ -1,6 +1,6 @@
 import React from "react";
 
-export interface PillBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
+interface PillBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: "wiki" | "citation" | "protected" | "candidate" | "warning" | "neutral";
   interactive?: boolean;
 }

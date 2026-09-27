@@ -1,9 +1,9 @@
 import React from "react";
 
-export interface PillButtonProps
+interface PillButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "secondary" | "outline" | "danger" | "wiki";
-  size?: "sm" | "md" | "lg";
+  variant?: "primary" | "secondary" | "outline" | "danger";
+  size?: "sm" | "md";
   icon?: React.ReactNode;
 }
 
@@ -22,7 +22,6 @@ export const PillButton: React.FC<PillButtonProps> = ({
   const sizeClasses = {
     sm: "px-3.5 py-1 text-xs",
     md: "px-5 py-2 text-sm",
-    lg: "px-6 py-2.5 text-base",
   }[size];
 
   const variantClasses = {
@@ -30,7 +29,6 @@ export const PillButton: React.FC<PillButtonProps> = ({
     secondary: "bg-zinc-100 hover:bg-zinc-200/80 text-zinc-800",
     outline: "border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700",
     danger: "bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/60",
-    wiki: "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/60",
   }[variant];
 
   return (

@@ -29,8 +29,3 @@ def ingest_document(
     vectors = embedder.embed([c.text for c in chunks]) if chunks else []
     store.upsert(doc.doc_id, chunks, vectors)
     return IngestResult(doc_id=doc.doc_id, chunks=len(chunks), text=doc.text)
-
-
-def delete_document(doc_id: str, store: ChromaStore) -> None:
-    """Red line: doc deletion removes every one of its vectors."""
-    store.delete_document(doc_id)

@@ -105,9 +105,7 @@ def _environment_settings() -> Settings:
     )
 
 
-def _is_public_url(url: str, *, allow_empty: bool = False) -> bool:
-    if allow_empty and not url.strip():
-        return True
+def _is_public_url(url: str) -> bool:
     try:
         validate_public_https_url(url)
     except SafeRequestError:

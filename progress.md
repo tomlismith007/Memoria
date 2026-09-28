@@ -188,6 +188,22 @@
   - **教训记录**：评测语料的规模决定结论的适用范围。小语料上的「无变化」不等于「无影响」——这条已写入 `ARCHITECTURE.md` §7.6。
   - **遗留未做**：query 向量缓存（多轮追问时重发）、Chroma `configuration` 迁移（旧写法仍可用非缺陷）、嵌入/响应缓存、jieba 等语义分词器（碎片已被 IDF 压低，若仍不够需重新讨论「检索核心自己写」红线）。
 
+- [x] feat-058/059 ponytail-audit 整改 (2026-09-28): 2026-09-28 全仓库 ponytail-audit（8 项发现，净约 -485 行）后规划并执行，计划与决策记录见 `docs/NEXT_PLAN.md`。`python -m pytest -q` → **182 passed**（184：删 4 个 presets/flat 测试 +2 个新焦点测试）；`npm run build` green（CSS 37.84→35.25 kB、JS 327.90→323.56 kB）。
+  - **feat-058 后端配置双轨收敛**：删除 presets 子系统（三条 `/api/config/presets*` 路由、`PresetSaveRequest`、`ModelPreset`、`Settings.presets`、清洗分支、`_public_preset`/`_public_settings`）与 flat `GET/POST /api/config` 路由——前端 api.ts 零调用，单用户本地应用无仓库外消费者；旧 settings.json 的 presets 字段由 pydantic extra=ignore 忽略，无迁移。config_routes.py 570→436 行。
+  - **根因修复（真实配置已咬人）**：用户 `data/settings.json` 实测出现 `active_chat_model = "BAAI/bge-large-zh-v1.5"`（硅基流动的 **embedding** 模型被当对话模型激活），源于各路由各自的「models[0] 跨类型回退」。新增 `pick_model_id(provider, model_type)`（严格按类型、禁跨类型回退）与 `resolve_active_chat_model(settings)`（选择器必须指向 active provider 下真实启用的 chat 模型，否则自愈），替换 `activate_settings`、`capability_status` 与 config_routes 五个路由共 7 处重复推导。
+  - **杂项收缩**：`api_mail_triage` 每封邮件只算一次 `archive_candidate`（原 `request_archive(t)` 调两次）；`api_activate_provider` 两分支合并、响应 dict 只写一次；`llm.py` 抽 `provider_auth_headers` 供 chat 请求与 GET /models 共用；`mail/__init__` 去掉无调用方的 `is_transaction`/`is_verification`/`CATEGORIES` 重导出。
+  - **feat-059 前端状态源统一**：删 useProviderConfig 的 localStorage 供应商镜像（5 个 key、`syncToLocalStorage` 及 8 处调用点、缓存回传迁移分支、`setProviders` 内嵌副作用变通）——后端是唯一事实源。AskView 两份提问表单抽为 `<AskInput>`；约 120 行手写历史校验器缩为约 35 行宽容加载器（坏档清空，写入端不变）。删 5 个文件中 72 处 `dark:` 变体（浅色单主题应用，系统深色偏好下原渲染为半深半浅破碎 UI）。
+  - **明确不做**（决策记录在 NEXT_PLAN.md）：`capability_status` 的 llm key 真实性检查（失败模式是快速 401 非静默超时，避免波及 feat-047..049 契约）；embed 侧选择器类型校验（写入侧已严格）；表单回填 effect 依赖数组（当前行为正确，加依赖反而清空输入中表单）。
+- [x] feat-058/059 浏览器端到端验收 (2026-09-28, ZCode Computer Use / control-browser)：生产构建经 FastAPI 静态挂载（8010 端口，`MEMORIA_CHECKPOINT_DB` 指向临时文件与真实 checkpoints 隔离；`data/settings.json` 先备份后还原，真实 wiki 只读，全程未触碰真实网关）。
+  - **自愈逻辑上线即生效**：服务启动后 `/api/health` 立即如实报告 `llm.ready:false`（用户配置的 `active_chat_model` 是 embedding 模型 `BAAI/bge-large-zh-v1.5`，修复前会谎报 ready）——首页琥珀提示条与徽标「配置待补全」同步出现。
+  - **设置全流程**：双栏弹窗渲染正常（浅色主题一致，无 dark 残留半深色）；新建「E2E临时供应商」（名称/Base URL/Key 表单）→ toast「创建成功并已生效」→ 侧栏激活点正确转移（硅基流动变「在另一个标签中生效」）；手动添加模型 `e2e-chat-model` → 保存 → 「使用」激活 → toast 确认；向量页签给 E2E 供应商添加 `e2e-embed-model` 并激活；此后 `/api/health` 双能力 `ready:true` 且模型名联动。
+  - **真实问答链路**：AskView 提交问题 → 请求真实走图 → 混合检索 → `safe_request`（假网关 DNS 快速失败）→ 502 → 错误卡片显示后端真实原因 `LLM 接口调用失败: DNS resolution failed`，无崩溃无静默；徽标切「本地就绪」、模型胶囊显示 `E2E临时供应商 / e2e-chat-model`（App 从后端刷新，非 localStorage）。
+  - **四页签**：Wiki（真实空库如实显示 0 页 + lint 空态）、Mail（空态 + 红线横幅「物理级只读」）、Ingest（拖拽区/粘贴卡片/文档库/红线说明齐全）。
+  - **feat-059 实证**：整轮设置 CRUD 后 `localStorage` 仅剩 `memoria.ask.history`，5 个供应商镜像 key 零残留；历史加载器双场景——注入损坏 JSON → 重载后干净回到首屏，注入合法 v1 载荷 → 问题/回答/Wiki 徽标完整恢复。
+  - **删除闭环**：更多菜单（lucide 新版图标类名为 `lucide-ellipsis-vertical`）→ 删除供应商 → 确认弹窗带名称 → 删除后 toast + 侧栏还原。
+  - **环境还原**：settings.json 恢复备份原状（含原有的跨类型选择器，由 resolve 逻辑在运行时自愈直至用户重选）、临时 checkpoint 删除、8010 端口释放、验收页签关闭。
+  - **工具链记录**：本轮服务进程曾被外部终止一次（退出码 0xC000013A，日志无异常，期间仅 GET 请求）；IAB 中 Playwright `click()` 可操作性等待超时 + `cua`/`dom_cua` 点击间歇失灵时，evaluate 派发真实 DOM click 稳定可用（React 19 合成事件正常响应）；截图后端卡死通过重开标签页恢复。
+
 ## Notes for Next Session
 
 - Read `docs/ARCHITECTURE.md` first — it holds the full spec from the product brief.

@@ -536,6 +536,26 @@
       ],
       "status": "completed",
       "evidence": "retrieve.py 与 answer.py 的 k 默认值 8 → 30，retrieve() docstring 记录了实测依据。延迟实测（20 次平均，本地 Chroma 查询不含 embedding 网络往返）：k=8 → 2.35ms，k=15 → 3.34ms，k=30 → 5.89ms，相对秒级 LLM 往返可忽略。新增 2 个回归测试锁住该失败模式：test_narrow_recall_window_finds_nothing（断言 k=8 确实召不到，防止默认值被静默改回）与 test_default_recall_window_reaches_the_buried_target。"
+    },
+    {
+      "id": "feat-058",
+      "name": "Backend config dual-track convergence & unified model resolution",
+      "description": "2026-09-28 ponytail-audit 整改（后端侧）。1) 删除 presets 子系统与 flat GET/POST /api/config 路由：前端 api.ts 零调用，单用户本地应用无仓库外消费者，Settings.presets/ModelPreset/_public_preset/_public_settings 及其清洗分支一并移除（旧 settings.json 的 presets 字段由 pydantic extra=ignore 忽略）。2) 统一 active 模型推导：新增 pick_model_id(provider, model_type)（严格按类型、禁跨类型回退）与 resolve_active_chat_model(settings)（选择器必须指向 active provider 下真实启用的 chat 模型，否则自愈回退），替换 app.activate_settings、capability_status 与 config_routes 五个路由共 7 处重复推导。**真实配置中已出现 active_chat_model 指向 embedding 模型的腐化（硅基流动 BAAI/bge-large-zh-v1.5），本项为根因修复**。3) 杂项：api_mail_triage 每封邮件只调一次 archive_candidate；api_activate_provider 两分支合并；llm.py 抽 provider_auth_headers 供 chat 请求与 GET /models 共用；mail/__init__ 去掉无调用方的 is_transaction/is_verification/CATEGORIES 重导出。",
+      "dependencies": [
+        "feat-049"
+      ],
+      "status": "completed",
+      "evidence": "python -m pytest -q 全量 182 passed（基线 184：删 4 个 presets/flat 测试，新增 test_pick_model_id_never_falls_back_across_types 与 test_resolve_active_chat_model_repairs_cross_typed_selector，test_health_reports_missing_embedding_config 的 fixture 补 chat 模型以匹配收紧后的语义）。config_routes.py 570→436 行。行为变更三条已写入 docs/NEXT_PLAN.md：无启用 chat 模型时选择器落空串、跨类型选择器按未配置自愈、被删路由返回 404。"
+    },
+    {
+      "id": "feat-059",
+      "name": "Frontend single source of truth & dead style cleanup",
+      "description": "2026-09-28 ponytail-audit 整改（前端侧）。1) 删除 useProviderConfig 的 localStorage 供应商镜像：5 个 storage key、syncToLocalStorage 及全部 8 处调用点、后端为空时的缓存回传迁移分支、setProviders 内嵌副作用的变通写法——后端 GET /api/config/providers 是唯一事实源（App.tsx 弹窗关闭即刷新，AskView 全走 props）。2) AskView：两份提问表单抽为本文件内 <AskInput>（差异仅 size/阴影/占位符）；约 120 行手写 localStorage 历史校验器缩为约 35 行宽容加载器（version 检查 + 最小形状过滤 + try/parse，坏档清空；写入端 persistMessages 不变）。3) 删除 5 个设置相关文件中全部 72 处 dark: Tailwind 变体：应用为浅色单主题（无 darkMode 配置、无切换开关），系统深色偏好下原先渲染为半深半浅的破碎 UI，现一致为浅色。",
+      "dependencies": [
+        "feat-058"
+      ],
+      "status": "completed",
+      "evidence": "cd frontend && npm run build green（tsc + vite，1607 modules）；CSS 37.84→35.25 kB、JS 327.90→323.56 kB（dark: 清理瘦身）；grep 确认 hook 内 localStorage 引用为 0、src/ 内 dark: 为 0。浏览器端到端验收见 progress.md 同日记录。"
     }
   ]
 }

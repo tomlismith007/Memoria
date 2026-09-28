@@ -3,92 +3,68 @@
 ## Current Objective
 
 - Goal: Maintain the full-stack Memoria personal knowledge system — React 19 + TypeScript + Tailwind frontend, FastAPI Web API, LangGraph orchestration.
-- Current status: feat-001..feat-049 completed（除 feat-046 标记 wont-fix）。The 2026-09-25 roadmap (feat-023, feat-032..feat-037) landed earlier; 2026-09-27 added **feat-040..045**（LLM 缓存与调用开销整改 + LangGraph 正式编排器）与 **feat-047..049**（配置缺失早暴露）。计划文档 `docs/NEXT_PLAN.md`。
-- Working tree: **clean**。四个提交已落地：`a00eabe`（SettingsModal 拆分 + 后端死代码清理）、`257f3b0`（`/api/agent` 补漏）、`3d7b144`（feat-040..045）、`bd45d32`（feat-047..049）。
+- Current status: feat-001..feat-059 completed（除 feat-046 wont-fix）。2026-09-28 本轮完成 **ponytail-audit 全仓库审查 → 规划 → feat-058/059 执行 → 浏览器端到端验收** 全闭环。
+- Working tree: clean（三个提交：feat-058 后端 / feat-059 前端 / 文档与状态同步）。
 
-## 阻塞项：需要用户配置 embedding 供应商
+## 本轮做了什么（2026-09-28）
 
-`data/settings.json`（未被 git 跟踪）的嵌入配置不完整。商汤网关不提供
-`/embeddings` 端点（`sensenova-embedding` / `embedding-2` / `BAAI/bge-m3` 均 404），
-用户需自行补一个可用的 embedding 供应商才能恢复问答与摄入。
+1. **ponytail-audit**：整棵代码树审查，8 项发现（净约 -485 行 / 0 依赖），报告在会话记录中；对照 `docs/CODE_AUDIT_2026-09-24.md` 确认其 15 项中 11 项已修复。
+2. **规划**：`docs/NEXT_PLAN.md` 重写为本轮计划（含 6 项决策拍板与理由、"本轮不做"清单、E2E 方案）。
+3. **feat-058 后端**：删 presets 子系统与 flat `GET/POST /api/config` 路由（前端零调用）；新增 `pick_model_id` / `resolve_active_chat_model` 统一 7 处重复推导，**禁止跨类型回退**；`provider_auth_headers` 抽取；`api_mail_triage` 去重复调用；`api_activate_provider` 分支合并；mail `__init__` 砍无调用重导出。
+4. **feat-059 前端**：删 localStorage 供应商镜像（5 key + 8 处调用 + 迁移分支）；AskView 抽 `<AskInput>`、历史校验器 120→35 行；删 5 文件 72 处 `dark:` 变体。
+5. **端到端验收**：详见 `progress.md` 2026-09-28 两条记录。要点：health 对用户真实配置**立即如实报告** `llm.ready:false`（自愈逻辑生效）；设置 CRUD 全流程、真实问答失败路径（假网关 DNS 快速失败 → 带原因的错误卡片）、localStorage 镜像零残留、历史加载器坏档/好档双场景、UI 删除闭环全部通过。
 
-feat-047..049 已让这个缺口**可见且可行动**（`/api/health` 报 `embed.ready:false`、
-端点返回带指引的 502、前端显示提示条），但**无法替用户决定用哪家的 embedding 服务**。
+## 关键发现：用户真实配置有一处待修
 
-## Completed This Session (2026-09-27)
-
-- [x] **调研与规划**：源码研究五个开源 agent —— `zai-org/ZCode`、`deepseek-ai/deepseek-harness`、`earendil-works/pi`、`anomalyco/opencode`、`MiniMax-AI/minimax-code`。产出 `docs/UPGRADE_SPEC.md`（缓存机制对比表、六条代码级现状事实、逐项验收标准、四项「明确不借鉴」的决定及理由）。执行前已与用户确认完整规划。
-- [x] **feat-040** 拆分 wiki ingest prompt：`wiki/ops.py` 新增 `_select_relevant()`（复用 `rag.retrieve.keyword_score`，其 CJK 二元组分词已存在，未新增算法）。`ingest()` 改为「稳定页名目录 → 变动 material → top-K 选中页正文」三段式。原布局把全部页面正文拼在 material 之后，每次 ingest 重写整个 prompt，前缀缓存永不命中。
-- [x] **feat-041** 显式缓存标记：`llm.py` 的 `anthropic_messages` 路径 system 改为 `[{type:text, text, cache_control:{type:ephemeral}}]`。**刻意不发给** `chat_completions` / `openai_responses`——无法假定用户自配网关支持 `prompt_cache_key`。
-- [x] **feat-042** history 按 token 预算：`graph/nodes.py` 新增 `_recent_turns()`，`KEEP_RECENT_TOKENS=20_000`（对齐 pi 默认值），系数 1.5 char/token 取 CJK 保守侧，替换 `[-6:]` 轮数截断。附 `ponytail:` 注释声明是字符估算。
-- [x] **feat-043** 邮件批量分类：`mail/classify.py` 新增 `classify_batch()`（`classify()` 单封签名保留，既有测试零改动），N 次 HTTP → 1 次。红线保持：`is_protected` 仍逐封独立执行。
-- [x] **feat-044** 锁定 reducer 决策：`graph/state.py` 的 `history` 加 `ponytail:` 注释说明为何故意不用 `operator.add`。顺带修正同文件 docstring 的陈旧事实（原文写 MemorySaver，实际是 `SqliteSaver`）。
-- [x] **文档同步**：`docs/ARCHITECTURE.md` 新增第 7 节「横切关注点：LLM 上下文与调用成本」（prompt 稳定前缀布局、缓存标记的发送边界、token 预算裁剪、循环内调用折叠），技术选型表与测试数字同步。README 测试数字 118 → 130。
-
-### 实现中发现并修正的三处真实问题
-
-1. `_parse_batch` 原按行独立解析，但类别与摘要在不同行 → 摘要丢失。改为按编号跨行累积。由新增测试暴露。
-2. `tests/test_web_api.py` 的 `SmartChat` fixture 仍按单封格式回复，批量后 m2 营销邮件误判为不可归档 → fixture 增加批量提示词分支。
-3. 一处失败的测试假设：`keyword_score` 是覆盖率指标（分母为查询词数），所有页面都有基线分，所以「相关页必然入选」只在页面数 ≤ K 时成立。改用 `max_pages=2` 强制截断来真正验证选择行为。
-
-- [x] **feat-045** LangGraph 正式生产编排器（用户拍板）：新增 `POST /api/agent` 自由文本入口，刻意不预设 `intent`，由 router 节点决定分支——这是生产中唯一真正走通 `add_conditional_edges` 的路径。`cli.py` 全面改为经图编排（原直调 `sync.dual_ingest`/`hybrid_answer`，是第二条未验证链路），新增 `agent` 子命令。`lint` 因图中无对应分支仍直调 `wiki.lint`（只读文件审计，非编排路径）。新增守卫测试用 monkeypatch 让 `sync.*` 抛错以证明 CLI 确实走图。手工验证：`python -m memoria agent "测试"` 的 traceback 停在 `During task with name 'router'`，证明请求确实交给了 router 节点。
-
-### 未做（已记录决策，勿重复讨论）
-
-- **feat-046**（`wont-fix`）：架构门禁 CI。ZCode 有 `architecture-policy.yaml` + `pnpm architecture:check` 机械强制（单文件 ≤400 行、契约 ≤300、公开方法 ≤12、禁循环依赖）。评估结论：单人项目维护成本高于收益，`config_routes.py` 555 行超门槛但无实际阻塞。改用 commit message 纪律。
+`data/settings.json`（未跟踪）的 `active_chat_model = "BAAI/bge-large-zh-v1.5"` 是硅基流动的
+**embedding** 模型——旧代码的跨类型回退造成的腐化，正是本次统一推导的动因。**代码侧已自愈**
+（health 如实报未配置 + 运行时自动回退到 provider 首个启用 chat 模型），但建议用户在
+设置里把对话模型切回商汤的某个 chat 模型以根治。embed 侧配置是好的（硅基流动 BAAI 系列真实可用）。
 
 ## Verification Evidence
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| 后端全量 | `python -m pytest -q` | **145 passed** (13.9s) | 基线 118 → +27：feat-040..043 +12、feat-045 +7、feat-047..049 +8 |
-| 前端构建 | `cd frontend && npm run build` | green | 1607 modules |
-| 专项 | `pytest tests/test_wiki_ops.py` | 13 passed | 含 5 个新增缓存布局测试 |
-| 专项 | `pytest tests/test_rag_answer.py` | 12 passed | 含 2 个缓存标记边界测试 |
-| 专项 | `pytest tests/test_mail_triage.py` | 10 passed | 含 4 个批量分类测试（含红线） |
-| 专项 | `pytest tests/test_graph.py` | 10 passed | 含 token 预算截断测试 |
-| 专项 | `pytest tests/test_cli.py` | 7 passed | 含 4 个 CLI 走图的守卫测试 |
-| 专项 | `pytest tests/test_web_api.py` | 52 passed | 含 8 个配置就绪度与 502 指引测试 |
-| 手工 | `python -m memoria --help` / `agent "测试"` | pass | 四子命令可见；agent 的 traceback 停在 router 节点，证明路由真实发生 |
+| 后端全量 | `python -m pytest -q` | **182 passed** (15.6s) | 184 → -4 删（presets/flat 测试）+2 增（pick/resolve 焦点测试）；fixture 补 chat 模型适配收紧语义 |
+| 前端构建 | `cd frontend && npm run build` | green | CSS 37.84→35.25 kB、JS 327.90→323.56 kB（dark: 清理瘦身） |
+| 全量回归 | `pwsh -NoProfile -File ./init.ps1` | green | 182 passed + build green |
+| 浏览器 E2E | control-browser，8010 端口生产构建 | 全场景通过 | 见 progress.md；settings.json 备份→还原，真实数据零污染 |
+| API 联动 | `curl /api/health` | 通过 | 自愈报告（llm false）→ E2E 激活后双 ready + 模型名联动 |
 
-**尚未做的验证**：本轮无浏览器验证（纯后端改动，未触及 UI）。`feat-041` 的 `cache_control` 未经真实 Anthropic 网关验证——仅离线断言了请求体结构。若要确认缓存实际命中，需用真实网关观察 `cache_read_input_tokens`。`/api/agent` 的邮件分支（停在人工确认中断并返回 thread_id）只有单元测试覆盖，未做过端到端手工验证。
-
-## Commit State
-
-工作区**干净**，本轮四个提交均已落地：
-
-```
-bd45d32 feat(config): 配置缺失早暴露，不再伪装成网络故障 (feat-047..049)
-3d7b144 feat(perf): LLM 缓存布局、调用折叠与 LangGraph 正式编排器 (feat-040..045)
-257f3b0 feat(api): 新增 POST /api/agent 自由文本端点 (feat-045 补漏)
-a00eabe refactor(settings): 拆分 SettingsModal 并清理后端死代码
-```
-
-注：3d7b144 的 commit message 声明了 feat-045 但漏暂存 `web/app.py`，
-已由 257f3b0 补上。混合改动的文件不能整块暂存——下次提交前逐个核对。
+**E2E 环境注意事项**（下轮浏览器验收直接复用）：Playwright `click()` 在 IAB 会因 actionability
+等待超时；`cua`/`dom_cua` 间歇失灵；**evaluate 派发真实 DOM click 稳定**（React 输入用 native
+setter + input 事件）；lucide-react 0.475 的 MoreVertical 图标类名是 `lucide-ellipsis-vertical`；
+截图后端偶发卡死，重开标签页恢复；服务进程可能被外部终止（0xC000013A），重启即可。
 
 ## Key Decisions
 
-- **LangGraph 是正式生产编排器**（用户 2026-09-27 拍板，解开 `CODE_AUDIT_2026-09-24.md` 悬置三天的定位问题）。推论：不保留任何绕过图的第二条编排链路。`cli.py` 已改完；`lint` 是唯一仍直调 `wiki.lint` 的地方，因图中无对应分支，而它是只读文件审计而非编排。结构化端点预设 `intent` 以省掉 router 的 LLM 往返是有意设计，不是待清理的死代码。
-- **Prompt 布局是性能约束，不是排版偏好**：provider 前缀缓存只在字节完全相同的前缀上命中，稳定内容必须排在变动内容之前。已写入 `ARCHITECTURE.md` §7.1。
-- **缓存标记只发给确认支持的协议**：盲发给兼容端发陌生字段可能直接被拒。范围对齐 ZCode 的做法。
-- **批量折叠调用不折叠红线判定**：`is_protected` 逐封独立执行，批量只作用于 LLM 分类摘要。
-- **`history` 故意不用 reducer**：checkpointer 回放已传入累积 turns，节点内自行裁剪；加 `operator.add` 会双重累加。已在代码注释锁定，防止后人「顺手修正」。
-- **不借鉴 deepseek 的 `Object.freeze` + 独立重算 invariant**：需事件溯源日志作为前提，改造量极大，缓存收益的九成可由稳定前缀 + 显式标记拿到。
-- **不引入 tiktoken**：多一个依赖，字符估算够用。
-- **不换 TypeScript**：约束不在语言层——LangGraph 是 Python 优先，ChromaDB/pypdf/Google API 客户端都是 Python 生态。五家 agent 选 TS 的真实原因是「一套代码喂 CLI + web + 桌面」，Memoria 的 FastAPI ↔ React 是干净的 HTTP 边界，不共享类型。
+- **presets/flat 配置面删除**（用户委托执行审计建议）：前端 api.ts 零调用 + 单用户本地应用；旧 settings.json 的 `presets` 字段由 pydantic extra=ignore 忽略，无迁移。被删路由现在 404。
+- **推导统一语义**：`pick_model_id` 严格按类型、永不跨类型回退；`resolve_active_chat_model` 只信任指向 active provider 下真实启用 chat 模型的选择器。行为变更三条记录在 NEXT_PLAN.md，有测试背书。
+- **保留 flat Settings 字段**（只删路由）：env 回退（`_environment_settings`）与 activate_settings 的 fallback 镜像仍依赖它们。
+- **本轮明确不做**（勿重复讨论）：`capability_status` 的 llm key 真实性检查（401 失败模式良性，避免波及 feat-047..049 契约）；embed 选择器类型校验；表单回填 effect 依赖数组调整。
+- **红线全部未动且有测试**：is_protected 逐封先行、confirm_archive 白名单、raw/ 路径钳制、删文档 paranoia guard、citations_complete、手写检索核心、safe_request 全覆盖。
+- 沿用既定决策：LangGraph 唯一编排器；`history` 无 reducer；不引入 tiktoken；feat-038/039 仍 todo 未被要求。
+
+## Commit State
+
+```
+fced0a2 docs(audit): 同步规划、架构与状态文件 (feat-058/059 收尾)
+9e7f205 feat(audit): 后端为唯一事实源，前端去镜像与死样式 (feat-059)
+7bd5db7 feat(audit): 删除 presets/flat 配置面，统一 active 模型推导 (feat-058)
+```
+
+合计 +522/−1040（净 −518 行）。
 
 ## Next Session Startup
 
-1. 运行 `pwsh -NoProfile -File ./init.ps1`（Bash 下 `./init.sh`）。
-2. 阅读 `AGENTS.md` → `docs/ARCHITECTURE.md`（注意新增第 7 节）→ `docs/UPGRADE_SPEC.md` → `feature_list.json` → `progress.md` → 本文件。
-3. **提交前逐个核对暂存清单**：3d7b144 曾因整块暂存混合改动的 `web/app.py` 而漏提交 `/api/agent`。混合来源的文件要拆分或单独成 commit。
-4. **若继续 feat-045 的后续**：`/api/agent` 目前只有后端与测试，无前端入口。是否加 AskView 的自由文本模式由用户决定。
-5. 剩余可选项：feat-038（多步 ingest 图循环）、feat-039（SSE 流式）—— 均为 `todo`，未被要求时不要动。
-6. **可考虑的后续优化**（未登记为 feature，需用户确认）：`chat_completions` 路径的 `prompt_cache_key` 支持（需先确认目标网关）、embedding 向量缓存（当前每次查询都重新 embedding）、`KEEP_RECENT_TOKENS` 接真 tokenizer。
+1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 182 passed + build green）。
+2. 阅读 `AGENTS.md` → `docs/ARCHITECTURE.md`（§7.5 新增第 5 条选择器信任规则）→ `docs/NEXT_PLAN.md` → `feature_list.json`（feat-058/059 含 evidence）→ `progress.md`（2026-09-28 三条）→ 本文件。
+3. **建议转告用户**：在设置里把对话模型从 `BAAI/bge-large-zh-v1.5` 切回商汤任一 chat 模型（UI 一键），即根治配置腐化；届时 health 将显示双 ready，问答链路完整可用。
+4. 剩余可选项：feat-038（多步 ingest 图循环）、feat-039（SSE 流式）——均为 `todo`，未被要求时不要动。
+5. 未登记的可选优化（需用户确认）：embedding 向量缓存、`KEEP_RECENT_TOKENS` 接真 tokenizer、`/api/agent` 前端入口。
 
 ## Notes
 
 - 红线不可动：验证码/交易邮件永不自动归档；`raw/` 只读；删文档必删全部向量；回答句级溯源；检索核心手写。
-- 标准启动命令 `python run_web.py`，界面 http://127.0.0.1:8000
-- GitHub 网络不稳定：优先 `raw.githubusercontent.com` 与 `api.github.com`，`github.com` HTML 常超时；`codeload.github.com` 可下 tarball。deepseek-harness 的默认分支是 `master` 而非 `main`。
+- 标准启动命令 `python run_web.py`（8000 端口可能被用户的旧进程占用——先 `netstat` 检查，必要时用 `--port 8010` 起验收实例，勿杀用户进程）。
+- GitHub 网络不稳定：优先 `raw.githubusercontent.com` 与 `api.github.com`。

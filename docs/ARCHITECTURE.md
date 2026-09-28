@@ -38,7 +38,7 @@ Flow: Gmail API 拉邮件 → 两级分类：
 ### 模块 4：Web 服务与极简前端 (Web API & UI Dashboard)
 
 FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感界面：
-- **后端 API**：`/api/agent` (自由文本，由图内 router 决定分支), `/api/ask` (混合检索问答), `/api/wiki` (页面及反向链接), `/api/mail` (分拣与归档确认), `/api/ingest` (文件与文本双写), `/api/config` (模型参数、模型列表拉取与连通性测试)。
+- **后端 API**：`/api/agent` (自由文本，由图内 router 决定分支), `/api/ask` (混合检索问答), `/api/wiki` (页面及反向链接), `/api/mail` (分拣与归档确认), `/api/ingest` (文件与文本双写), `/api/config/providers*` + `/api/config/models|test` (供应商/模型配置、模型列表拉取与连通性测试；旧的 flat `/api/config` 与 presets 面已于 feat-058 删除——前端零调用)。
   - `web/app.py` 负责路由与图调用；`web/config.py` + `web/config_routes.py` 是模型/供应商配置子系统，两者职责已分开。
 - **入口与路由的分工**：结构化端点（`/api/ask`、`/api/ingest`、`/api/mail`）的 URL 已表明意图，故在 invoke 时预设 `intent` 字段，router 节点识别到预设值即跳过 LLM 往返。`/api/agent` 是自由文本入口，**刻意不预设 intent**，由 router 节点调 LLM 决定分支——这是生产环境中唯一真正走通 `add_conditional_edges` 动态路由的路径，使图的路由能力持续被真实流量验证而非仅存在于测试中。
 - **前端系统**（React 19 + TypeScript + Tailwind CSS，设计规范详见 [docs/DESIGN.md](DESIGN.md)）：
@@ -73,7 +73,7 @@ FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感
 | 向量库 | Chroma（本地，零服务器） | 单机开箱即用；数据量/多租户需求出现再迁 Qdrant。cosine 距离空间，引用信息存于 metadata（`doc_id`/`chunk`/`start`/`end`） |
 | LLM / Embedding | 公网 HTTPS/443 的 OpenAI-compatible 接口（`MEMORIA_LLM_*` / `MEMORIA_EMBED_*` / `data/settings.json`） | 统一公网网关配置；不接受 HTTP、本机、内网或非 443 端口。`llm.py` 归一化三种协议（`chat_completions` / `anthropic_messages` / `openai_responses`），保持供应商无关。Anthropic 路径下发前缀缓存标记，其余协议刻意不发（见 §7.2） |
 | 出站网络 | 自研 `net.py` 安全层（`safe_request`） | 基于 `http.client` + `ssl` 手写 SSRF 防护：仅 HTTPS/443、拒绝私网 IP、DNS 解析后**锁定 IP 连接并保留 hostname TLS 身份**（堵 DNS 重绑定）、重定向 ≤3 跳、响应体设上限。所有 LLM/Embedding/连通性测试请求必须走这里 |
-| Web API 服务 | FastAPI + Uvicorn | 异步高性能、自动生成 OpenAPI 文档、轻量可靠。`config.py` + `config_routes.py`（555 行）承载模型与供应商配置子系统 |
+| Web API 服务 | FastAPI + Uvicorn | 异步高性能、自动生成 OpenAPI 文档、轻量可靠。`config.py` + `config_routes.py` 承载模型与供应商配置子系统（provider/model API，单一配置轨道） |
 | 前端工程 | Vite + React 19 + TypeScript 5.7 + Tailwind v3 | 秒级构建、类型安全；圆角卡片 (`rounded-3xl`) 与胶囊按键 (`rounded-full`) 设计系统。**无状态管理库、无 markdown 库、无组件库**——`useState` + 手写 `MarkdownRenderer.tsx` + 7 个自建 UI 基础组件；运行时依赖仅 `react` / `react-dom` / `lucide-react` |
 | 邮件接入 | Gmail API + OAuth（本地离线/交互授权生成 token.json） | 最小权限（只读 + 归档写权限）；凭据只放本地密钥文件，永不入库 |
 | 文档解析 | pypdf（PDF）/ Markdown 直接读 / 网页抽取 | 够用优先；重型解析（OCR、复杂表格）需求出现再换 |
@@ -160,6 +160,11 @@ Provider 的前缀缓存只在**字节完全相同**的前缀上命中，因此 
 3. 判定就绪必须校验 API Key 为真实值——`sk-1234567890` 这类设置期占位串
    会被误判为已配置（`_key_is_real`）
 4. 前端顶栏状态徽标必须与提示条一致，不得在缺失配置时仍显示"本地就绪"
+5. `active_chat_model` 只有指向 active provider 下**真实启用的 chat 模型**才被采信；
+   跨类型（如 embedding 模型）或失效的选择器按未配置处理并自动回退
+   （`resolve_active_chat_model`）。任何写入 active 选择器的路由必须用
+   `pick_model_id` 按类型选取，禁止回退到任意类型模型——该回退曾把真实配置的
+   active chat 模型腐化成 embedding 模型（feat-058 修复）
 
 新增依赖 LLM 能力的路径时，一并接入 `capability_status` 判定。
 

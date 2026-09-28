@@ -79,7 +79,9 @@ export const App: React.FC = () => {
         await api.activateProvider(providerId, modelId, "chat");
         await refreshModelInfo();
         await refreshHealth();
-      } catch {}
+      } catch (err: any) {
+        alert(err?.message || "切换模型失败");
+      }
     },
     [refreshModelInfo, refreshHealth]
   );

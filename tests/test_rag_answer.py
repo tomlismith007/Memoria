@@ -63,6 +63,7 @@ def test_answer_maps_citations_to_real_chunks(tmp_path):
     c = ans.citations[0]
     assert (c.ref, c.doc_id) == (1, doc_id)  # citation resolves to the real doc/chunk
     assert "到期" in llm.calls[0][1]  # retrieved context was fed to the LLM
+    assert llm.calls[0][1].index("资料：") < llm.calls[0][1].index("问题：")
     assert ans.citations_verified is True
 
 

@@ -60,7 +60,7 @@ def answer(
         # Explicit refusal: no sources exist, so there is nothing to cite.
         return Answer(text="知识库中没有找到相关资料，无法回答。")
     context = "\n\n".join(f"[{i + 1}] {h['text']}" for i, h in enumerate(hits))
-    text = llm.chat(SYSTEM, f"问题：{question}\n\n资料：\n{context}")
+    text = llm.chat(SYSTEM, f"资料：\n{context}\n\n问题：{question}")
     refs = sorted({int(m) for m in _CITE_RE.findall(text) if 1 <= int(m) <= len(hits)})
     citations = [
         Citation(

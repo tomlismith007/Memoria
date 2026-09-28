@@ -61,6 +61,15 @@ def test_delete_document_removes_all_vectors(tmp_path, store, embedder):
     assert store.count() == 0  # red line: no orphan vectors
 
 
+def test_reset_collection_clears_all_vectors(tmp_path, store, embedder):
+    """feat-064: reset_collection drops and recreates the collection with 0 vectors."""
+    src = _write_doc(tmp_path / "note.md", "待重构索引的内容。" * 20)
+    ingest_document(src, store, embedder, chunk_size=50, chunk_overlap=5)
+    assert store.count() > 0
+    store.reset_collection()
+    assert store.count() == 0
+
+
 def test_chunk_offsets_cover_text():
     text = "abcdefghij" * 30
     chunks = chunk_text(text, size=100, overlap=20)

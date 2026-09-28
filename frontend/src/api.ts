@@ -87,6 +87,16 @@ export const api = {
       { method: "DELETE" }
     ),
 
+  reindex: () =>
+    request<{
+      status: string;
+      documents_reindexed: number;
+      total_chunks: number;
+      documents: Array<{ name: string; doc_id?: string; chunks?: number; error?: string }>;
+    }>("/api/rag/reindex", {
+      method: "POST",
+    }),
+
   ingestFile: async (file: File): Promise<IngestResponse> => {
     const formData = new FormData();
     formData.append("file", file);

@@ -9,9 +9,23 @@ from memoria.rag.chunk import Chunk
 
 class ChromaStore:
     def __init__(self, path: str = "./data/chroma", collection: str = "memoria") -> None:
+        self.collection_name = collection
         self.client = chromadb.PersistentClient(path=path)
         self.collection = self.client.get_or_create_collection(
             collection, metadata={"hnsw:space": "cosine"}
+        )
+
+    def reset_collection(self) -> None:
+        """Reset the vector collection, deleting all vectors and recreating it cleanly.
+
+        Crucial when switching embedding models with differing dimensions or spaces.
+        """
+        try:
+            self.client.delete_collection(self.collection_name)
+        except Exception:
+            pass
+        self.collection = self.client.get_or_create_collection(
+            self.collection_name, metadata={"hnsw:space": "cosine"}
         )
 
     def upsert(self, doc_id: str, chunks: list[Chunk], vectors: list[list[float]]) -> None:

@@ -1599,3 +1599,64 @@ def test_save_provider_models_batch(api_client, monkeypatch):
     assert resp_404.status_code == 404
 
 
+def test_rag_reindex_requires_embed_ready(tmp_path, monkeypatch):
+    """feat-064: POST /api/rag/reindex must return 502 with hint if embedding is unconfigured."""
+    from memoria.web import app as app_mod
+    from memoria.web.config import EMBED_MISSING_HINT, Settings
+
+    unconfigured = Settings(
+        active_provider_id="p1",
+        active_chat_model="m1",
+        active_embed_model="",
+    )
+    monkeypatch.setattr(app_mod, "load_settings", lambda *a, **kw: unconfigured)
+
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    app = create_app(
+        {
+            "store": ChromaStore(path=str(tmp_path / "chroma")),
+            "wiki": wiki,
+            "checkpointer": MemorySaver(),
+        }
+    )
+    client = TestClient(app)
+    resp = client.post("/api/rag/reindex")
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == EMBED_MISSING_HINT
+
+
+def test_rag_reindex_rebuilds_store(api_client):
+    """feat-064: POST /api/rag/reindex resets collection and re-chunks existing raw files."""
+    client, wiki, store = api_client
+    # 1. Ingest initial documents via web API
+    resp1 = client.post("/api/ingest", json={"text": "第一篇技术文档。" * 10, "origin": "doc1.md"})
+    assert resp1.status_code == 200
+    resp2 = client.post("/api/ingest", json={"text": "第二篇架构说明。" * 10, "origin": "doc2.md"})
+    assert resp2.status_code == 200
+
+    docs_before = store.documents()
+    assert len(docs_before) == 2
+    chunks_before = store.count()
+    assert chunks_before > 0
+
+    # 2. Trigger reindex
+    reindex_resp = client.post("/api/rag/reindex")
+    assert reindex_resp.status_code == 200
+    data = reindex_resp.json()
+    assert data["status"] == "ok"
+    assert data["documents_reindexed"] == 2
+    assert data["total_chunks"] == chunks_before
+    assert len(data["documents"]) == 2
+
+    # 3. Store still has the 2 documents
+    docs_after = store.documents()
+    assert len(docs_after) == 2
+    assert store.count() == chunks_before
+
+    # 4. Verify log written to wiki
+    log_content = wiki.read_page("log") or ""
+    assert "重建向量索引" in log_content
+
+
+

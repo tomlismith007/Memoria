@@ -4,6 +4,7 @@ import {
   FileUp,
   FileText,
   Loader2,
+  RefreshCw,
   Trash2,
   UploadCloud,
   FileCode,
@@ -26,6 +27,7 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
   const [dragOver, setDragOver] = useState(false);
   const [docs, setDocs] = useState<DocumentListResponse | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [reindexing, setReindexing] = useState(false);
 
   const loadDocs = useCallback(async () => {
     try {
@@ -38,6 +40,28 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
   useEffect(() => {
     loadDocs();
   }, [loadDocs]);
+
+  const handleReindex = async () => {
+    if (
+      !window.confirm(
+        "重建向量索引将清空当前的向量数据库，并使用当前激活的向量模型重新读取所有原始文档进行切块和向量化。是否继续？"
+      )
+    ) {
+      return;
+    }
+    setReindexing(true);
+    try {
+      const res = await api.reindex();
+      alert(
+        `向量索引重建成功！已重构 ${res.documents_reindexed} 篇文档，生成 ${res.total_chunks} 个向量切块。`
+      );
+      await loadDocs();
+    } catch (err: any) {
+      alert(`重建索引失败: ${err.message}`);
+    } finally {
+      setReindexing(false);
+    }
+  };
 
   const handleDelete = async (docId: string, name: string) => {
     if (
@@ -239,10 +263,31 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
       {/* Document Library: list + deletion (red line: vectors + raw purged together) */}
       {docs && (docs.documents.length > 0 || docs.vector_only.length > 0) && (
         <RoundedCard variant="primary" className="space-y-3">
-          <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
-            <FileText className="w-4 h-4 text-zinc-500" />
-            已入库文档（{docs.documents.length + docs.vector_only.length}）
-          </span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-zinc-700 uppercase tracking-wider flex items-center gap-1.5">
+              <FileText className="w-4 h-4 text-zinc-500" />
+              已入库文档（{docs.documents.length + docs.vector_only.length}）
+            </span>
+            <PillButton
+              variant="secondary"
+              size="sm"
+              onClick={handleReindex}
+              disabled={reindexing}
+              className="text-xs"
+            >
+              {reindexing ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                  重建中...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                  重建向量索引
+                </>
+              )}
+            </PillButton>
+          </div>
 
           <div className="divide-y divide-zinc-100 rounded-2xl border border-zinc-100">
             {docs.documents.map((d) => (

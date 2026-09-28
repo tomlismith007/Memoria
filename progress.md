@@ -224,6 +224,11 @@
   - **向量页签保持协议格式**：在向量页签保存供应商时保留 `selectedProvider.api_format`，不再盲目重置为 `chat_completions`。
   - **批量模型保存后端接口**：`config_routes.py` 新增 `POST /api/config/providers/{provider_id}/models/batch`，前端 `handleImportAllFetched` 改为单次原子批量提交，杜绝多条并发请求在 `settings.json` 覆盖写时的竞争与丢模型风险。
   - **验证**：`python -m pytest -q` → **192 passed**（+1：`test_save_provider_models_batch`）；`npm run build` green（1607 modules）；`./init.ps1` 全量验证通过。
+- [x] feat-064 向量一致性与交互闭环治理 (2026-09-29):
+  - **向量集合重置与重建索引接口**：`ChromaStore` 新增 `reset_collection()`，安全清空已有集合并基于原距离空间重新创建；后端提供 `POST /api/rag/reindex` 接口，在向量模型切换或维度不一致时，清空旧向量并重新读取 `wiki.raw_dir` 下现有全部原始文档进行切片和重新向量化入库，自动记录 Wiki 日志。
+  - **Prompt Prefix Caching 顺序调优**：调整 RAG 问答（`answer.py`）与 Wiki 检索及问答（`ops.py`）中的 Prompt 结构，确保全局稳定的目录索引（`目录：\n{index}`）及召回的文档/页面上下文（`资料：\n{context}`、`页面：\n{context}`）严格置于用户动态输入（`问题：{question}`）之前，最大化发挥现代主流 LLM 网关的 KV 前缀缓存机制，大幅降低高频问答与追问时的延时与 Token 消耗。
+  - **前端摄入页重建索引与首页选择器反馈**：`IngestView.tsx` 文档库卡片新增「重建向量索引」按钮，配备确认弹窗与加载态；`api.ts` 新增 `reindex()` 方法；`App.tsx` 的首页模型选择器在切换激活失败时增加明确弹窗告警，不再静默吞掉异常。
+  - **验证**：`python -m pytest -q` → **195 passed**（+3：`test_reset_collection_clears_all_vectors`、`test_rag_reindex_requires_embed_ready`、`test_rag_reindex_rebuilds_store`，且验证 Prompt 前缀缓存顺序）；`npm run build` green（1607 modules）；`./init.ps1` 全量验证通过。
 
 ## Notes for Next Session
 

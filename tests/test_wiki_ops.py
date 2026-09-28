@@ -121,7 +121,9 @@ def test_query_index_first_then_deep(wiki):
     ans = query("服务 A 何时到期", wiki, llm)
     assert ans.pages == ["服务到期"]
     assert "目录" in llm.calls[0][1]  # first call sees the index
+    assert llm.calls[0][1].index("目录：") < llm.calls[0][1].index("问题：")
     assert "2027 年到期" in llm.calls[1][1]  # second call sees the page body
+    assert llm.calls[1][1].index("页面：") < llm.calls[1][1].index("问题：")
     assert "2027" in ans.text
 
 

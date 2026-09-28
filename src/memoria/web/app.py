@@ -23,7 +23,13 @@ from pydantic import BaseModel, Field
 from memoria.graph import build_graph
 from memoria.llm import ChatLLM, OpenAICompatibleChat
 from memoria.mail import Email
-from memoria.rag import ChromaStore, Citation, OpenAICompatibleEmbedder, doc_id_for_origin
+from memoria.rag import (
+    ChromaStore,
+    Citation,
+    OpenAICompatibleEmbedder,
+    doc_id_for_origin,
+    ingest_document,
+)
 from memoria.sync import archive_qa, archive_fact
 from memoria.web.config import (
     Settings,
@@ -486,6 +492,42 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             raw_target.unlink()  # source came from raw_dir iteration, so path-safe
         wiki.append_log(f"删除文档 {doc_id}：全部向量与 raw 文件（{raw_name or '无'}）已清除")
         return {"deleted": doc_id, "raw_removed": raw_name}
+
+    @app.post("/api/rag/reindex")
+    def api_rag_reindex():
+        """Rebuilds the vector index from all files in data/raw.
+
+        Necessary when switching embedding models with differing dimensions or spaces.
+        """
+        _require("embed")
+        if hasattr(store, "reset_collection"):
+            store.reset_collection()
+        raw_files = [f for f in sorted(wiki.raw_dir.iterdir()) if f.is_file()]
+        reindexed = []
+        total_chunks = 0
+        for f in raw_files:
+            try:
+                res = ingest_document(str(f.resolve()), store, embedder)
+                total_chunks += res.chunks
+                reindexed.append({
+                    "name": f.name,
+                    "doc_id": res.doc_id,
+                    "chunks": res.chunks,
+                })
+            except Exception as e:
+                reindexed.append({
+                    "name": f.name,
+                    "error": str(e)[:120],
+                })
+        wiki.append_log(
+            f"重建向量索引：清空旧集合，重新摄入 {len([r for r in reindexed if 'chunks' in r])} 篇原始文档（共 {total_chunks} 个切片）"
+        )
+        return {
+            "status": "ok",
+            "documents_reindexed": len([r for r in reindexed if "chunks" in r]),
+            "total_chunks": total_chunks,
+            "documents": reindexed,
+        }
 
     @app.post("/api/mail/fact")
     def api_mail_fact(req: MailFactRequest):

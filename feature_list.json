@@ -604,8 +604,8 @@
       "dependencies": [
         "feat-063"
       ],
-      "status": "in-progress",
-      "evidence": ""
+      "status": "completed",
+      "evidence": "python -m pytest -q → 195 passed（+3：test_reset_collection_clears_all_vectors、test_rag_reindex_requires_embed_ready、test_rag_reindex_rebuilds_store，且断言了 RAG 与 Wiki Prompt 前缀缓存顺序）；cd frontend && npm run build green（1607 modules）；./init.ps1 全量门禁通过。"
     }
   ]
 }

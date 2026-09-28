@@ -97,7 +97,7 @@ def query(question: str, wiki: Wiki, llm: ChatLLM) -> WikiAnswer:
     selected = _parse_names(
         llm.chat(
             "你是 Wiki 检索器。根据目录选出能回答问题的页面，每行一个（`[[页名]]` 或页名），不要解释。",
-            f"问题：{question}\n\n目录：\n{index}",
+            f"目录：\n{index}\n\n问题：{question}",
         ),
         set(names),
     )
@@ -106,7 +106,7 @@ def query(question: str, wiki: Wiki, llm: ChatLLM) -> WikiAnswer:
     )
     text = llm.chat(
         "你是 Wiki 问答助手。只根据提供的页面回答，注明 [[页名]] 来源；答不上就直说。",
-        f"问题：{question}\n\n页面：\n{context or '（无相关页面）'}",
+        f"页面：\n{context or '（无相关页面）'}\n\n问题：{question}",
     )
     # Conservative: a wiki answer without any [[页名]] source is unverified, even refusals.
     return WikiAnswer(

@@ -52,8 +52,8 @@ def answer(
     store: ChromaStore,
     embedder: Embedder,
     llm: ChatLLM,
-    k: int = 8,
-    top_n: int = 4,
+    k: int = 30,  # feat-054: recall width, not the rerank window; see retrieve()
+    top_n: int = 4,  # this one *is* the LLM token cost — left deliberately small
 ) -> Answer:
     hits = retrieve(question, store, embedder, k=k, top_n=top_n)
     if not hits:

@@ -488,6 +488,54 @@
       ],
       "status": "completed",
       "evidence": "frontend/src/types.ts: 新增 CapabilityStatus / HealthResponse。frontend/src/api.ts: 新增 getHealth()。frontend/src/App.tsx: 新增 notReadyReason 状态 + refreshHealth()（在 settingsOpen 变化时随 refreshModelInfo 一并触发），main 顶部条件渲染提示条（amber-50 底 + TriangleAlert 图标 + PillButton「去设置」），顶栏徽标改为随 notReadyReason 切换绿/琥珀点与文案。浏览器验收（ZCode Computer Use）：提示条文案与 /api/health 的 reason 一致；「去设置」点击后「模型设置」弹窗可见（Playwright click 超时，改用 cua 坐标点击，与 progress.md 记录的该环境特性一致）；顶栏显示琥珀点 +「配置待补全」。npm run build green（tsc 零诊断）。"
+    },
+    {
+      "id": "feat-050",
+      "name": "Retrieval evaluation baseline",
+      "description": "先有尺子。4 份主题互斥的文档 + 3 条可判定查询，测 recall@4 与首个正确块排名。**方案经实测修正**：初稿想用相同向量（flat embedder）隔离关键词项，但向量相同时 combined_score 的向量项对所有候选相等，排序退化为 store.search 的任意返回顺序，重排根本没被测到（实测：苹果多少钱 正确文档 kw=0.25 却排在 kw=0.0 之后）。改用 FakeEmbedder 测真实混合管线端到端。",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "新增 tests/test_rag_eval.py（4 个测试）。基线：recall@4=3/3，MRR 0.83（服务什么时候到期 排名第 2）。基线数字记录在 docs/RAG_UPGRADE_PLAN.md。"
+    },
+    {
+      "id": "feat-051",
+      "name": "Semantic-boundary chunking",
+      "description": "chunk_text 原为纯固定窗口（size=800/overlap=100），实测在句子中间硬切（'...需要提前 30 天发起续费' 结尾断在句中），嵌入模型编码的是残缺语义。改为在标点/子句边界切，保留 overlap 语义。**红线约束**：start/end 是引用定位依据，必须仍满足 chunk.text == source[chunk.start:chunk.end]。本项只改变切点选择，不改偏移语义。",
+      "dependencies": [
+        "feat-050"
+      ],
+      "status": "completed",
+      "evidence": "新增 tests/test_rag_chunking.py（10 个测试）。偏移不变量在 size∈{50,80,120,200,400} × overlap∈{0,10,25} 全部组合下成立；内容全覆盖无空洞；块首尾落在标点。既有 test_ingest_search_cites_source 等引用链路测试全绿。"
+    },
+    {
+      "id": "feat-052",
+      "name": "Chinese tokeniser noise removal",
+      "description": "CJK run 的字符二元组会产出跨词碎片（候需/前续/要提），不携带语义却占据 keyword_score 分母。**范围经实测收窄**：re.findall(r'\\w+') 本身已按标点切分，跨句碎片本就不存在；句内碎片（候需 vs 提前）在无词典前提下字符层面同构、不可区分，无法靠拼写消除。故本项只做可解部分：过滤纯停用词 run。跨词碎片交由 feat-053 的 IDF（df≈100% 的碎片权重趋近下限）处理。**约束**：keyword_score('苹果 价格','苹果今日价格')==1.0 是既有精确断言。",
+      "dependencies": [
+        "feat-050"
+      ],
+      "status": "completed",
+      "evidence": "retrieve.py 新增 _CJK_STOPWORDS（65 个功能词），纯功能词 run 整体丢弃、单字 CJK 若为停用词则丢弃、ASCII 路径完全不变。新增 tests/test_rag_tokenize.py（10 个测试），含既有精确断言的守护。代码内 ponytail: 注释记录了跨词碎片的原理性不可解与升级路径。"
+    },
+    {
+      "id": "feat-053",
+      "name": "IDF weighting for keyword_score",
+      "description": "keyword_score 是纯命中计数，常见词与罕见词权重相同，且 '部分相关' 与 '完全无关' 同分。新增 DocumentFrequency（平滑 IDF，log((N+1)/(df+1))+1），使 df≈100% 的碎片与功能词权重趋近下限、罕见真词主导匹配。**向后兼容**：keyword_score(query,text,df=None) 保留两参签名，缺省退化为原行为，retrieve 与 wiki/ops._select_relevant 两处调用点不受影响。retrieve 用候选池构建 DF 表（k=8..30 时仅数十次集合运算）。",
+      "dependencies": [
+        "feat-052"
+      ],
+      "status": "completed",
+      "evidence": "retrieve.py 新增 DocumentFrequency 类 + keyword_score 第三参；retrieve() 新增 use_idf 开关（默认开）并从候选池构建 DF 表。新增 tests/test_rag_idf.py（10 个测试）。**效果实测**：feat-050 记录的唯一弱点 '服务什么时候到期' 从第 2 位升至第 1 位，MRR 0.83 → 1.00（3/3 查询首位命中）。"
+    },
+    {
+      "id": "feat-054",
+      "name": "Widen the first-stage recall window",
+      "description": "k 是召回阶段而非重排窗口：k=8 时候选池太小，相关文档可能根本没进池，关键词分数再高也无用。改为 k=30（retrieve 与 answer 两处默认值同步）。**top_n 刻意保持 4** —— top_n 直接决定 LLM 的 token 成本，是另一个权衡。**判断修正**：小语料（4 份文档）下实测 k 无变化，一度下调优先级；构造 41 份文档、目标埋在第 20 位的语料后推翻——k=8 完全召不到，k>=15 命中第 3。",
+      "dependencies": [
+        "feat-050"
+      ],
+      "status": "completed",
+      "evidence": "retrieve.py 与 answer.py 的 k 默认值 8 → 30，retrieve() docstring 记录了实测依据。延迟实测（20 次平均，本地 Chroma 查询不含 embedding 网络往返）：k=8 → 2.35ms，k=15 → 3.34ms，k=30 → 5.89ms，相对秒级 LLM 往返可忽略。新增 2 个回归测试锁住该失败模式：test_narrow_recall_window_finds_nothing（断言 k=8 确实召不到，防止默认值被静默改回）与 test_default_recall_window_reaches_the_buried_target。"
     }
   ]
 }

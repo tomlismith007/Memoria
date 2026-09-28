@@ -69,7 +69,7 @@ FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感
 | 决策点 | 选择 | 理由 / 取舍 |
 |---|---|---|
 | 编排 | LangGraph（不用 LCEL 单链路） | **项目决策：LangGraph 是正式生产编排器**，Web API 与 CLI 的全部读写路径都经由编译后的图，不存在第二条编排链路。系统是状态机：意图路由、多步 ingest、人工确认节点；LCEL 只适合单链。LLM 节点挂 `RetryPolicy(max_attempts=3)` 重试瞬时网关错误，`confirm_archive` 中断节点不重试 |
-| 检索核心 | 自己手写（`rag/retrieve.py` 49 行：向量检索 + 关键词重排） | 面试能讲清每一行。**LangChain 目前不是依赖**——`pyproject.toml` 只装了 `langgraph`，仓库内无 LangChain 运行时依赖；集成需求出现时再引入 |
+| 检索核心 | 自己手写（`rag/retrieve.py`：向量召回 + IDF 加权关键词重排） | 面试能讲清每一行。**LangChain 目前不是依赖**——`pyproject.toml` 只装了 `langgraph`，仓库内无 LangChain 运行时依赖；集成需求出现时再引入。检索质量规则见 §7.6 |
 | 向量库 | Chroma（本地，零服务器） | 单机开箱即用；数据量/多租户需求出现再迁 Qdrant。cosine 距离空间，引用信息存于 metadata（`doc_id`/`chunk`/`start`/`end`） |
 | LLM / Embedding | 公网 HTTPS/443 的 OpenAI-compatible 接口（`MEMORIA_LLM_*` / `MEMORIA_EMBED_*` / `data/settings.json`） | 统一公网网关配置；不接受 HTTP、本机、内网或非 443 端口。`llm.py` 归一化三种协议（`chat_completions` / `anthropic_messages` / `openai_responses`），保持供应商无关。Anthropic 路径下发前缀缓存标记，其余协议刻意不发（见 §7.2） |
 | 出站网络 | 自研 `net.py` 安全层（`safe_request`） | 基于 `http.client` + `ssl` 手写 SSRF 防护：仅 HTTPS/443、拒绝私网 IP、DNS 解析后**锁定 IP 连接并保留 hostname TLS 身份**（堵 DNS 重绑定）、重定向 ≤3 跳、响应体设上限。所有 LLM/Embedding/连通性测试请求必须走这里 |
@@ -77,7 +77,7 @@ FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感
 | 前端工程 | Vite + React 19 + TypeScript 5.7 + Tailwind v3 | 秒级构建、类型安全；圆角卡片 (`rounded-3xl`) 与胶囊按键 (`rounded-full`) 设计系统。**无状态管理库、无 markdown 库、无组件库**——`useState` + 手写 `MarkdownRenderer.tsx` + 7 个自建 UI 基础组件；运行时依赖仅 `react` / `react-dom` / `lucide-react` |
 | 邮件接入 | Gmail API + OAuth（本地离线/交互授权生成 token.json） | 最小权限（只读 + 归档写权限）；凭据只放本地密钥文件，永不入库 |
 | 文档解析 | pypdf（PDF）/ Markdown 直接读 / 网页抽取 | 够用优先；重型解析（OCR、复杂表格）需求出现再换 |
-| 测试 | pytest（145 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 13 秒跑完 |
+| 测试 | pytest（182 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 13 秒跑完 |
 | Python 环境 | >= 3.11 | 本机 3.14，CI 亦用 3.14；标准库优先，离线单元测试 100% 模拟隔离 |
 
 ## 5. 关键约束（红线 — 永不违反）
@@ -162,6 +162,30 @@ Provider 的前缀缓存只在**字节完全相同**的前缀上命中，因此 
 4. 前端顶栏状态徽标必须与提示条一致，不得在缺失配置时仍显示"本地就绪"
 
 新增依赖 LLM 能力的路径时，一并接入 `capability_status` 判定。
+
+### 7.6 检索质量规则（feat-050..054）
+
+检索质量决定 RAG 的上限。以下四条是硬规则，评测见 `tests/test_rag_eval.py`：
+
+1. **`k` 是召回阶段，`top_n` 才是重排窗口** —— 关键词重排只能重排**已进入候选池**
+   的文档。实测 41 份文档、目标埋在第 20 位时，`k=8` **完全召回不到**，
+   `k>=15` 命中。当前 `k=30`（延迟 2.35ms → 5.89ms，相对秒级 LLM 往返可忽略）。
+   **`top_n=4` 刻意保持不变** —— 它直接决定 LLM 的 token 成本，是另一个权衡。
+
+2. **切分必须落在语义边界** —— 固定窗口会把句子从中间切断，嵌入模型编码的是
+   残缺语义。**红线**：切点可以变，偏移语义不能变，必须恒满足
+   `chunk.text == source[chunk.start:chunk.end]`。
+
+3. **关键词命中必须按 IDF 加权** —— 字符二元组无法区分跨词碎片（`候需`）与真词
+   （`提前`），二者字符层面同构。解法不是过滤而是**加权**：df≈100% 的碎片权重
+   趋近下限。`keyword_score(query, text, df=None)` 保留两参签名，缺省退化为原行为。
+
+4. **改动检索必须先有评测** —— `tests/test_rag_eval.py` 是回归守卫。
+   当前基线：recall@4 = 3/3，MRR = **1.00**（3 条查询全部首位命中）。
+   记录在 `docs/RAG_UPGRADE_PLAN.md`。
+
+**评测语料的规模决定结论的适用范围**：小语料上「k 无影响」并不代表大语料下也无影响。
+该教训已由 `test_narrow_recall_window_finds_nothing` 固化。
 
 ## 8. 非目标（明确不做）
 

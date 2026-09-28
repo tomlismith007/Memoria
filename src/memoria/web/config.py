@@ -140,7 +140,11 @@ def capability_status(settings: Settings) -> dict[str, dict[str, str | bool]]:
     else:
         # No provider selected: the standalone embed_* fields must carry a real key.
         embed_ready = _key_is_real(settings.embed_api_key) and bool(settings.embed_model)
-    llm_ready = bool(chat_model)
+    active_provider = providers.get(settings.active_provider_id)
+    if active_provider is not None and active_provider.enabled:
+        llm_ready = bool(chat_model)
+    else:
+        llm_ready = bool(settings.llm_api_key) and bool(chat_model or settings.llm_model)
 
     return {
         "llm": {
@@ -159,7 +163,7 @@ def capability_status(settings: Settings) -> dict[str, dict[str, str | bool]]:
 
 
 class TestConfigRequest(BaseModel):
-    llm_base_url: str = DEFAULT_LLM_BASE_URL
+    llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = DEFAULT_LLM_MODEL
     api_format: ApiFormat = API_FORMAT_CHAT_COMPLETIONS
@@ -320,9 +324,9 @@ def test_model_connectivity(req: TestConfigRequest, timeout: float = 10.0) -> di
             result["llm_message"] = f"连接失败: {str(exc)[:120]}"
 
     # 2. Test Embedding
-    embed_url = req.embed_base_url or req.llm_base_url
-    embed_key = req.embed_api_key or req.llm_api_key
-    embed_model = req.embed_model or DEFAULT_EMBED_MODEL
+    embed_url = req.embed_base_url
+    embed_key = req.embed_api_key
+    embed_model = req.embed_model
 
     if embed_url and embed_model:
         t1 = time.perf_counter()
@@ -351,6 +355,9 @@ def test_model_connectivity(req: TestConfigRequest, timeout: float = 10.0) -> di
             latency = int((time.perf_counter() - t1) * 1000)
             result["embed_latency_ms"] = latency
             result["embed_message"] = f"连接失败: {str(exc)[:120]}"
+    elif embed_url and not embed_model:
+        result["embed_ok"] = False
+        result["embed_message"] = "未指定向量模型名称"
     else:
         result["embed_ok"] = True
         result["embed_message"] = "未配置独立向量模型，跳过"

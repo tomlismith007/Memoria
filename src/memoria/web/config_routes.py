@@ -88,9 +88,12 @@ def _public_provider(provider: CustomProvider) -> dict[str, Any]:
     }
 
 
-def _validate_config_urls(llm_base_url: str, embed_base_url: str = "") -> None:
+def _validate_config_urls(llm_base_url: str = "", embed_base_url: str = "") -> None:
+    if not llm_base_url and not embed_base_url:
+        raise HTTPException(status_code=400, detail="公网 HTTPS/443 网关地址无效")
     try:
-        validate_public_https_url(llm_base_url)
+        if llm_base_url:
+            validate_public_https_url(llm_base_url)
         if embed_base_url:
             validate_public_https_url(embed_base_url)
     except SafeRequestError as exc:
@@ -209,18 +212,19 @@ def register_config_routes(
             active_chat = current.active_chat_model
             if active_id == saved_provider.id:
                 if req.active_chat_model:
-                    active_chat = req.active_chat_model
+                    match = next(
+                        (m for m in saved_provider.models if m.id == req.active_chat_model), None
+                    )
+                    if match and match.model_type != "chat":
+                        active_chat = pick_model_id(saved_provider, "chat")
+                    else:
+                        active_chat = req.active_chat_model
                 elif not active_chat:
                     active_chat = pick_model_id(saved_provider, "chat")
-
-            active_embed = current.active_embed_model
-            if req.active_embed_model:
-                active_embed = req.active_embed_model
 
             updates.update({
                 "active_provider_id": active_id,
                 "active_chat_model": active_chat,
-                "active_embed_model": active_embed,
             })
             if saved_provider.enabled and active_id == saved_provider.id:
                 updates.update({
@@ -422,6 +426,8 @@ def register_config_routes(
         provider = next((p for p in current.providers if p.id == req.provider_id), None)
         if not provider:
             raise HTTPException(status_code=404, detail="Provider not found")
+        if not provider.enabled:
+            raise HTTPException(status_code=400, detail="不能激活已禁用的供应商")
 
         # Write-boundary guard on config integrity: an explicit activation must
         # match the model's stored type. Pill clicks used to activate embedding

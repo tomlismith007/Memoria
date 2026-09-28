@@ -566,6 +566,26 @@
       ],
       "status": "completed",
       "evidence": "python -m pytest -q → 184 passed（+2：test_activate_rejects_cross_typed_model、test_model_type_conversion_clears_stale_embed_selector）；npm run build green。浏览器实测（8010，settings.json 备份→还原）：使用按钮激活 deepseek-flash → /api/health llm ready 联动；API 直发跨类型激活 → 400 'BAAI/bge-m3 是向量模型，不能设为对话模型'；添加模型对话框把 bge-m3 重存为 chat → 类型转换与 embed 选择器保持均正确。"
+    },
+    {
+      "id": "feat-061",
+      "name": "Startup auto-activation, vector test empty URL fix & explicit chat activation",
+      "description": "解决核心阻断性缺陷（P0/P1）：1) 服务冷启动时 create_app() 加载 settings 后立即调用 activate_settings(current_settings)，使重启后内存中的 llm/embedder 立即与 settings.json 对齐；2) 连通性测试放行空 llm_base_url（TestConfigRequest 默认值改为空），解封纯向量连通性诊断 400 死锁；3) 前端 handleSaveNewProvider 补齐对话模型的显式激活 await api.activateProvider(newP.id, chosenModel, 'chat')，避免 UI 假激活；4) 补齐 _require('llm') 门禁并修复 overrides 豁免判断。",
+      "dependencies": [
+        "feat-060"
+      ],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 188 passed（+4：test_startup_activates_saved_settings、test_missing_llm_config_returns_actionable_502、test_empty_llm_url_passes_embedding_connectivity_test、test_activate_disabled_provider_returns_400）；npm run build green；./init.ps1 全量门禁通过。"
+    },
+    {
+      "id": "feat-062",
+      "name": "Protocol & outbound robustness (gzip, embed batching, reasoning model & path hash)",
+      "description": "解决出站协议与健壮性缺陷（P1/P2）：1) safe_request 支持 Content-Encoding: gzip/deflate 透明流式/内存安全解压缩，防止公网 CDN/反代报 SafeRequestError；2) OpenAICompatibleEmbedder 支持自动按 16 批次分块请求并兼容缺省 index 字段响应；3) extract_chat_text 兼容 DeepSeek-R1/o1 等推理模型当 content 为 None 时的 reasoning_content 提取；4) load_document 本地文件路径 resolve() 绝对化，避免相对路径 CLI 摄入与 Web 端 doc_id 哈希不一致产生孤儿向量。",
+      "dependencies": [
+        "feat-061"
+      ],
+      "status": "in-progress",
+      "evidence": ""
     }
   ]
 }

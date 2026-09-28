@@ -78,9 +78,10 @@ export const App: React.FC = () => {
       try {
         await api.activateProvider(providerId, modelId, "chat");
         await refreshModelInfo();
+        await refreshHealth();
       } catch {}
     },
-    [refreshModelInfo]
+    [refreshModelInfo, refreshHealth]
   );
 
   const handleNavigateWiki = (pageName: string) => {

@@ -503,6 +503,8 @@ export const useProviderConfig = (isOpen: boolean) => {
 
       if (isEmbedding && chosenModel) {
         await api.activateProvider(newP.id, chosenModel, "embedding");
+      } else if (!isEmbedding && chosenModel) {
+        await api.activateProvider(newP.id, chosenModel, "chat");
       }
 
       const refreshed = await api.getProviders();
@@ -512,12 +514,12 @@ export const useProviderConfig = (isOpen: boolean) => {
 
       if (isEmbedding) {
         setActiveEmbedProviderId(refreshed.active_embed_provider_id || newP.id);
-        setActiveEmbedModel(chosenModel || refreshed.active_embed_model);
+        setActiveEmbedModel(refreshed.active_embed_model || chosenModel);
       } else {
-        setActiveProviderId(newP.id);
+        setActiveProviderId(refreshed.active_provider_id || newP.id);
         setActiveChatModel(
-          chosenModel ||
-            refreshed.active_chat_model ||
+          refreshed.active_chat_model ||
+            chosenModel ||
             (refreshed.providers.find((p) => p.id === newP.id)?.models[0]?.id || "")
         );
       }

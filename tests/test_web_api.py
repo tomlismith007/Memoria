@@ -363,13 +363,20 @@ def test_missing_embedding_config_returns_actionable_502(tmp_path, monkeypatch):
     embedding selector empty, no injected embedder.
     """
     from memoria.web import app as app_mod
-    from memoria.web.config import EMBED_MISSING_HINT, CustomProvider, Settings
+    from memoria.web.config import EMBED_MISSING_HINT, CustomModel, CustomProvider, Settings
 
     unconfigured = Settings(
         active_provider_id="p1",
         active_chat_model="m1",
         active_embed_model="",
-        providers=[CustomProvider(id="p1", name="p1", base_url="https://x.example/v1")],
+        providers=[
+            CustomProvider(
+                id="p1",
+                name="p1",
+                base_url="https://x.example/v1",
+                models=[CustomModel(id="m1", name="m1", model_type="chat")],
+            )
+        ],
     )
     # app.py imported load_settings by name, so patch the reference it uses.
     monkeypatch.setattr(app_mod, "load_settings", lambda *a, **kw: unconfigured)
@@ -1374,3 +1381,145 @@ def test_ingest_accepts_safe_upload_filename(api_client):
     assert response.status_code == 200
     assert response.json()["filename"] == "safe.md"
     assert (wiki.raw_dir / "safe.md").exists()
+
+
+def test_startup_activates_saved_settings(tmp_path, monkeypatch):
+    """feat-061: create_app() must activate loaded settings on startup."""
+    from memoria.web import app as app_mod
+    from memoria.web.config import CustomModel, CustomProvider, Settings
+
+    saved = Settings(
+        active_provider_id="p-start",
+        active_chat_model="model-start",
+        providers=[
+            CustomProvider(
+                id="p-start",
+                name="StartProvider",
+                base_url="https://api.startup.example/v1",
+                api_key="sk-startup-secret",
+                models=[CustomModel(id="model-start", name="model-start", model_type="chat")],
+            )
+        ],
+    )
+    monkeypatch.setattr(app_mod, "load_settings", lambda *a, **kw: saved)
+
+    captured_chat = []
+
+    class MockChat:
+        def __init__(self, **kwargs):
+            captured_chat.append(kwargs)
+
+        def generate(self, *a, **kw):
+            return "ok"
+
+    monkeypatch.setattr(app_mod, "OpenAICompatibleChat", MockChat)
+
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    create_app(
+        {
+            "store": ChromaStore(path=str(tmp_path / "chroma")),
+            "wiki": wiki,
+            "checkpointer": MemorySaver(),
+        }
+    )
+    assert len(captured_chat) >= 1
+    last_chat = captured_chat[-1]
+    assert last_chat["base_url"] == "https://api.startup.example/v1"
+    assert last_chat["model"] == "model-start"
+    assert last_chat["api_key"] == "sk-startup-secret"
+
+
+def test_missing_llm_config_returns_actionable_502(tmp_path, monkeypatch):
+    """feat-061: ask/agent must return 502 with LLM_MISSING_HINT when LLM is unconfigured."""
+    from memoria.web import app as app_mod
+    from memoria.web.config import LLM_MISSING_HINT, CustomProvider, Settings
+
+    unconfigured = Settings(
+        active_provider_id="p1",
+        active_chat_model="",
+        providers=[CustomProvider(id="p1", name="p1", base_url="https://x.example/v1")],
+    )
+    monkeypatch.setattr(app_mod, "load_settings", lambda *a, **kw: unconfigured)
+
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    app = create_app(
+        {
+            "store": ChromaStore(path=str(tmp_path / "chroma")),
+            "wiki": wiki,
+            "checkpointer": MemorySaver(),
+        }
+    )
+    client = TestClient(app)
+
+    health = client.get("/api/health").json()
+    assert health["capabilities"]["llm"]["ready"] is False
+
+    ask = client.post("/api/ask", json={"question": "hi"})
+    assert ask.status_code == 502
+    assert ask.json()["detail"] == LLM_MISSING_HINT
+
+    agent = client.post("/api/agent", json={"text": "hi"})
+    assert agent.status_code == 502
+    assert agent.json()["detail"] == LLM_MISSING_HINT
+
+
+def test_empty_llm_url_passes_embedding_connectivity_test(api_client, monkeypatch):
+    """feat-061: /api/config/test must not reject empty llm_base_url when testing embeddings."""
+    client, _, _ = api_client
+    from memoria.web import config_routes as routes_mod
+
+    monkeypatch.setattr(
+        routes_mod,
+        "test_model_connectivity",
+        lambda req, timeout=10.0: {
+            "llm_ok": True,
+            "llm_latency_ms": 0,
+            "llm_message": "未配置对话模型",
+            "embed_ok": True,
+            "embed_latency_ms": 42,
+            "embed_message": "连接成功",
+        },
+    )
+
+    resp = client.post(
+        "/api/config/test",
+        json={
+            "llm_base_url": "",
+            "embed_base_url": "https://embed.example.com/v1",
+            "embed_model": "bge-m3",
+            "embed_api_key": "sk-embed-test",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["embed_ok"] is True
+    assert data["embed_latency_ms"] == 42
+
+
+def test_activate_disabled_provider_returns_400(api_client):
+    """feat-061: /api/config/providers/activate must reject activating a disabled provider."""
+    client, _, _ = api_client
+    save_resp = client.post(
+        "/api/config/providers",
+        json={
+            "id": "p-disabled",
+            "name": "DisabledProvider",
+            "base_url": "https://api.disabled.example/v1",
+            "enabled": False,
+        },
+    )
+    assert save_resp.status_code == 200
+
+    act_resp = client.post(
+        "/api/config/providers/activate",
+        json={
+            "provider_id": "p-disabled",
+            "model_id": "model-1",
+            "model_type": "chat",
+        },
+    )
+    assert act_resp.status_code == 400
+    assert "已禁用" in act_resp.json()["detail"]
+

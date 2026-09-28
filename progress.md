@@ -208,7 +208,12 @@
   - **前端（点击 ≠ 使用）**：新增 `handleAddFetchedModel`——获取药丸点击只添加（upsert 时以当前页签类型重存，顺带纠正存量错类型条目，toast 分"已添加/已在列表中/类型已更正"三种）；已保存模型药丸点击只做表单选中（"已选择"高亮）。激活只剩显式路径：行内"使用"按钮、更多菜单"设为当前"、首页模型选择器。
   - **后端写边界守卫**：`api_activate_provider` 对显式 model_id 校验存储类型，跨类型激活返回 400（`BAAI/bge-m3 是向量模型，不能设为对话模型`）；未存储的自由文本 id 仍放行（保留"模型可免获取直接切换"契约）。`api_save_provider_model` 类型转换时若转换的是当前激活 embed 模型 → 自动清空 embed 选择器，不留悬空指向。
   - **用户环境备注（按用户要求不改代码）**：取模型失败是本地代理 fake-IP DNS（198.18.0.0/15 + 2001:2::/64）被 net.py SSRF 防护拒绝所致，代理换模式或关闭即恢复。
-  - **验证**：`python -m pytest -q` → **184 passed**（+2：跨类型激活 400 守卫、类型转换清空 embed 选择器）；`npm run build` green。浏览器实测（8010，settings.json 备份→还原）："使用"激活 deepseek-flash → health llm ready 联动；API 直发跨类型激活 → 400；添加模型对话框把 bge-m3 重存为 chat → 列表转换生效且 embed 选择器不受影响。获取药丸路径因代理环境无法在线上渲染，由后端测试 + 与对话框共用同一 saveProviderModel 链路覆盖。
+- [x] feat-061 启动自举、向量测试放行与显式激活修复 (2026-09-29):
+  - **服务冷启动自举激活**：在 `create_app()` 完成 `load_settings()` 后显式调用 `activate_settings(current_settings)`，使重启后内存中的 `llm` 和 `embedder` 立即与 `settings.json` 对齐，彻底解决重启后回退到 env 默认实例导致用户必须进设置点一次激活的缺陷。
+  - **向量测试空 URL 放行**：`TestConfigRequest.llm_base_url` 默认值改为空字符串，`_validate_config_urls` 对空字符串跳过 HTTPS 校验；`test_model_connectivity` 彻底解耦，测向量模型时不再要求对话 URL 或向 OpenAI 盲发探活，解封 400 死锁。
+  - **新建对话供应商显式激活**：`useProviderConfig.ts` 的 `handleSaveNewProvider` 针对对话模型补齐 `await api.activateProvider(newP.id, chosenModel, 'chat')`，且激活状态以最新服务端结果为准，消除 UI 假激活。
+  - **门禁与安全补全**：`_require("llm")` 补齐至 `/api/ask` 和 `/api/agent` 入口，且修正 `overrides` 豁免判断；`api_activate_provider` 增加禁止激活已禁用供应商的 400 守卫；首页模型选择器切换模型后联动触发 `refreshHealth()` 刷新健康徽标。
+  - **验证**：`python -m pytest -q` → **188 passed**（+4 焦点测试）；`npm run build` green；`./init.ps1` 全量验证通过。
 
 ## Notes for Next Session
 

@@ -152,7 +152,8 @@ const ModelPickerBadge: React.FC<ModelPickerBadgeProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null);
-  const expandedProvider = providers.find((p) => p.id === expandedProviderId) || null;
+  const enabledProviders = providers.filter((p) => p.enabled);
+  const expandedProvider = enabledProviders.find((p) => p.id === expandedProviderId) || null;
   const expandedChatModels = expandedProvider
     ? expandedProvider.models.filter((m) => m.model_type === "chat")
     : [];
@@ -197,10 +198,10 @@ const ModelPickerBadge: React.FC<ModelPickerBadgeProps> = ({
             <div className="border-t border-zinc-100 my-1" />
 
             <div className="max-h-60 overflow-y-auto">
-              {providers.length === 0 && (
-                <div className="px-3 py-2 text-xs text-zinc-400">暂无供应商，请在设置中添加</div>
+              {enabledProviders.length === 0 && (
+                <div className="px-3 py-2 text-xs text-zinc-400">暂无可用供应商，请在设置中添加</div>
               )}
-              {providers.map((p) => (
+              {enabledProviders.map((p) => (
                 <button
                   key={p.id}
                   type="button"

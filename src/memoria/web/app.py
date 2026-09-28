@@ -210,13 +210,21 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
 
     register_config_routes(app, activate_settings=activate_settings)
 
+    # feat-061: Cold start bootstrap - activate loaded settings immediately
+    if current_settings is not None:
+        activate_settings(current_settings)
+
     def _require(capability: str) -> None:
-        """feat-048: fail with an instruction, not a socket timeout.
+        """feat-048/feat-061: fail with an instruction, not a socket timeout.
 
         Only intercepts a genuinely missing config. Injected deps (tests) and demo
         mode are ready by construction; every other error keeps its original path.
         """
-        if current_settings is None or "embedder" in overrides:
+        if current_settings is None or current_settings.demo_mode:
+            return
+        if capability == "embed" and "embedder" in overrides:
+            return
+        if capability == "llm" and "llm" in overrides:
             return
         caps = capability_status(current_settings)
         if not caps[capability]["ready"]:
@@ -240,6 +248,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     def api_ask(req: AskRequest):
         # conversation_id is the LangGraph thread: the checkpointer replays the
         # prior turns (feat-034) and survives restarts via SqliteSaver.
+        _require("llm")
         _require("embed")
         conversation_id = req.conversation_id or uuid.uuid4().hex
         config = {"configurable": {"thread_id": conversation_id}}
@@ -277,6 +286,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         """
         conversation_id = req.conversation_id or uuid.uuid4().hex
         config = {"configurable": {"thread_id": conversation_id}}
+        _require("llm")
         if not req.intent or req.intent == "问答":
             _require("embed")  # only the qa branch reaches the vector store
         payload: dict[str, Any] = {"text": req.text}

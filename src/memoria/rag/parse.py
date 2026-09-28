@@ -30,7 +30,7 @@ def load_document(source: str) -> Document:
         raise SafeRequestError("URL must use HTTPS")
     if source.startswith("https://"):
         return Document(doc_id_for_origin(source), _parse_url(source), source)
-    path = Path(source)
+    path = Path(source).resolve()
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         text = _parse_pdf(path)

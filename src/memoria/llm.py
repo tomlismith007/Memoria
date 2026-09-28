@@ -144,7 +144,12 @@ def extract_chat_text(data: Any, api_format: str = API_FORMAT_CHAT_COMPLETIONS) 
         return text
 
     try:
-        content = data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
+        content = msg.get("content")
+        if content is None:
+            # Reasoning models (e.g. DeepSeek-R1) may put output in reasoning_content
+            # or return null content when all tokens were spent in reasoning.
+            content = msg.get("reasoning_content") or msg.get("reasoning") or ""
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError("Chat Completions response is invalid") from exc
     if not isinstance(content, str):

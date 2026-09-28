@@ -213,7 +213,12 @@
   - **向量测试空 URL 放行**：`TestConfigRequest.llm_base_url` 默认值改为空字符串，`_validate_config_urls` 对空字符串跳过 HTTPS 校验；`test_model_connectivity` 彻底解耦，测向量模型时不再要求对话 URL 或向 OpenAI 盲发探活，解封 400 死锁。
   - **新建对话供应商显式激活**：`useProviderConfig.ts` 的 `handleSaveNewProvider` 针对对话模型补齐 `await api.activateProvider(newP.id, chosenModel, 'chat')`，且激活状态以最新服务端结果为准，消除 UI 假激活。
   - **门禁与安全补全**：`_require("llm")` 补齐至 `/api/ask` 和 `/api/agent` 入口，且修正 `overrides` 豁免判断；`api_activate_provider` 增加禁止激活已禁用供应商的 400 守卫；首页模型选择器切换模型后联动触发 `refreshHealth()` 刷新健康徽标。
-  - **验证**：`python -m pytest -q` → **188 passed**（+4 焦点测试）；`npm run build` green；`./init.ps1` 全量验证通过。
+- [x] feat-062 出站协议与健壮性治理 (2026-09-29):
+  - **safe_request 透明解压缩**：`src/memoria/net.py` 实现 `_decompress_body`，支持 `gzip` 与 `deflate` 透明流式/内存安全解压（自带 zip bomb 内存超限保护），解封 Cloudflare、Akamai、火山引擎等反代网关的压缩响应误杀；请求头默认声明 `Accept-Encoding: gzip, deflate, identity`。
+  - **OpenAICompatibleEmbedder 批量切片与容错**：`src/memoria/rag/embed.py` 支持按 `batch_size=16` 自动切批获取向量，杜绝长文档切片超限；排序使用 `d.get("index", 0)`，兼容缺省 index 字段的三方或本地兼容端；空输入快速返回 `[]`。
+  - **推理模型兼容**：`src/memoria/llm.py` 在 `extract_chat_text` 中增加对 `content is None` 的容错，优先读取 `reasoning_content` 与 `reasoning`，完美支持 DeepSeek-R1 / reasoner 等思考模型。
+  - **路径哈希规范化**：`src/memoria/rag/parse.py` 中 `load_document` 对本地路径强制执行 `Path(source).resolve()`，彻底对齐 Web 端计算逻辑，解决相对路径 CLI 摄入产生孤儿向量的隐患。
+  - **验证**：`python -m pytest -q` → **191 passed**（+3 焦点测试）；`npm run build` green；`./init.ps1` 全量验证通过。
 
 ## Notes for Next Session
 

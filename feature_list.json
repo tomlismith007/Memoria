@@ -584,6 +584,16 @@
       "dependencies": [
         "feat-061"
       ],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 191 passed（+3：test_compressed_responses_decompressed_safely、test_openai_compat_embedder_batching_and_resilience、test_extract_chat_text_handles_reasoning_models、test_load_document_resolves_path_consistently）；npm run build green；./init.ps1 全量门禁通过。"
+    },
+    {
+      "id": "feat-063",
+      "name": "Model interaction & type consistency (smart derivation, form type switch, batch save)",
+      "description": "解决模型交互与类型治理缺陷（P2/P3）：1) 模型拉取与导入时通过 deriveTag/ID 智能推导初始类型（含 embed/bge 等关键词推导为 embedding，其余为 chat），切断错类型污染源；2) ModelFormDialog 支持编辑模型类型并在保存时按用户显式指定类型持久化；3) 向量页签保存供应商保留原 api_format，不再强制覆写为 chat_completions；4) 后端提供批量保存模型接口 POST /api/config/providers/{id}/models/batch，前端'全部添加'改为一次性原子提交，解决并发竞争。",
+      "dependencies": [
+        "feat-062"
+      ],
       "status": "in-progress",
       "evidence": ""
     }

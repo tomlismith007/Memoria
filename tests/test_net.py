@@ -109,17 +109,39 @@ def test_content_length_and_streamed_body_limits(monkeypatch):
         net._read_response(Response([], b"x" * 11), 10)
 
 
-def test_compressed_response_is_rejected():
-    class Response:
-        headers = net.http.client.HTTPMessage()
-        headers["Content-Encoding"] = "gzip"
+def test_compressed_responses_decompressed_safely():
+    import gzip
+    import zlib
+
+    class FakeResponse:
+        def __init__(self, encoding, body):
+            self.headers = net.http.client.HTTPMessage()
+            self.headers["Content-Encoding"] = encoding
+            self.body = body
+            self.status = 200
+
+        def getheaders(self):
+            return [("Content-Encoding", self.headers["Content-Encoding"])]
 
         def read(self, size):
-            raise AssertionError("compressed body must not be read")
+            return self.body[:size]
 
-    net.http.client.HTTPMessage.__setitem__(Response.headers, "Content-Encoding", "gzip")
-    with pytest.raises(SafeRequestError, match="Compressed"):
-        net._read_response(Response(), 10)
+    gz_data = gzip.compress(b"hello gzip response")
+    res = net._read_response(FakeResponse("gzip", gz_data), 1024)
+    assert res.text == "hello gzip response"
+
+    df_data = zlib.compress(b"hello deflate response")
+    res = net._read_response(FakeResponse("deflate", df_data), 1024)
+    assert res.text == "hello deflate response"
+
+    # Zip bomb protection: decompressed size exceeds max_bytes
+    bomb = gzip.compress(b"x" * 200)
+    with pytest.raises(SafeRequestError, match="size limit"):
+        net._read_response(FakeResponse("gzip", bomb), 50)
+
+    # Unsupported encoding
+    with pytest.raises(SafeRequestError, match="Unsupported content encoding"):
+        net._read_response(FakeResponse("br", b"brotli data"), 1024)
 
 
 def test_connection_uses_pinned_ip_but_original_host_and_sni(monkeypatch):
@@ -159,4 +181,4 @@ def test_connection_uses_pinned_ip_but_original_host_and_sni(monkeypatch):
     assert captured["tls_hostname"] == "example.com"
     assert captured["headers"]["Host"] == "example.com"
     assert captured["path"] == "/path?q=1"
-    assert captured["headers"]["Accept-Encoding"] == "identity"
+    assert captured["headers"]["Accept-Encoding"] == "gzip, deflate, identity"

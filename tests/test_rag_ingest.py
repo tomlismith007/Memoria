@@ -126,3 +126,63 @@ def test_openai_compat_embedder_parses_response(monkeypatch):
     e = OpenAICompatibleEmbedder(base_url="https://gateway.example/v1", api_key="k", model="m")
     assert e.embed(["a", "b"]) == [[0.1], [0.2]]  # sorted back into input order
     assert calls == {"url": "https://gateway.example/v1/embeddings", "model": "m", "n": 2}
+
+
+def test_openai_compat_embedder_batching_and_resilience(monkeypatch):
+    class FakeResp:
+        def __init__(self, data):
+            self._data = data
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": self._data}
+
+    call_inputs = []
+
+    def fake_post(url, method, headers, json_body, timeout, max_bytes):
+        inputs = json_body["input"]
+        call_inputs.append(inputs)
+        # Omit index key intentionally to test resilience against endpoints that lack index
+        return FakeResp([{"embedding": [float(i)]} for i in range(len(inputs))])
+
+    monkeypatch.setattr("memoria.rag.embed.safe_request", fake_post)
+
+    embedder = OpenAICompatibleEmbedder(
+        base_url="https://gateway.example/v1", api_key="k", model="m", batch_size=16
+    )
+
+    # 1. Empty input
+    assert embedder.embed([]) == []
+    assert len(call_inputs) == 0
+
+    # 2. Batching across 35 items
+    items = [f"text_{i}" for i in range(35)]
+    results = embedder.embed(items)
+    assert len(results) == 35
+    assert len(call_inputs) == 3
+    assert len(call_inputs[0]) == 16
+    assert len(call_inputs[1]) == 16
+    assert len(call_inputs[2]) == 3
+
+
+def test_load_document_resolves_path_consistently(tmp_path, monkeypatch):
+    import os
+    from pathlib import Path
+
+    sub_dir = tmp_path / "sub"
+    sub_dir.mkdir()
+    doc_path = _write_doc(sub_dir / "note.md", "规范化测试内容")
+
+    monkeypatch.chdir(tmp_path)
+    # Call with absolute path
+    abs_doc = load_document(str(Path(doc_path).resolve()))
+    # Call with relative path
+    rel_path = os.path.join("sub", "note.md")
+    rel_doc = load_document(rel_path)
+
+    assert abs_doc.doc_id == rel_doc.doc_id
+    assert abs_doc.origin == rel_doc.origin
+    assert Path(rel_doc.origin).is_absolute()
+

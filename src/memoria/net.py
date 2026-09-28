@@ -7,6 +7,7 @@ import ipaddress
 import json as jsonlib
 import socket
 import ssl
+import zlib
 from dataclasses import dataclass
 from typing import Any, Mapping
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -173,18 +174,59 @@ def _validate_transfer_encoding(headers: http.client.HTTPMessage) -> None:
         raise SafeRequestError("Unsupported transfer encoding")
 
 
+def _decompress_body(data: bytes, encodings: list[str], max_bytes: int) -> bytes:
+    if not encodings:
+        return data
+    raw_encodings: list[str] = []
+    for header in encodings:
+        for item in header.split(","):
+            val = item.strip().lower()
+            if val:
+                raw_encodings.append(val)
+
+    if not raw_encodings or all(e in {"", "identity"} for e in raw_encodings):
+        return data
+
+    for encoding in raw_encodings:
+        if encoding in {"", "identity"}:
+            continue
+        if encoding not in {"gzip", "deflate"}:
+            raise SafeRequestError(f"Unsupported content encoding: {encoding}")
+
+        def _try_decompress(wb: int) -> bytes:
+            d = zlib.decompressobj(wb)
+            out = d.decompress(data, max_bytes + 1)
+            if len(out) > max_bytes or d.unconsumed_tail:
+                raise SafeRequestError("Response exceeds size limit")
+            return out
+
+        try:
+            wbits = (zlib.MAX_WBITS | 16) if encoding == "gzip" else -zlib.MAX_WBITS
+            data = _try_decompress(wbits)
+        except zlib.error as exc:
+            if encoding == "deflate":
+                try:
+                    data = _try_decompress(zlib.MAX_WBITS)
+                    continue
+                except zlib.error:
+                    pass
+            raise SafeRequestError("Decompression failed") from exc
+
+    return data
+
+
 def _read_response(
     response: http.client.HTTPResponse, max_bytes: int
 ) -> SafeResponse:
     _validate_transfer_encoding(response.headers)
     encodings = response.headers.get_all("Content-Encoding", []) or []
-    if any(encoding.strip().lower() not in {"", "identity"} for encoding in encodings):
-        raise SafeRequestError("Compressed responses are not allowed")
     _validate_content_length(response.headers, max_bytes)
 
     body = response.read(max_bytes + 1)
     if len(body) > max_bytes:
         raise SafeRequestError("Response exceeds size limit")
+
+    body = _decompress_body(body, encodings, max_bytes)
 
     headers = {key.lower(): value for key, value in response.getheaders()}
     content_type = headers.get("content-type", "")
@@ -266,7 +308,7 @@ def safe_request(
         for key, value in (headers or {}).items()
         if str(key).lower() not in {"host", "accept-encoding"}
     }
-    current_headers["Accept-Encoding"] = "identity"
+    current_headers["Accept-Encoding"] = "gzip, deflate, identity"
     if body is not None:
         current_headers.setdefault("Content-Type", "application/json")
 

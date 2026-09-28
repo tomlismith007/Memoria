@@ -243,3 +243,35 @@ def test_anthropic_omits_system_block_when_empty():
         user="hi",
     )
     assert "system" not in body
+
+
+def test_extract_chat_text_handles_reasoning_models():
+    from memoria.llm import extract_chat_text
+
+    # DeepSeek-R1 / reasoner model: content is None, reasoning_content has thought
+    resp1 = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "reasoning_content": "Detailed thinking process...",
+                }
+            }
+        ]
+    }
+    assert extract_chat_text(resp1) == "Detailed thinking process..."
+
+    # content is None and no reasoning -> returns empty string
+    resp2 = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                }
+            }
+        ]
+    }
+    assert extract_chat_text(resp2) == ""
+

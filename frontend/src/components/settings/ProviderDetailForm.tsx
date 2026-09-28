@@ -67,6 +67,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
     setModelFormId,
     setModelFormName,
     setModelFormTags,
+    setModelFormType,
     setEditingModelOriginalId,
     setIsAddModelOpen,
     setDeleteConfirm,
@@ -290,6 +291,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                 setModelFormId("");
                 setModelFormName("");
                 setModelFormTags(settingsTab === "embedding" ? "Embedding" : "Chat, 128K");
+                setModelFormType(settingsTab);
                 setEditingModelOriginalId(null);
                 setIsAddModelOpen(true);
               }}
@@ -490,6 +492,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                         setModelFormId(m.id);
                         setModelFormName(m.name || m.id);
                         setModelFormTags(m.tags.join(", "));
+                        setModelFormType(m.model_type || settingsTab);
                         setEditingModelOriginalId(m.id);
                         setIsAddModelOpen(true);
                       }}

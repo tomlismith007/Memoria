@@ -218,7 +218,12 @@
   - **OpenAICompatibleEmbedder 批量切片与容错**：`src/memoria/rag/embed.py` 支持按 `batch_size=16` 自动切批获取向量，杜绝长文档切片超限；排序使用 `d.get("index", 0)`，兼容缺省 index 字段的三方或本地兼容端；空输入快速返回 `[]`。
   - **推理模型兼容**：`src/memoria/llm.py` 在 `extract_chat_text` 中增加对 `content is None` 的容错，优先读取 `reasoning_content` 与 `reasoning`，完美支持 DeepSeek-R1 / reasoner 等思考模型。
   - **路径哈希规范化**：`src/memoria/rag/parse.py` 中 `load_document` 对本地路径强制执行 `Path(source).resolve()`，彻底对齐 Web 端计算逻辑，解决相对路径 CLI 摄入产生孤儿向量的隐患。
-  - **验证**：`python -m pytest -q` → **191 passed**（+3 焦点测试）；`npm run build` green；`./init.ps1` 全量验证通过。
+- [x] feat-063 模型交互与类型一致性治理 (2026-09-29):
+  - **模型拉取与导入类型推导**：`useProviderConfig.ts` 引入 `isEmbeddingModelId` 和 `deriveModelType`（通过正则与常见 embedding 模型名称模式 `embed|bge|gte|e5|sentence-transformers|text2vec` 等自动将拉取的模型标记为 `embedding`，其余为 `chat`），并在获取模型与批量导入时精准赋予推导类型，切断错类型污染源。
+  - **模型编辑弹窗类型切换**：`ModelFormDialog.tsx` 新增分段单选控件（对话模型 Chat vs 向量模型 Embedding），允许用户手动切换并以显式选中的类型持久化；`ProviderDetailForm.tsx` 在打开添加/编辑对话框时正确注入当前模型类型。
+  - **向量页签保持协议格式**：在向量页签保存供应商时保留 `selectedProvider.api_format`，不再盲目重置为 `chat_completions`。
+  - **批量模型保存后端接口**：`config_routes.py` 新增 `POST /api/config/providers/{provider_id}/models/batch`，前端 `handleImportAllFetched` 改为单次原子批量提交，杜绝多条并发请求在 `settings.json` 覆盖写时的竞争与丢模型风险。
+  - **验证**：`python -m pytest -q` → **192 passed**（+1：`test_save_provider_models_batch`）；`npm run build` green（1607 modules）；`./init.ps1` 全量验证通过。
 
 ## Notes for Next Session
 

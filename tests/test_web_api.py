@@ -1498,9 +1498,17 @@ def test_empty_llm_url_passes_embedding_connectivity_test(api_client, monkeypatc
     assert data["embed_latency_ms"] == 42
 
 
-def test_activate_disabled_provider_returns_400(api_client):
+def test_activate_disabled_provider_returns_400(api_client, monkeypatch):
     """feat-061: /api/config/providers/activate must reject activating a disabled provider."""
+    from memoria.web.config import Settings
     client, _, _ = api_client
+    current = Settings()
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current.model_copy(deep=True))
+    def save_current(s):
+        nonlocal current
+        current = s.model_copy(deep=True)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+
     save_resp = client.post(
         "/api/config/providers",
         json={
@@ -1522,4 +1530,72 @@ def test_activate_disabled_provider_returns_400(api_client):
     )
     assert act_resp.status_code == 400
     assert "已禁用" in act_resp.json()["detail"]
+
+
+def test_save_provider_models_batch(api_client, monkeypatch):
+    """feat-063: POST /api/config/providers/{id}/models/batch must atomically upsert models."""
+    from memoria.web.config import Settings
+    client, _, _ = api_client
+    current = Settings()
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current.model_copy(deep=True))
+    def save_current(s):
+        nonlocal current
+        current = s.model_copy(deep=True)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+
+    # 1. Create provider
+    save_resp = client.post(
+        "/api/config/providers",
+        json={
+            "id": "p-batch",
+            "name": "BatchProvider",
+            "base_url": "https://api.batch.example/v1",
+            "enabled": True,
+        },
+    )
+    assert save_resp.status_code == 200
+
+    # 2. Batch add 3 models
+    batch_resp = client.post(
+        "/api/config/providers/p-batch/models/batch",
+        json={
+            "models": [
+                {"id": "m-chat-1", "name": "Chat One", "model_type": "chat", "tags": ["Chat"]},
+                {"id": "m-chat-2", "name": "Chat Two", "model_type": "chat", "tags": ["Chat"]},
+                {"id": "m-embed-1", "name": "BGE M3", "model_type": "embedding", "tags": ["Embedding"]},
+            ]
+        },
+    )
+    assert batch_resp.status_code == 200
+    data = batch_resp.json()
+    models = data["provider"]["models"]
+    assert len(models) == 3
+    assert {m["id"] for m in models} == {"m-chat-1", "m-chat-2", "m-embed-1"}
+    embed_model = next(m for m in models if m["id"] == "m-embed-1")
+    assert embed_model["model_type"] == "embedding"
+
+    # 3. Batch upsert: modify existing and add new
+    batch_resp2 = client.post(
+        "/api/config/providers/p-batch/models/batch",
+        json={
+            "models": [
+                {"id": "m-chat-1", "name": "Chat One Renamed", "model_type": "chat", "tags": ["Chat", "128K"]},
+                {"id": "m-embed-2", "name": "BGE Large", "model_type": "embedding", "tags": ["Embedding"]},
+            ]
+        },
+    )
+    assert batch_resp2.status_code == 200
+    models2 = batch_resp2.json()["provider"]["models"]
+    assert len(models2) == 4
+    chat1 = next(m for m in models2 if m["id"] == "m-chat-1")
+    assert chat1["name"] == "Chat One Renamed"
+    assert "128K" in chat1["tags"]
+
+    # 4. 404 for unknown provider
+    resp_404 = client.post(
+        "/api/config/providers/non-existent/models/batch",
+        json={"models": [{"id": "m1"}]},
+    )
+    assert resp_404.status_code == 404
+
 

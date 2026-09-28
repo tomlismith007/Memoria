@@ -18,6 +18,8 @@ export const ModelFormDialog: React.FC<ModelFormDialogProps> = ({ ctrl }) => {
     setModelFormName,
     modelFormTags,
     setModelFormTags,
+    modelFormType,
+    setModelFormType,
     editingModelOriginalId,
     handleSaveModel,
   } = ctrl;
@@ -43,6 +45,36 @@ export const ModelFormDialog: React.FC<ModelFormDialogProps> = ({ ctrl }) => {
         </div>
 
         <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-zinc-700 mb-1">
+              模型类型
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setModelFormType("chat")}
+                className={`px-3 py-2 text-xs rounded-xl border text-center transition-all cursor-pointer ${
+                  modelFormType === "chat"
+                    ? "border-zinc-900 bg-zinc-900 text-white font-medium shadow-xs"
+                    : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
+                }`}
+              >
+                对话模型 (Chat)
+              </button>
+              <button
+                type="button"
+                onClick={() => setModelFormType("embedding")}
+                className={`px-3 py-2 text-xs rounded-xl border text-center transition-all cursor-pointer ${
+                  modelFormType === "embedding"
+                    ? "border-zinc-900 bg-zinc-900 text-white font-medium shadow-xs"
+                    : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
+                }`}
+              >
+                向量模型 (Embedding)
+              </button>
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-zinc-700 mb-1">
               模型 ID

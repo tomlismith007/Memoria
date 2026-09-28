@@ -594,6 +594,16 @@
       "dependencies": [
         "feat-062"
       ],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 192 passed（+1：test_save_provider_models_batch）；cd frontend && npm run build green（1607 modules）；./init.ps1 全量门禁通过。"
+    },
+    {
+      "id": "feat-064",
+      "name": "Vector consistency & UX loop (Reindex API, prompt prefix cache reordering, homepage model selector health sync)",
+      "description": "解决向量一致性与交互闭环缺陷（P1/P2/P3）：1) 后端提供向量重建接口 POST /api/rag/reindex，在切换不同向量模型/维度时清空旧向量并重新摄入现有原始文档；2) Prompt 结构调优：将静态 System Prompt 及上下文置于动态用户问题之前，最大化利用现代 LLM Prefix Caching 降低延迟与 API 成本；3) 首页模型选择器与全局 Health/Ready 状态联动对齐。",
+      "dependencies": [
+        "feat-063"
+      ],
       "status": "in-progress",
       "evidence": ""
     }

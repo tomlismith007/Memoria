@@ -145,6 +145,24 @@ export const api = {
       }
     ),
 
+  saveProviderModelsBatch: (
+    providerId: string,
+    models: Array<{
+      id: string;
+      name?: string;
+      tags?: string[];
+      enabled?: boolean;
+      model_type?: "chat" | "embedding";
+    }>
+  ) =>
+    request<{ status: string; provider: CustomProvider }>(
+      `/api/config/providers/${encodeURIComponent(providerId)}/models/batch`,
+      {
+        method: "POST",
+        body: JSON.stringify({ models }),
+      }
+    ),
+
   deleteProviderModel: (providerId: string, modelId: string) =>
     request<{ status: string; provider: CustomProvider }>(
       `/api/config/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,

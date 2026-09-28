@@ -8,14 +8,45 @@ import type {
 } from "../../types";
 import type { DeleteConfirmTarget } from "./DeleteConfirmDialog";
 
-// Single source of truth for model tags. Previously copy-pasted in 6 places,
-// and one copy omitted the "vl" check so `*-vl*` models were mislabelled.
-const deriveTag = (modelId: string, embedding = false): string =>
-  modelId.includes("vision") || modelId.includes("vl")
-    ? "视觉"
-    : embedding || modelId.includes("embed")
-    ? "Embedding"
-    : "Chat";
+export const isEmbeddingModelId = (modelId: string): boolean => {
+  const lower = modelId.toLowerCase();
+  return (
+    lower.includes("embed") ||
+    lower.includes("bge") ||
+    lower.includes("text-embedding") ||
+    lower.includes("bert") ||
+    lower.includes("rerank")
+  );
+};
+
+export const deriveModelType = (
+  modelId: string,
+  fallback: "chat" | "embedding" = "chat"
+): "chat" | "embedding" => {
+  const lower = modelId.toLowerCase();
+  if (isEmbeddingModelId(modelId)) return "embedding";
+  if (
+    lower.includes("gpt") ||
+    lower.includes("claude") ||
+    lower.includes("deepseek") ||
+    lower.includes("qwen") ||
+    lower.includes("llama") ||
+    lower.includes("chat") ||
+    lower.includes("instruct") ||
+    lower.includes("glm")
+  ) {
+    return "chat";
+  }
+  return fallback;
+};
+
+// Single source of truth for model tags.
+export const deriveTag = (modelId: string, embedding = false): string => {
+  const lower = modelId.toLowerCase();
+  if (lower.includes("vision") || lower.includes("vl")) return "视觉";
+  if (embedding || isEmbeddingModelId(modelId)) return "Embedding";
+  return "Chat";
+};
 
 export const splitTags = (raw: string): string[] =>
   raw
@@ -73,6 +104,7 @@ export const useProviderConfig = (isOpen: boolean) => {
   const [modelFormId, setModelFormId] = useState("");
   const [modelFormName, setModelFormName] = useState("");
   const [modelFormTags, setModelFormTags] = useState("");
+  const [modelFormType, setModelFormType] = useState<"chat" | "embedding">("chat");
   const [editingModelOriginalId, setEditingModelOriginalId] = useState<string | null>(null);
 
   // In-modal sleek Delete Confirmation (替代原生 window.confirm)
@@ -241,14 +273,17 @@ export const useProviderConfig = (isOpen: boolean) => {
           setFormChatModel(res.models[0]);
         }
         if (isCreatingNew) {
-          const autoDrafts: CustomModel[] = res.models.slice(0, 15).map((mId) => ({
-            id: mId,
-            name: mId,
-            tags: [deriveTag(mId, settingsTab === "embedding")],
-            enabled: true,
-            model_type: settingsTab,
-          }));
-        setDraftModels(autoDrafts);
+          const autoDrafts: CustomModel[] = res.models.slice(0, 15).map((mId) => {
+            const inferredType = deriveModelType(mId, settingsTab);
+            return {
+              id: mId,
+              name: mId,
+              tags: [deriveTag(mId, inferredType === "embedding")],
+              enabled: true,
+              model_type: inferredType,
+            };
+          });
+          setDraftModels(autoDrafts);
         }
         showToast("success", `成功拉取 ${res.models.length} 个可用模型`);
       } else {
@@ -361,13 +396,16 @@ export const useProviderConfig = (isOpen: boolean) => {
   const handleImportAllFetched = async () => {
     if (fetchedModels.length === 0) return;
     if (isCreatingNew) {
-      const added: CustomModel[] = fetchedModels.slice(0, 30).map((mId) => ({
-        id: mId,
-        name: mId,
-        tags: [deriveTag(mId, settingsTab === "embedding")],
-        enabled: true,
-        model_type: settingsTab,
-      }));
+      const added: CustomModel[] = fetchedModels.slice(0, 30).map((mId) => {
+        const inferredType = deriveModelType(mId, settingsTab);
+        return {
+          id: mId,
+          name: mId,
+          tags: [deriveTag(mId, inferredType === "embedding")],
+          enabled: true,
+          model_type: inferredType,
+        };
+      });
       setDraftModels(added);
       showToast("success", `已批量导入 ${added.length} 个模型`);
       return;
@@ -378,24 +416,26 @@ export const useProviderConfig = (isOpen: boolean) => {
       const pending = fetchedModels
         .slice(0, 30)
         .filter((mId) => !selectedProvider.models.some((m) => m.id === mId));
-      for (const mId of pending) {
-        await api.saveProviderModel(selectedProvider.id, {
+      if (pending.length === 0) {
+        showToast("success", "所有模型均已添加");
+        return;
+      }
+      const modelsToSave = pending.map((mId) => {
+        const inferredType = deriveModelType(mId, settingsTab);
+        return {
           id: mId,
           name: mId,
-          tags: [deriveTag(mId, settingsTab === "embedding")],
+          tags: [deriveTag(mId, inferredType === "embedding")],
           enabled: true,
-          model_type: settingsTab,
-        });
-      }
+          model_type: inferredType,
+        };
+      });
+
+      await api.saveProviderModelsBatch(selectedProvider.id, modelsToSave);
       const refreshed = await api.getProviders();
       setProviders(refreshed.providers);
-      // Say what actually changed: a bare "已导入" reads the same whether 1 or
-      // 30 models landed, and the pending pills vanishing is otherwise the only
-      // signal that anything happened.
-      showToast(
-        "success",
-        pending.length > 0 ? `已添加 ${pending.length} 个模型` : "所有模型均已添加"
-      );
+      // Say what actually changed:
+      showToast("success", `已添加 ${modelsToSave.length} 个模型`);
     } catch (e: any) {
       showToast("error", e.message || "批量导入失败");
     }
@@ -416,7 +456,7 @@ export const useProviderConfig = (isOpen: boolean) => {
         id: selectedProvider.id,
         name: formName.trim(),
         base_url: formBaseUrl.trim(),
-        api_format: settingsTab === "embedding" ? "chat_completions" : formApiFormat,
+        api_format: settingsTab === "embedding" ? (selectedProvider.api_format || "chat_completions") : formApiFormat,
         api_key: formApiKey.trim(),
         enabled: formEnabled,
         scope: settingsTab,
@@ -429,7 +469,7 @@ export const useProviderConfig = (isOpen: boolean) => {
               ...p,
               name: formName.trim(),
               base_url: formBaseUrl.trim(),
-              api_format: settingsTab === "embedding" ? "chat_completions" : formApiFormat,
+              api_format: settingsTab === "embedding" ? (selectedProvider.api_format || "chat_completions") : formApiFormat,
               enabled: formEnabled,
               api_key_set: formApiKey.trim() ? true : p.api_key_set,
               masked_api_key: res.provider.masked_api_key || p.masked_api_key,
@@ -468,7 +508,7 @@ export const useProviderConfig = (isOpen: boolean) => {
       const res = await api.saveProvider({
         name: trimmedName,
         base_url: trimmedUrl,
-        api_format: isEmbedding ? "chat_completions" : formApiFormat,
+        api_format: formApiFormat,
         api_key: formApiKey.trim(),
         enabled: formEnabled,
         scope: settingsTab,
@@ -702,6 +742,7 @@ export const useProviderConfig = (isOpen: boolean) => {
     setModelFormId("");
     setModelFormName("");
     setModelFormTags("");
+    setModelFormType(settingsTab);
     setEditingModelOriginalId(null);
   };
 
@@ -719,9 +760,9 @@ export const useProviderConfig = (isOpen: boolean) => {
       const newModel: CustomModel = {
         id: modelId,
         name: modelFormName.trim() || modelId,
-        tags: tags.length > 0 ? tags : settingsTab === "embedding" ? ["Embedding"] : ["Chat"],
+        tags: tags.length > 0 ? tags : modelFormType === "embedding" ? ["Embedding"] : ["Chat"],
         enabled: true,
-        model_type: settingsTab,
+        model_type: modelFormType,
       };
       setDraftModels((prev) => [
         ...prev.filter((m) => m.id !== (editingModelOriginalId || modelId)),
@@ -743,7 +784,7 @@ export const useProviderConfig = (isOpen: boolean) => {
         name: modelFormName.trim() || modelId,
         tags: tags,
         enabled: true,
-        model_type: settingsTab,
+        model_type: modelFormType,
       });
 
       setProviders((prev) =>
@@ -807,6 +848,7 @@ export const useProviderConfig = (isOpen: boolean) => {
     modelFormId,
     modelFormName,
     modelFormTags,
+    modelFormType,
     editingModelOriginalId,
     deleteConfirm,
     testingConnection,
@@ -827,6 +869,7 @@ export const useProviderConfig = (isOpen: boolean) => {
     setModelFormId,
     setModelFormName,
     setModelFormTags,
+    setModelFormType,
     setEditingModelOriginalId,
     setIsAddModelOpen,
     setDeleteConfirm,

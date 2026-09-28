@@ -48,6 +48,10 @@ class ModelItemRequest(BaseModel):
     model_type: str = "chat"
 
 
+class BatchModelItemRequest(BaseModel):
+    models: list[ModelItemRequest] = Field(default_factory=list)
+
+
 class ProviderTestRequest(BaseModel):
     model_id: str = ""
     model_type: str = "chat"
@@ -335,6 +339,81 @@ def register_config_routes(
         return {
             "status": "ok",
             "model": _public_model(saved_model),
+            "provider": _public_provider(updated_provider),
+        }
+
+    @app.post("/api/config/providers/{provider_id}/models/batch")
+    def api_save_provider_models_batch(provider_id: str, req: BatchModelItemRequest):
+        current = load_settings()
+        provider = next((p for p in current.providers if p.id == provider_id), None)
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider not found")
+
+        models = list(provider.models)
+        models_by_id = {m.id: m for m in models}
+
+        active_chat = current.active_chat_model
+        active_embed_provider_id = current.active_embed_provider_id
+        active_embed_model = current.active_embed_model
+
+        for item in req.models:
+            model_id = item.id.strip()
+            if not model_id:
+                continue
+            existing = models_by_id.get(model_id)
+            if existing:
+                saved_model = existing.model_copy(update={
+                    "name": item.name.strip() or model_id,
+                    "tags": item.tags,
+                    "enabled": item.enabled,
+                    "model_type": item.model_type,
+                })
+                models_by_id[model_id] = saved_model
+            else:
+                saved_model = CustomModel(
+                    id=model_id,
+                    name=item.name.strip() or model_id,
+                    tags=item.tags,
+                    enabled=item.enabled,
+                    model_type=item.model_type,
+                )
+                models_by_id[model_id] = saved_model
+                models.append(saved_model)
+
+            if provider_id == current.active_provider_id and not active_chat and saved_model.enabled and saved_model.model_type == "chat":
+                active_chat = saved_model.id
+
+            if (
+                existing
+                and existing.model_type != saved_model.model_type
+                and active_embed_provider_id == provider_id
+                and active_embed_model == model_id
+            ):
+                active_embed_provider_id = ""
+                active_embed_model = ""
+
+            if (
+                saved_model.model_type == "embedding"
+                and saved_model.enabled
+                and not active_embed_model
+            ):
+                active_embed_provider_id = provider_id
+                active_embed_model = saved_model.id
+
+        final_models = [models_by_id[m.id] for m in models]
+        updated_provider = provider.model_copy(update={"models": final_models})
+        providers = [updated_provider if p.id == provider_id else p for p in current.providers]
+
+        updates = {
+            "providers": providers,
+            "active_chat_model": active_chat,
+            "active_embed_provider_id": active_embed_provider_id,
+            "active_embed_model": active_embed_model,
+        }
+        updated_settings = current.model_copy(update=updates)
+        persist_and_activate(updated_settings)
+        return {
+            "status": "ok",
             "provider": _public_provider(updated_provider),
         }
 

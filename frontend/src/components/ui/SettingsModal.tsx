@@ -24,6 +24,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     selectedProvider,
     selectedProviderId,
     activeProviderId,
+    activeEmbedProviderId,
     feedback,
     settingsTab,
     formName,
@@ -119,7 +120,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             loading={loading}
             isCreatingNew={isCreatingNew}
             selectedProviderId={selectedProviderId}
-            activeProviderId={activeProviderId}
+            // The sidebar highlights whichever scope is on screen, so the
+            // embedding tab marks the embedding provider as active, not the
+            // chat one (they may be different providers entirely).
+            activeProviderId={
+              settingsTab === "embedding" ? activeEmbedProviderId : activeProviderId
+            }
+            otherActiveProviderId={
+              settingsTab === "embedding" ? activeProviderId : activeEmbedProviderId
+            }
             formName={formName}
             onSelectProvider={handleSelectProvider}
             onAddProvider={handleStartCreate}

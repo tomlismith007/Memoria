@@ -7,7 +7,10 @@ interface ProviderSidebarProps {
   loading: boolean;
   isCreatingNew: boolean;
   selectedProviderId: string;
+  /** Active provider for the tab currently in view (chat or embedding). */
   activeProviderId: string;
+  /** The other scope's active provider, disambiguated when names collide. */
+  otherActiveProviderId: string;
   formName: string;
   onSelectProvider: (providerId: string) => void;
   onAddProvider: () => void;
@@ -19,10 +22,20 @@ export const ProviderSidebar: React.FC<ProviderSidebarProps> = ({
   isCreatingNew,
   selectedProviderId,
   activeProviderId,
+  otherActiveProviderId,
   formName,
   onSelectProvider,
   onAddProvider,
 }) => {
+  // Two providers may legitimately share a name (e.g. a chat gateway that also
+  // serves embeddings). Fall back to the host so the rows stay distinguishable.
+  const nameCount = new Map<string, number>();
+  for (const p of providers) {
+    nameCount.set(p.name, (nameCount.get(p.name) ?? 0) + 1);
+  }
+  const displayName = (p: CustomProvider) =>
+    (nameCount.get(p.name) ?? 0) > 1 ? `${p.name} · ${p.base_url}` : p.name;
+
   return (
     <aside className="w-20 md:w-60 shrink-0 flex flex-col border-r border-zinc-200/80 bg-zinc-50/50 p-2 md:p-4">
       <div className="hidden md:flex items-center justify-between mb-4">
@@ -59,15 +72,17 @@ export const ProviderSidebar: React.FC<ProviderSidebarProps> = ({
             const isSelected =
               !isCreatingNew && provider.id === selectedProviderId;
             const isActive = provider.id === activeProviderId;
+            const isActiveElsewhere = provider.id === otherActiveProviderId;
             const isConfigured = Boolean(provider.base_url) && provider.enabled;
             const monogram = provider.name.trim().slice(0, 2).toUpperCase() || "LLM";
+            const label = displayName(provider);
 
             return (
               <button
                 type="button"
                 key={provider.id}
                 onClick={() => onSelectProvider(provider.id)}
-                title={`${provider.name} (${provider.base_url})`}
+                title={`${label} (${provider.base_url})`}
                 className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
                   isSelected
                     ? "bg-zinc-200/70 text-zinc-900 dark:bg-zinc-800"
@@ -78,13 +93,23 @@ export const ProviderSidebar: React.FC<ProviderSidebarProps> = ({
                   {monogram}
                 </span>
                 <span className="flex-1 min-w-0 truncate text-sm hidden md:block">
-                  {provider.name}
+                  {label}
                 </span>
                 <span
-                  title={isConfigured ? "已启用" : "未就绪或已禁用"}
+                  title={
+                    isActive
+                      ? "当前生效"
+                      : isActiveElsewhere
+                      ? "在另一个标签中生效"
+                      : isConfigured
+                      ? "已启用"
+                      : "未就绪或已禁用"
+                  }
                   className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                     isActive
                       ? "bg-emerald-500"
+                      : isActiveElsewhere
+                      ? "bg-emerald-300"
                       : isConfigured
                       ? "bg-zinc-300"
                       : "bg-zinc-200"

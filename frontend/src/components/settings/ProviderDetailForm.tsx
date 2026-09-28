@@ -82,7 +82,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
   return (
     <div className="p-5 sm:p-6 space-y-5 max-w-2xl animate-fade-in">
       {/* Provider Header Toolbar */}
-      <div className="flex flex-col items-stretch gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800 sm:flex-row sm:items-center sm:justify-between">
+      <div className="sticky top-0 z-10 -mx-5 sm:-mx-6 -mt-5 sm:-mt-6 px-5 sm:px-6 pt-5 sm:pt-6 pb-4 bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3 min-w-0 sm:flex-1 sm:mr-4">
           <div className="w-9 h-9 rounded-lg border border-zinc-200 bg-white flex items-center justify-center text-zinc-700 shrink-0 font-semibold text-xs">
             {formName.trim().slice(0, 2).toUpperCase() || <Cpu className="w-5 h-5" />}
@@ -431,6 +431,24 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
+                    {/* Activating a saved model must not require re-fetching the
+                        remote list: the pills above only render when fetchedModels
+                        is non-empty, so without this there is no way to switch the
+                        active model at all after a failed or offline fetch. */}
+                    {!isModelActive && (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectModel(m.id, settingsTab)}
+                        title={
+                          settingsTab === "embedding"
+                            ? "设为当前向量模型"
+                            : "设为当前对话模型"
+                        }
+                        className="px-2.5 py-1 rounded-full text-[11px] border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-zinc-900 hover:text-zinc-900 dark:hover:border-zinc-100 dark:hover:text-zinc-100 transition-colors cursor-pointer"
+                      >
+                        使用
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleTestModel(m.id)}

@@ -204,6 +204,105 @@ def test_resolve_active_chat_model_repairs_cross_typed_selector():
     assert resolve_active_chat_model(Settings()) == ""
 
 
+def test_activate_rejects_cross_typed_model(api_client, monkeypatch):
+    """feat-060: activating a model into the wrong slot must be refused.
+
+    Pill clicks used to activate embedding models as chat, which corrupted the
+    live config. A free-text id that is not in the list stays allowed (模型可免
+    获取直接切换, feat-055-era contract) — the guard only fires on known ids.
+    """
+    from memoria.web.config import CustomModel, CustomProvider, Settings
+
+    client, _, _ = api_client
+    current = Settings(
+        active_provider_id="p1",
+        providers=[
+            CustomProvider(
+                id="p1",
+                name="p1",
+                base_url="https://x.example/v1",
+                models=[
+                    CustomModel(id="emb-1", model_type="embedding"),
+                    CustomModel(id="chat-1", model_type="chat"),
+                ],
+            )
+        ],
+    )
+
+    def load_current():
+        return current.model_copy(deep=True)
+
+    def save_current(settings):
+        nonlocal current
+        current = settings.model_copy(deep=True)
+
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+
+    resp = client.post(
+        "/api/config/providers/activate",
+        json={"provider_id": "p1", "model_id": "emb-1", "model_type": "chat"},
+    )
+    assert resp.status_code == 400
+    assert "向量模型" in resp.json()["detail"]
+    assert current.active_chat_model != "emb-1"
+
+    resp = client.post(
+        "/api/config/providers/activate",
+        json={"provider_id": "p1", "model_id": "chat-1", "model_type": "embedding"},
+    )
+    assert resp.status_code == 400
+    assert "对话模型" in resp.json()["detail"]
+
+    # A free-text model id not stored on the provider still activates.
+    ok = client.post(
+        "/api/config/providers/activate",
+        json={"provider_id": "p1", "model_id": "some-new-model", "model_type": "chat"},
+    )
+    assert ok.status_code == 200
+    assert current.active_chat_model == "some-new-model"
+
+
+def test_model_type_conversion_clears_stale_embed_selector(api_client, monkeypatch):
+    """feat-060: re-saving an id with a new type converts it; if it was the
+    active embedding, the selector must be cleared instead of pointing at a
+    model that just became a chat model."""
+    from memoria.web.config import CustomModel, CustomProvider, Settings
+
+    client, _, _ = api_client
+    current = Settings(
+        active_embed_provider_id="p1",
+        active_embed_model="emb-1",
+        providers=[
+            CustomProvider(
+                id="p1",
+                name="p1",
+                base_url="https://x.example/v1",
+                models=[CustomModel(id="emb-1", model_type="embedding")],
+            )
+        ],
+    )
+
+    def load_current():
+        return current.model_copy(deep=True)
+
+    def save_current(settings):
+        nonlocal current
+        current = settings.model_copy(deep=True)
+
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+
+    resp = client.post(
+        "/api/config/providers/p1/models",
+        json={"id": "emb-1", "name": "emb-1", "enabled": True, "model_type": "chat"},
+    )
+    assert resp.status_code == 200
+    assert current.providers[0].models[0].model_type == "chat"
+    assert current.active_embed_provider_id == ""
+    assert current.active_embed_model == ""
+
+
 # Dummy keys shaped like the setup placeholder. These are NOT real credentials;
 # the point of the tests below is that they must not read as configured.
 PLACEHOLDER_KEY = "-".join(["sk", "1234567890"])

@@ -40,6 +40,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
     formEnabled,
     setFormEnabled,
     formChatModel,
+    setFormChatModel,
     showApiKey,
     setShowApiKey,
     settingsTab,
@@ -72,6 +73,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
     handleCancelCreate,
     handleFetchModels,
     handleSelectModel,
+    handleAddFetchedModel,
     handleImportAllFetched,
     handleTestModel,
     handleTestConnection,
@@ -348,7 +350,10 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                   <button
                     key={`p-${m.id}`}
                     type="button"
-                    onClick={() => handleSelectModel(m.id, settingsTab)}
+                    // Selection only: activating a model is an explicit action
+                    // (the row's 使用 button / the homepage picker), never a
+                    // side effect of clicking a pill.
+                    onClick={() => setFormChatModel(m.id)}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono transition-all cursor-pointer ${
                       isCurrent
                         ? "bg-zinc-900 text-white shadow-xs"
@@ -364,17 +369,15 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
               {filteredFetchedModels
                 .filter((fm) => !currentModelList.some((m) => m.id === fm))
                 .map((fm) => {
-                  const isCurrent = formChatModel === fm;
                   return (
                     <button
                       key={`f-${fm}`}
                       type="button"
-                      onClick={() => handleSelectModel(fm, settingsTab)}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all cursor-pointer ${
-                        isCurrent
-                          ? "bg-zinc-900 text-white shadow-xs"
-                          : "bg-zinc-100/80 border border-dashed border-zinc-300 text-zinc-600 hover:text-zinc-900 hover:border-zinc-400"
-                      }`}
+                      // Add to the provider's list only — no activation. A pill
+                      // whose id exists under the other type re-saves it with
+                      // this tab's type, repairing mis-typed entries.
+                      onClick={() => handleAddFetchedModel(fm)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all cursor-pointer bg-zinc-100/80 border border-dashed border-zinc-300 text-zinc-600 hover:text-zinc-900 hover:border-zinc-400"
                     >
                       <span>{fm}</span>
                       <Plus className="w-3 h-3 text-zinc-400" />

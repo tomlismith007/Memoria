@@ -305,6 +305,18 @@ def register_config_routes(
             "providers": providers,
             "active_chat_model": active_chat,
         }
+        # Re-saving an id with a new type converts it (the gateway never serves
+        # one id as two types, so a mismatch means the stored type was wrong).
+        # A converted-away model can no longer be the active embedding — clear
+        # the selector instead of pointing it at a chat model.
+        if (
+            existing
+            and existing.model_type != saved_model.model_type
+            and current.active_embed_provider_id == provider_id
+            and current.active_embed_model == model_id
+        ):
+            updates["active_embed_provider_id"] = ""
+            updates["active_embed_model"] = ""
         if (
             saved_model.model_type == "embedding"
             and saved_model.enabled
@@ -410,6 +422,21 @@ def register_config_routes(
         provider = next((p for p in current.providers if p.id == req.provider_id), None)
         if not provider:
             raise HTTPException(status_code=404, detail="Provider not found")
+
+        # Write-boundary guard on config integrity: an explicit activation must
+        # match the model's stored type. Pill clicks used to activate embedding
+        # models as chat, which corrupted the live config (user report).
+        if req.model_id:
+            existing_model = next(
+                (m for m in provider.models if m.id == req.model_id), None
+            )
+            if existing_model is not None and existing_model.model_type != req.model_type:
+                kind = "向量" if existing_model.model_type == "embedding" else "对话"
+                target = "向量" if req.model_type == "embedding" else "对话"
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{req.model_id} 是{kind}模型，不能设为{target}模型",
+                )
 
         if req.model_type == "embedding":
             active_embed = req.model_id or pick_model_id(provider, "embedding")

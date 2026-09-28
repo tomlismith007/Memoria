@@ -325,6 +325,38 @@ export const useProviderConfig = (isOpen: boolean) => {
     }
   };
 
+  // Add a fetched model to the provider's list WITHOUT activating it. Pill
+  // clicks used to route through handleSelectModel, which silently activated
+  // embedding models as chat and corrupted the config (user report). Re-saving
+  // an id with the current tab's type also repairs entries stored under the
+  // wrong type.
+  const handleAddFetchedModel = async (modelId: string) => {
+    if (!selectedProvider) return;
+    const existing = selectedProvider.models.find((m) => m.id === modelId);
+    try {
+      const res = await api.saveProviderModel(selectedProvider.id, {
+        id: modelId,
+        name: modelId,
+        tags: [deriveTag(modelId, settingsTab === "embedding")],
+        enabled: true,
+        model_type: settingsTab,
+      });
+      setProviders((prev) =>
+        prev.map((p) => (p.id === selectedProvider.id ? res.provider : p))
+      );
+      showToast(
+        "success",
+        !existing
+          ? `已添加模型 ${modelId}`
+          : existing.model_type === settingsTab
+          ? `模型 ${modelId} 已在列表中`
+          : `模型 ${modelId} 类型已更正为${settingsTab === "chat" ? "对话" : "向量"}模型`
+      );
+    } catch (e: any) {
+      showToast("error", e.message || "添加模型失败");
+    }
+  };
+
   // Import all fetched models
   const handleImportAllFetched = async () => {
     if (fetchedModels.length === 0) return;
@@ -815,6 +847,7 @@ export const useProviderConfig = (isOpen: boolean) => {
     requireHttpsUrl,
     handleFetchModels,
     handleSelectModel,
+    handleAddFetchedModel,
     handleImportAllFetched,
     handleSaveCurrentProvider,
     handleSaveNewProvider,

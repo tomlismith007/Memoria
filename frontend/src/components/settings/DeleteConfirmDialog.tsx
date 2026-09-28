@@ -24,7 +24,7 @@ export const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 backdrop-blur-xs animate-fade-in">
       <div
-        className="w-full max-w-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-xl p-5 space-y-4"
+        className="w-full max-w-sm bg-white border border-zinc-200 rounded-3xl shadow-xl p-5 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start gap-3">
@@ -32,10 +32,10 @@ export const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
             <AlertCircle className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            <h3 className="text-sm font-semibold text-zinc-900">
               确认删除{target.type === "provider" ? "供应商" : "模型"}？
             </h3>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
+            <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
               确定删除“{target.name}”？此操作将从配置中永久移除，不可撤销。
             </p>
           </div>

@@ -51,84 +51,47 @@ const newSessionId = (): string =>
     ? crypto.randomUUID()
     : `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-const loadSessionId = (): string => {
+// Tolerant restore: this cache is only ever written by persistMessages below,
+// so a light shape check + try/parse is enough — a corrupt file just starts a
+// fresh conversation instead of being replayed.
+const loadSession = (): { sessionId: string; messages: MessageItem[] } => {
   try {
     const raw = localStorage.getItem(ASK_HISTORY_KEY);
-    if (raw) {
-      const parsed: unknown = JSON.parse(raw);
-      if (isRecord(parsed) && typeof parsed.session_id === "string" && parsed.session_id) {
-        return parsed.session_id;
-      }
+    if (!raw) return { sessionId: newSessionId(), messages: [] };
+    const parsed = JSON.parse(raw) as Partial<PersistedConversation> | null;
+    if (!parsed || parsed.version !== ASK_HISTORY_VERSION || !Array.isArray(parsed.messages)) {
+      return { sessionId: newSessionId(), messages: [] };
     }
-  } catch {
-    // Corrupt history still loads as an empty conversation below.
-  }
-  return newSessionId();
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
-const isCitation = (value: unknown): value is Citation => {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.ref === "number" &&
-    typeof value.doc_id === "string" &&
-    typeof value.chunk === "number" &&
-    typeof value.start === "number"
-  );
-};
-
-const isAskResponse = (value: unknown): value is AskResponse => {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.text === "string" &&
-    (value.source === "wiki" || value.source === "rag+wiki") &&
-    Array.isArray(value.wiki_pages) &&
-    value.wiki_pages.every((page) => typeof page === "string") &&
-    Array.isArray(value.citations) &&
-    value.citations.every(isCitation)
-  );
-};
-
-const loadMessages = (): MessageItem[] => {
-  try {
-    const raw = localStorage.getItem(ASK_HISTORY_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!isRecord(parsed) || parsed.version !== ASK_HISTORY_VERSION || !Array.isArray(parsed.messages)) {
-      return [];
-    }
-
-    const restored: MessageItem[] = [];
-    const seen = new Set<string>();
-    for (const value of parsed.messages) {
-      if (!isRecord(value)) continue;
-      const id = value.id;
-      const question = value.question;
-      if (typeof id !== "string" || !id || typeof question !== "string" || !question || seen.has(id)) {
+    const messages: MessageItem[] = [];
+    for (const m of parsed.messages) {
+      if (
+        !m ||
+        typeof m.id !== "string" ||
+        !m.id ||
+        typeof m.question !== "string" ||
+        !m.question ||
+        (m.result === undefined && m.error === undefined)
+      ) {
         continue;
       }
-      const result = value.result;
-      const error = value.error;
-      const archivedPage = value.archivedPage;
-      if (result !== undefined && !isAskResponse(result)) continue;
-      if (error !== undefined && typeof error !== "string") continue;
-      if (archivedPage !== undefined && typeof archivedPage !== "string") continue;
-      if (result === undefined && error === undefined) continue;
-      seen.add(id);
-      restored.push({
-        id,
-        question,
-        result,
-        error,
-        archivedPage,
+      messages.push({
+        id: m.id,
+        question: m.question,
+        result: m.result,
+        error: typeof m.error === "string" ? m.error : undefined,
+        archivedPage: typeof m.archivedPage === "string" ? m.archivedPage : undefined,
         loading: false,
       });
     }
-    return restored;
+    return {
+      sessionId:
+        typeof parsed.session_id === "string" && parsed.session_id
+          ? parsed.session_id
+          : newSessionId(),
+      messages,
+    };
   } catch {
-    return [];
+    return { sessionId: newSessionId(), messages: [] };
   }
 };
 
@@ -319,6 +282,57 @@ const ModelPickerBadge: React.FC<ModelPickerBadgeProps> = ({
   );
 };
 
+interface AskInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  placeholder: string;
+  size: "lg" | "sm";
+}
+
+// Capsule ask input shared by the initial hero screen and the floating bottom
+// bar; the two differ only in size, shadow and placeholder text.
+const AskInput: React.FC<AskInputProps> = ({ value, onChange, onSubmit, placeholder, size }) => {
+  const large = size === "lg";
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+      className={`w-full rounded-full bg-white border border-zinc-200/90 pl-5 pr-1.5 py-1.5 flex items-center ${
+        large
+          ? "h-12 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.06)]"
+          : "h-11 shadow-[0_8px_30px_-6px_rgba(0,0,0,0.08)]"
+      } focus-within:ring-2 focus-within:ring-zinc-900/10 focus-within:border-zinc-400 transition-all`}
+    >
+      <Search className="w-4 h-4 text-zinc-400 shrink-0 mr-3" />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full min-w-0 bg-transparent border-none outline-none text-sm text-zinc-900 placeholder:text-zinc-400"
+        autoFocus
+      />
+      <button
+        type="submit"
+        disabled={!value.trim()}
+        title="发送"
+        className={`${
+          large ? "w-9 h-9" : "w-8 h-8"
+        } rounded-full flex items-center justify-center shrink-0 transition-all duration-150 select-none cursor-pointer ${
+          value.trim()
+            ? "bg-[#09090b] text-white shadow-sm hover:bg-black active:scale-95 border border-zinc-900/80"
+            : "bg-zinc-100 text-zinc-300 cursor-not-allowed"
+        }`}
+      >
+        <ArrowUp className="w-4 h-4 stroke-[2.4]" />
+      </button>
+    </form>
+  );
+};
+
 export const AskView: React.FC<AskViewProps> = ({
   onNavigateWiki,
   activeModelInfo,
@@ -329,8 +343,9 @@ export const AskView: React.FC<AskViewProps> = ({
   onOpenSettings,
 }) => {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<MessageItem[]>(() => loadMessages());
-  const [sessionId, setSessionId] = useState<string>(() => loadSessionId());
+  const [session] = useState(() => loadSession());
+  const [messages, setMessages] = useState<MessageItem[]>(session.messages);
+  const [sessionId, setSessionId] = useState<string>(session.sessionId);
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -446,35 +461,13 @@ export const AskView: React.FC<AskViewProps> = ({
             />
           </div>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleAsk();
-            }}
-            className="w-full rounded-full bg-white border border-zinc-200/90 pl-5 pr-1.5 py-1.5 flex items-center h-12 shadow-[0_4px_24px_-4px_rgba(0,0,0,0.06)] focus-within:ring-2 focus-within:ring-zinc-900/10 focus-within:border-zinc-400 transition-all"
-          >
-            <Search className="w-4 h-4 text-zinc-400 shrink-0 mr-3" />
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="提出问题，如：服务续费时间是什么时候？"
-              className="w-full min-w-0 bg-transparent border-none outline-none text-sm text-zinc-900 placeholder:text-zinc-400"
-              autoFocus
-            />
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              title="发送"
-              className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all duration-150 select-none cursor-pointer ${
-                input.trim()
-                  ? "bg-[#09090b] text-white shadow-sm hover:bg-black active:scale-95 border border-zinc-900/80"
-                  : "bg-zinc-100 text-zinc-300 cursor-not-allowed"
-              }`}
-            >
-              <ArrowUp className="w-4 h-4 stroke-[2.4]" />
-            </button>
-          </form>
+          <AskInput
+            value={input}
+            onChange={setInput}
+            onSubmit={() => handleAsk()}
+            placeholder="提出问题，如：服务续费时间是什么时候？"
+            size="lg"
+          />
 
           {/* Quick suggestions */}
           <div className="flex items-center justify-center gap-2 flex-wrap">
@@ -661,35 +654,13 @@ export const AskView: React.FC<AskViewProps> = ({
                   />
                 </div>
               </div>
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleAsk();
-                }}
-                className="w-full rounded-full bg-white border border-zinc-200/90 pl-5 pr-1.5 py-1.5 flex items-center h-11 shadow-[0_8px_30px_-6px_rgba(0,0,0,0.08)] focus-within:ring-2 focus-within:ring-zinc-900/10 focus-within:border-zinc-400 transition-all"
-              >
-                <Search className="w-4 h-4 text-zinc-400 shrink-0 mr-3" />
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="继续提问..."
-                  className="w-full min-w-0 bg-transparent border-none outline-none text-sm text-zinc-900 placeholder:text-zinc-400"
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  disabled={!input.trim()}
-                  title="发送"
-                  className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-all duration-150 select-none cursor-pointer ${
-                    input.trim()
-                      ? "bg-[#09090b] text-white shadow-sm hover:bg-black active:scale-95 border border-zinc-900/80"
-                      : "bg-zinc-100 text-zinc-300 cursor-not-allowed"
-                  }`}
-                >
-                  <ArrowUp className="w-4 h-4 stroke-[2.4]" />
-                </button>
-              </form>
+              <AskInput
+                value={input}
+                onChange={setInput}
+                onSubmit={() => handleAsk()}
+                placeholder="继续提问..."
+                size="sm"
+              />
             </div>
           </div>
         </div>

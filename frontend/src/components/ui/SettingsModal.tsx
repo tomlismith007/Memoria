@@ -114,7 +114,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Two-Column Body: Responsive (w-14 on mobile, md:w-56 on desktop) */}
-        <div className="flex-1 flex min-h-0 divide-x divide-zinc-200/80 dark:divide-zinc-800 overflow-hidden">
+        <div className="flex-1 flex min-h-0 divide-x divide-zinc-200/80 overflow-hidden">
           <ProviderSidebar
             providers={providers}
             loading={loading}
@@ -135,7 +135,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           />
 
           {/* Right Column: Provider Details Form OR Empty State */}
-          <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-900 overflow-y-auto">
+          <div className="flex-1 flex flex-col min-w-0 bg-white overflow-y-auto">
             {selectedProvider || isCreatingNew ? (
               <ProviderDetailForm ctrl={ctrl} />
             ) : (

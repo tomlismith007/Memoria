@@ -8,12 +8,6 @@ import type {
 } from "../../types";
 import type { DeleteConfirmTarget } from "./DeleteConfirmDialog";
 
-const PROVIDERS_STORAGE_KEY = "memoria_custom_providers_cache";
-const ACTIVE_PROVIDER_STORAGE_KEY = "memoria_active_provider_cache";
-const ACTIVE_MODEL_STORAGE_KEY = "memoria_active_model_cache";
-const ACTIVE_EMBED_PROVIDER_STORAGE_KEY = "memoria_active_embed_provider_cache";
-const ACTIVE_EMBED_MODEL_STORAGE_KEY = "memoria_active_embed_model_cache";
-
 // Single source of truth for model tags. Previously copy-pasted in 6 places,
 // and one copy omitted the "vl" check so `*-vl*` models were mislabelled.
 const deriveTag = (modelId: string, embedding = false): string =>
@@ -40,30 +34,15 @@ type ConnectivityResult = {
   embed_message?: string;
 };
 
-// All provider/model configuration state, persistence and actions for the
-// settings modal. Plain hook: no store, no reducer, no context.
+// All provider/model configuration state and actions for the settings modal.
+// Plain hook: no store, no reducer, no context. The backend
+// (GET /api/config/providers) is the single source of truth — no local mirror.
 export const useProviderConfig = (isOpen: boolean) => {
-  const [providers, setProviders] = useState<CustomProvider[]>(() => {
-    try {
-      const cached = localStorage.getItem(PROVIDERS_STORAGE_KEY);
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const [activeProviderId, setActiveProviderId] = useState<string>(() => {
-    return localStorage.getItem(ACTIVE_PROVIDER_STORAGE_KEY) || "";
-  });
-  const [activeChatModel, setActiveChatModel] = useState<string>(() => {
-    return localStorage.getItem(ACTIVE_MODEL_STORAGE_KEY) || "";
-  });
-  const [activeEmbedProviderId, setActiveEmbedProviderId] = useState<string>(() => {
-    return localStorage.getItem(ACTIVE_EMBED_PROVIDER_STORAGE_KEY) || "";
-  });
-  const [activeEmbedModel, setActiveEmbedModel] = useState<string>(() => {
-    return localStorage.getItem(ACTIVE_EMBED_MODEL_STORAGE_KEY) || "";
-  });
+  const [providers, setProviders] = useState<CustomProvider[]>([]);
+  const [activeProviderId, setActiveProviderId] = useState("");
+  const [activeChatModel, setActiveChatModel] = useState("");
+  const [activeEmbedProviderId, setActiveEmbedProviderId] = useState("");
+  const [activeEmbedModel, setActiveEmbedModel] = useState("");
 
   const [settingsTab, setSettingsTab] = useState<"chat" | "embedding">("chat");
   const [selectedProviderId, setSelectedProviderId] = useState<string>("");
@@ -118,25 +97,6 @@ export const useProviderConfig = (isOpen: boolean) => {
 
   const selectedProvider = providers.find((p) => p.id === selectedProviderId);
 
-  // Sync to localStorage
-  const syncToLocalStorage = (
-    updatedProviders: CustomProvider[],
-    updatedActiveId: string,
-    updatedActiveModel: string,
-    updatedEmbedProviderId: string = activeEmbedProviderId,
-    updatedEmbedModel: string = activeEmbedModel
-  ) => {
-    try {
-      localStorage.setItem(PROVIDERS_STORAGE_KEY, JSON.stringify(updatedProviders));
-      localStorage.setItem(ACTIVE_PROVIDER_STORAGE_KEY, updatedActiveId);
-      localStorage.setItem(ACTIVE_MODEL_STORAGE_KEY, updatedActiveModel);
-      localStorage.setItem(ACTIVE_EMBED_PROVIDER_STORAGE_KEY, updatedEmbedProviderId);
-      localStorage.setItem(ACTIVE_EMBED_MODEL_STORAGE_KEY, updatedEmbedModel);
-    } catch (e) {
-      console.warn("Failed to write to localStorage", e);
-    }
-  };
-
   // Populate form when selectedProvider changes
   useEffect(() => {
     if (selectedProvider && !isCreatingNew) {
@@ -169,51 +129,14 @@ export const useProviderConfig = (isOpen: boolean) => {
     try {
       const data: ProvidersConfigResponse = await api.getProviders();
       if (data && Array.isArray(data.providers)) {
-        if (data.providers.length > 0) {
-          setProviders(data.providers);
-          setActiveProviderId(data.active_provider_id);
-          setActiveChatModel(data.active_chat_model);
-          setActiveEmbedProviderId(data.active_embed_provider_id);
-          setActiveEmbedModel(data.active_embed_model);
-          syncToLocalStorage(
-            data.providers,
-            data.active_provider_id,
-            data.active_chat_model,
-            data.active_embed_provider_id,
-            data.active_embed_model
-          );
-          if (!selectedProviderId || !data.providers.some((p) => p.id === selectedProviderId)) {
-            const active = data.providers.find((p) => p.id === data.active_provider_id);
-            setSelectedProviderId(active ? active.id : data.providers[0].id);
-          }
-        } else {
-          // Check local cache
-          const cachedStr = localStorage.getItem(PROVIDERS_STORAGE_KEY);
-          if (cachedStr) {
-            const cached: CustomProvider[] = JSON.parse(cachedStr);
-            if (cached && cached.length > 0) {
-              for (const p of cached) {
-                await api.saveProvider({
-                  id: p.id,
-                  name: p.name,
-                  base_url: p.base_url,
-                  api_format: p.api_format,
-                  api_key: p.api_key || "",
-                  enabled: p.enabled,
-                });
-                for (const m of p.models) {
-                  await api.saveProviderModel(p.id, m);
-                }
-              }
-              const refreshed = await api.getProviders();
-              setProviders(refreshed.providers);
-              setActiveProviderId(refreshed.active_provider_id);
-              setActiveChatModel(refreshed.active_chat_model);
-              setActiveEmbedProviderId(refreshed.active_embed_provider_id);
-              setActiveEmbedModel(refreshed.active_embed_model);
-              setSelectedProviderId(refreshed.providers[0]?.id || "");
-            }
-          }
+        setProviders(data.providers);
+        setActiveProviderId(data.active_provider_id);
+        setActiveChatModel(data.active_chat_model);
+        setActiveEmbedProviderId(data.active_embed_provider_id);
+        setActiveEmbedModel(data.active_embed_model);
+        if (!selectedProviderId || !data.providers.some((p) => p.id === selectedProviderId)) {
+          const active = data.providers.find((p) => p.id === data.active_provider_id);
+          setSelectedProviderId(active ? active.id : data.providers[0]?.id || "");
         }
       }
     } catch (e) {
@@ -375,11 +298,9 @@ export const useProviderConfig = (isOpen: boolean) => {
           model_type: modelType,
         });
 
-        const updated = providers.map((p) =>
-          p.id === selectedProvider.id ? res.provider : p
+        setProviders((prev) =>
+          prev.map((p) => (p.id === selectedProvider.id ? res.provider : p))
         );
-        setProviders(updated);
-        syncToLocalStorage(updated, activeProviderId, modelId);
       } catch (err) {
         console.warn("Auto-adding model failed", err);
       }
@@ -391,29 +312,9 @@ export const useProviderConfig = (isOpen: boolean) => {
       if (modelType === "chat") {
         setActiveProviderId(actRes.active_provider_id);
         setActiveChatModel(actRes.active_chat_model);
-        setProviders((prev) => {
-          syncToLocalStorage(
-            prev,
-            actRes.active_provider_id,
-            actRes.active_chat_model,
-            actRes.active_embed_provider_id,
-            actRes.active_embed_model
-          );
-          return prev;
-        });
       } else {
         setActiveEmbedProviderId(actRes.active_embed_provider_id);
         setActiveEmbedModel(actRes.active_embed_model);
-        setProviders((prev) => {
-          syncToLocalStorage(
-            prev,
-            activeProviderId,
-            activeChatModel,
-            actRes.active_embed_provider_id,
-            actRes.active_embed_model
-          );
-          return prev;
-        });
       }
       showToast(
         "success",
@@ -456,7 +357,6 @@ export const useProviderConfig = (isOpen: boolean) => {
       }
       const refreshed = await api.getProviders();
       setProviders(refreshed.providers);
-      syncToLocalStorage(refreshed.providers, activeProviderId, activeChatModel);
       // Say what actually changed: a bare "已导入" reads the same whether 1 or
       // 30 models landed, and the pending pills vanishing is otherwise the only
       // signal that anything happened.
@@ -505,9 +405,7 @@ export const useProviderConfig = (isOpen: boolean) => {
           : p
       );
       setProviders(updated);
-      const nextActiveModel = formChatModel.trim() || activeChatModel;
-      setActiveChatModel(nextActiveModel);
-      syncToLocalStorage(updated, activeProviderId, nextActiveModel);
+      setActiveChatModel(formChatModel.trim() || activeChatModel);
       setFormApiKey("");
       showToast("success", "供应商配置已成功保存并持久化");
     } catch (e: any) {
@@ -582,29 +480,13 @@ export const useProviderConfig = (isOpen: boolean) => {
 
       if (isEmbedding) {
         setActiveEmbedProviderId(refreshed.active_embed_provider_id || newP.id);
-        setActiveEmbedModel(
-          chosenModel || refreshed.active_embed_model
-        );
-        syncToLocalStorage(
-          refreshed.providers,
-          activeProviderId,
-          activeChatModel,
-          refreshed.active_embed_provider_id || newP.id,
-          chosenModel || refreshed.active_embed_model
-        );
+        setActiveEmbedModel(chosenModel || refreshed.active_embed_model);
       } else {
         setActiveProviderId(newP.id);
-        const activeModelToSet =
+        setActiveChatModel(
           chosenModel ||
-          refreshed.active_chat_model ||
-          (refreshed.providers.find((p) => p.id === newP.id)?.models[0]?.id || "");
-        setActiveChatModel(activeModelToSet);
-        syncToLocalStorage(
-          refreshed.providers,
-          newP.id,
-          activeModelToSet,
-          refreshed.active_embed_provider_id,
-          refreshed.active_embed_model
+            refreshed.active_chat_model ||
+            (refreshed.providers.find((p) => p.id === newP.id)?.models[0]?.id || "")
         );
       }
 
@@ -627,24 +509,18 @@ export const useProviderConfig = (isOpen: boolean) => {
         const res = await api.deleteProvider(target.id);
         const remaining = res.providers;
         setProviders(remaining);
-        let nextActive = activeProviderId === target.id ? "" : activeProviderId;
-        let nextModel = activeProviderId === target.id ? "" : activeChatModel;
-        if (activeProviderId === target.id && remaining.length > 0) {
-          nextActive = remaining[0].id;
-          nextModel = remaining[0].models[0]?.id || "";
+        if (activeProviderId === target.id) {
+          const next = remaining[0];
+          setActiveProviderId(next?.id || "");
+          setActiveChatModel(
+            next?.models.find((m) => m.enabled && m.model_type === "chat")?.id || ""
+          );
         }
-        setActiveProviderId(nextActive);
-        setActiveChatModel(nextModel);
-        let nextEmbedProviderId = activeEmbedProviderId;
-        let nextEmbedModel = activeEmbedModel;
         if (activeEmbedProviderId === target.id) {
-          nextEmbedProviderId = "";
-          nextEmbedModel = "";
-          setActiveEmbedProviderId(nextEmbedProviderId);
-          setActiveEmbedModel(nextEmbedModel);
+          setActiveEmbedProviderId("");
+          setActiveEmbedModel("");
         }
         setSelectedProviderId(remaining[0]?.id || "");
-        syncToLocalStorage(remaining, nextActive, nextModel, nextEmbedProviderId, nextEmbedModel);
         showToast("success", `已删除供应商 ${target.name}`);
       } catch (e: any) {
         showToast("error", e.message || "删除供应商失败");
@@ -663,38 +539,25 @@ export const useProviderConfig = (isOpen: boolean) => {
       if (!selectedProvider) return;
       try {
         const res = await api.deleteProviderModel(selectedProvider.id, target.id);
-        const updatedProviders = providers.map((p) =>
-          p.id === selectedProvider.id ? res.provider : p
+        setProviders((prev) =>
+          prev.map((p) => (p.id === selectedProvider.id ? res.provider : p))
         );
-        setProviders(updatedProviders);
-        let nextActiveModel = activeChatModel;
-        let nextEmbedProviderId = activeEmbedProviderId;
-        let nextEmbedModel = activeEmbedModel;
         if (settingsTab === "chat" && activeChatModel === target.id) {
-          nextActiveModel =
+          const nextModel =
             res.provider.models.find((m) => m.enabled && m.model_type === "chat")?.id || "";
-          setActiveChatModel(nextActiveModel);
-          setFormChatModel(nextActiveModel);
+          setActiveChatModel(nextModel);
+          setFormChatModel(nextModel);
         }
         if (
           settingsTab === "embedding" &&
           activeEmbedProviderId === selectedProvider.id &&
           activeEmbedModel === target.id
         ) {
-          nextEmbedProviderId = selectedProvider.id;
-          nextEmbedModel =
+          const nextModel =
             res.provider.models.find((m) => m.enabled && m.model_type === "embedding")?.id || "";
-          if (!nextEmbedModel) nextEmbedProviderId = "";
-          setActiveEmbedProviderId(nextEmbedProviderId);
-          setActiveEmbedModel(nextEmbedModel);
+          setActiveEmbedProviderId(nextModel ? selectedProvider.id : "");
+          setActiveEmbedModel(nextModel);
         }
-        syncToLocalStorage(
-          updatedProviders,
-          activeProviderId,
-          nextActiveModel,
-          nextEmbedProviderId,
-          nextEmbedModel
-        );
         showToast("success", `已删除模型 ${target.id}`);
       } catch (e: any) {
         showToast("error", e.message || "删除模型失败");
@@ -849,28 +712,17 @@ export const useProviderConfig = (isOpen: boolean) => {
         model_type: settingsTab,
       });
 
-      const updatedProviders = providers.map((p) =>
-        p.id === selectedProvider.id ? res.provider : p
+      setProviders((prev) =>
+        prev.map((p) => (p.id === selectedProvider.id ? res.provider : p))
       );
-      setProviders(updatedProviders);
       if (settingsTab === "chat") {
-        syncToLocalStorage(updatedProviders, activeProviderId, activeChatModel || modelId);
         if (selectedProvider.id === activeProviderId && !activeChatModel) {
           setActiveChatModel(modelId);
           setFormChatModel(modelId);
         }
-      } else {
-        syncToLocalStorage(
-          updatedProviders,
-          activeProviderId,
-          activeChatModel,
-          activeEmbedProviderId,
-          activeEmbedModel || modelId
-        );
-        if (!activeEmbedModel) {
-          setActiveEmbedModel(modelId);
-          setFormChatModel(modelId);
-        }
+      } else if (!activeEmbedModel) {
+        setActiveEmbedModel(modelId);
+        setFormChatModel(modelId);
       }
       resetModelForm();
       showToast("success", `模型 ${modelId} 已保存`);
@@ -954,7 +806,6 @@ export const useProviderConfig = (isOpen: boolean) => {
     filteredFetchedModels,
 
     // actions
-    syncToLocalStorage,
     refreshProviders,
     showToast,
     handleStartCreate,

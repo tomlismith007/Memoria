@@ -85,8 +85,8 @@ export const ProviderSidebar: React.FC<ProviderSidebarProps> = ({
                 title={`${label} (${provider.base_url})`}
                 className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
                   isSelected
-                    ? "bg-zinc-200/70 text-zinc-900 dark:bg-zinc-800"
-                    : "text-zinc-600 hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
+                    ? "bg-zinc-200/70 text-zinc-900"
+                    : "text-zinc-600 hover:bg-zinc-200/50"
                 }`}
               >
                 <span className="w-6 h-6 rounded-lg border border-zinc-200 bg-white flex items-center justify-center text-[9px] font-semibold shrink-0">

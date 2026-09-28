@@ -89,7 +89,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
   return (
     <div className="p-5 sm:p-6 space-y-5 max-w-2xl animate-fade-in">
       {/* Provider Header Toolbar */}
-      <div className="sticky top-0 z-10 -mx-5 sm:-mx-6 -mt-5 sm:-mt-6 px-5 sm:px-6 pt-5 sm:pt-6 pb-4 bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="sticky top-0 z-10 -mx-5 sm:-mx-6 -mt-5 sm:-mt-6 px-5 sm:px-6 pt-5 sm:pt-6 pb-4 bg-white border-b border-zinc-100 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3 min-w-0 sm:flex-1 sm:mr-4">
           <div className="w-9 h-9 rounded-lg border border-zinc-200 bg-white flex items-center justify-center text-zinc-700 shrink-0 font-semibold text-xs">
             {formName.trim().slice(0, 2).toUpperCase() || <Cpu className="w-5 h-5" />}
@@ -101,7 +101,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder="输入供应商名称"
-                className="w-full max-w-sm px-1 -mx-1 py-0.5 text-base font-semibold text-zinc-900 dark:text-zinc-100 bg-transparent rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-300/70 dark:focus:ring-zinc-700 transition-all"
+                className="w-full max-w-sm px-1 -mx-1 py-0.5 text-base font-semibold text-zinc-900 bg-transparent rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-300/70 transition-all"
               />
             ) : (
               <h3 className="text-base font-semibold text-zinc-900 truncate">
@@ -132,7 +132,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
             <button
               type="button"
               onClick={handleCancelCreate}
-              className="px-2.5 py-1 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors cursor-pointer"
+              className="px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-100 rounded-full transition-colors cursor-pointer"
             >
               取消
             </button>
@@ -142,7 +142,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
               <div className="relative">
                 <button
                   onClick={() => setShowMoreMenu(!showMoreMenu)}
-                  className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
                 >
                   <MoreVertical className="w-4 h-4" />
                 </button>
@@ -173,7 +173,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                           name: selectedProvider!.name,
                         })
                       }
-                      className="w-full text-left px-3.5 py-1.5 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-2 cursor-pointer font-medium"
+                      className="w-full text-left px-3.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer font-medium"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       删除供应商
@@ -336,7 +336,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                   value={modelSearchQuery}
                   onChange={(e) => setModelSearchQuery(e.target.value)}
                   placeholder="筛选模型名称..."
-                  className="w-full pl-8 pr-3 py-1 text-xs bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:outline-none"
+                  className="w-full pl-8 pr-3 py-1 text-xs bg-white border border-zinc-200 rounded-lg focus:outline-none"
                 />
               </div>
             )}
@@ -351,8 +351,8 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                     onClick={() => handleSelectModel(m.id, settingsTab)}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono transition-all cursor-pointer ${
                       isCurrent
-                        ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-xs"
-                        : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400"
+                        ? "bg-zinc-900 text-white shadow-xs"
+                        : "bg-white border border-zinc-200 text-zinc-700 hover:border-zinc-400"
                     }`}
                   >
                     <span>{m.name || m.id}</span>
@@ -372,8 +372,8 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                       onClick={() => handleSelectModel(fm, settingsTab)}
                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono transition-all cursor-pointer ${
                         isCurrent
-                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-xs"
-                          : "bg-zinc-100/80 dark:bg-zinc-800 border border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 hover:border-zinc-400"
+                          ? "bg-zinc-900 text-white shadow-xs"
+                          : "bg-zinc-100/80 border border-dashed border-zinc-300 text-zinc-600 hover:text-zinc-900 hover:border-zinc-400"
                       }`}
                     >
                       <span>{fm}</span>
@@ -395,7 +395,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
             <p className="text-xs">暂无模型</p>
           </div>
         ) : (
-          <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800 overflow-hidden">
+          <div className="rounded-lg border border-zinc-200 divide-y divide-zinc-100 overflow-hidden">
             {currentModelList.map((m) => {
               const isModelActive =
                 !isCreatingNew &&
@@ -413,12 +413,12 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                   key={m.id}
                   className={`flex flex-col items-stretch gap-2 px-3 py-2 transition-colors sm:flex-row sm:items-center sm:justify-between ${
                     isModelActive || isCurrentFormModel
-                      ? "bg-zinc-50 dark:bg-zinc-800/60"
-                      : "hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40"
+                      ? "bg-zinc-50"
+                      : "hover:bg-zinc-50/60"
                   }`}
                 >
                   <div className="flex flex-wrap items-center gap-2 min-w-0 sm:flex-nowrap sm:gap-2.5">
-                    <span className="font-mono text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                    <span className="font-mono text-sm font-medium text-zinc-900 truncate">
                       {m.name || m.id}
                     </span>
 
@@ -456,7 +456,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                             ? "设为当前向量模型"
                             : "设为当前对话模型"
                         }
-                        className="px-2.5 py-1 rounded-full text-[11px] border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-zinc-900 hover:text-zinc-900 dark:hover:border-zinc-100 dark:hover:text-zinc-100 transition-colors cursor-pointer"
+                        className="px-2.5 py-1 rounded-full text-[11px] border border-zinc-200 text-zinc-600 hover:border-zinc-900 hover:text-zinc-900 transition-colors cursor-pointer"
                       >
                         使用
                       </button>
@@ -472,7 +472,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                             : "测试失败"
                           : "测试模型响应与延迟"
                       }
-                      className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                      className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
                     >
                       <Zap
                         className={`w-3.5 h-3.5 ${
@@ -491,7 +491,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                         setIsAddModelOpen(true);
                       }}
                       title="编辑模型"
-                      className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                      className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
@@ -506,7 +506,7 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
                         })
                       }
                       title="删除模型"
-                      className="p-1.5 rounded-full text-zinc-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                      className="p-1.5 rounded-full text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -523,8 +523,8 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
         <div
           className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
             connectionDiagnostics.ok
-              ? "bg-emerald-50/70 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300"
-              : "bg-rose-50/70 border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300"
+              ? "bg-emerald-50/70 border-emerald-200 text-emerald-800"
+              : "bg-rose-50/70 border-rose-200 text-rose-800"
           }`}
         >
           <div className="flex items-center gap-2">
@@ -625,8 +625,8 @@ export const ProviderEmptyState: React.FC<ProviderEmptyStateProps> = ({ ctrl }) 
 
   return (
   <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-400 gap-3">
-    <Box className="w-12 h-12 text-zinc-300 dark:text-zinc-700" />
-    <h3 className="text-base font-medium text-zinc-700 dark:text-zinc-300">
+    <Box className="w-12 h-12 text-zinc-300" />
+    <h3 className="text-base font-medium text-zinc-700">
       未选择模型供应商
     </h3>
     <p className="text-xs text-zinc-400 max-w-sm">

@@ -307,7 +307,10 @@ export const useProviderConfig = (isOpen: boolean) => {
       const res = await api.fetchModels(
         url,
         formApiKey.trim(),
-        settingsTab === "embedding" ? "chat_completions" : formApiFormat
+        settingsTab === "embedding" ? "chat_completions" : formApiFormat,
+        // The browser only holds the masked key; the server resolves the stored
+        // credential for this provider when the typed one is empty.
+        isCreatingNew ? "" : selectedProvider?.id
       );
       if (res.models && res.models.length > 0) {
         setFetchedModels(res.models);

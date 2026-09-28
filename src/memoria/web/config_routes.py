@@ -221,13 +221,28 @@ def register_config_routes(
     @app.post("/api/config/models")
     def api_fetch_models(req: ModelsRequest):
         _validate_config_urls(req.base_url)
+        api_key = req.api_key.strip()
+        if not api_key and req.provider_id:
+            # feat-056: the settings UI only ever holds a masked key, so fetching
+            # models for a saved provider sent an empty Authorization header and
+            # every gateway answered 401. Fall back to the stored credential.
+            stored = next(
+                (p for p in load_settings().providers if p.id == req.provider_id), None
+            )
+            api_key = (stored.api_key or "") if stored else ""
         try:
-            models = fetch_remote_models(req.base_url, req.api_key, req.api_format)
+            models = fetch_remote_models(req.base_url, api_key, req.api_format)
             return {"status": "ok", "models": models}
-        except Exception:
+        except Exception as exc:
+            # Surface the real reason: a bare "获取模型失败" left the user unable
+            # to tell a bad key from an unreachable host.
             return JSONResponse(
                 status_code=400,
-                content={"status": "error", "message": "获取模型失败", "models": []},
+                content={
+                    "status": "error",
+                    "message": f"获取模型失败：{str(exc)[:180]}",
+                    "models": [],
+                },
             )
 
     @app.post("/api/config/test")

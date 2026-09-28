@@ -498,6 +498,69 @@ def test_config_api_rejects_non_public_https_urls(api_client, monkeypatch):
     ])
 
 
+def test_fetch_models_falls_back_to_the_stored_key(api_client, monkeypatch):
+    """feat-056: the settings UI only has a masked key, so an empty api_key must
+    resolve to the provider's stored credential instead of sending no auth."""
+    from memoria.web.config import CustomProvider, Settings
+
+    stored_key = "sk-" + "stored-credential-not-real"
+    current = Settings(
+        providers=[
+            CustomProvider(
+                id="p1",
+                name="p1",
+                base_url="https://gateway.example/v1",
+                api_key=stored_key,
+            )
+        ]
+    )
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current)
+
+    seen = {}
+
+    def fake_fetch(base_url, api_key, api_format):
+        seen["api_key"] = api_key
+        seen["base_url"] = base_url
+        return ["model-a", "model-b"]
+
+    monkeypatch.setattr("memoria.web.config_routes.fetch_remote_models", fake_fetch)
+
+    client, _, _ = api_client
+    resp = client.post(
+        "/api/config/models",
+        json={"base_url": "https://gateway.example/v1", "provider_id": "p1"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["models"] == ["model-a", "model-b"]
+    assert seen["api_key"] == stored_key, "must fall back to the stored credential"
+
+    # An explicitly typed key still wins over the stored one.
+    typed = "sk-" + "typed-key-not-real"
+    client.post(
+        "/api/config/models",
+        json={
+            "base_url": "https://gateway.example/v1",
+            "api_key": typed,
+            "provider_id": "p1",
+        },
+    )
+    assert seen["api_key"] == typed
+
+
+def test_fetch_models_error_carries_the_reason(api_client, monkeypatch):
+    """A bare "获取模型失败" told the user nothing; surface the real cause."""
+    monkeypatch.setattr(
+        "memoria.web.config_routes.fetch_remote_models",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("HTTP 401")),
+    )
+    client, _, _ = api_client
+    resp = client.post("/api/config/models", json={"base_url": "https://gateway.example/v1"})
+    assert resp.status_code == 400
+    message = resp.json()["message"]
+    assert "401" in message, f"the status code must reach the user: {message!r}"
+    assert resp.json()["models"] == []
+
+
 def test_config_endpoints_redact_keys_and_preserve_empty_updates(api_client, monkeypatch):
     from memoria.web.config import Settings
 

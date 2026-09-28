@@ -218,14 +218,18 @@ export const api = {
   fetchModels: (
     base_url: string,
     api_key?: string,
-    api_format: ModelApiFormat = "chat_completions"
+    api_format: ModelApiFormat = "chat_completions",
+    provider_id?: string
   ) =>
-    request<{ status: string; models: string[] }>("/api/config/models", {
+    request<{ status: string; models: string[]; message?: string }>("/api/config/models", {
       method: "POST",
       body: JSON.stringify({
         base_url,
         api_key: api_key || "",
         api_format,
+        // The UI only has the masked key; the server falls back to the stored
+        // credential for this provider when api_key is empty.
+        provider_id: provider_id || "",
       }),
     }),
 };

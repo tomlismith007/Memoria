@@ -77,6 +77,9 @@ class ModelsRequest(BaseModel):
     base_url: str
     api_key: str = ""
     api_format: ApiFormat = API_FORMAT_CHAT_COMPLETIONS
+    # The browser only ever holds a masked key, so a request without an explicit
+    # api_key falls back to the stored one for this provider (feat-056).
+    provider_id: str = ""
 
 
 EMBED_MISSING_HINT = "未配置向量模型：请在「设置 → 向量模型」中添加并启用一个 embedding 供应商后重试。"

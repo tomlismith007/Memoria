@@ -22,10 +22,15 @@ from pydantic import BaseModel, Field
 
 from memoria.graph import build_graph
 from memoria.llm import ChatLLM, OpenAICompatibleChat
-from memoria.mail import Email, request_archive
+from memoria.mail import Email
 from memoria.rag import ChromaStore, Citation, OpenAICompatibleEmbedder, doc_id_for_origin
 from memoria.sync import archive_qa, archive_fact
-from memoria.web.config import Settings, capability_status, load_settings
+from memoria.web.config import (
+    Settings,
+    capability_status,
+    load_settings,
+    resolve_active_chat_model,
+)
 from memoria.web.config_routes import register_config_routes
 from memoria.wiki import Wiki, extract_links, lint as wiki_lint
 
@@ -165,14 +170,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             llm_base_url = active_provider.base_url
             if active_provider.api_key:
                 llm_api_key = active_provider.api_key
-            if settings.active_chat_model:
-                llm_model = settings.active_chat_model
-            elif active_provider.models:
-                chat_models = [m for m in active_provider.models if m.enabled and m.model_type == "chat"]
-                if chat_models:
-                    llm_model = chat_models[0].id
-                else:
-                    llm_model = active_provider.models[0].id
+            llm_model = resolve_active_chat_model(settings) or llm_model
 
         if "llm" not in overrides:
             llm = OpenAICompatibleChat(
@@ -388,10 +386,9 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             return {"triages": [], "thread_id": thread_id, "pending": [], "error": str(e)}
 
         triages = result.get("triages", [])
-        pending = [mid for t in triages if (mid := request_archive(t))]
         return {
             "thread_id": thread_id,
-            "pending": pending,
+            "pending": [t.email.msg_id for t in triages if t.archive_candidate],
             "triages": [
                 {
                     "id": t.email.msg_id,
@@ -402,7 +399,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                     "category": t.category,
                     "summary": t.summary,
                     "protected": t.protected,
-                    "can_archive": request_archive(t) is not None,
+                    "can_archive": t.archive_candidate,
                 }
                 for t in triages
             ],

@@ -38,6 +38,16 @@ def normalize_api_format(value: str | None, default: str = API_FORMAT_CHAT_COMPL
     return candidate
 
 
+def provider_auth_headers(api_key: str, protocol: str) -> dict[str, str]:
+    """Auth headers for a protocol: chat requests and GET /models share one source."""
+    if protocol == API_FORMAT_ANTHROPIC_MESSAGES:
+        return {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+        }
+    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+
 def build_chat_request(
     base_url: str,
     api_key: str,
@@ -51,10 +61,7 @@ def build_chat_request(
     protocol = normalize_api_format(api_format)
     root = base_url.rstrip("/")
     if protocol == API_FORMAT_ANTHROPIC_MESSAGES:
-        headers = {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-        }
+        headers = provider_auth_headers(api_key, protocol)
         body: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens or 4096,

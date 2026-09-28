@@ -86,6 +86,7 @@ def test_health_reports_missing_embedding_config(tmp_path):
     """feat-047: a missing embedding config must be visible, not a silent timeout later."""
     from memoria.web.config import (
         EMBED_MISSING_HINT,
+        CustomModel,
         CustomProvider,
         Settings,
         capability_status,
@@ -100,7 +101,14 @@ def test_health_reports_missing_embedding_config(tmp_path):
         embed_base_url="https://api.deepseek.com/v1",
         embed_api_key="",
         embed_model="text-embedding-3-small",  # the default, not a user choice
-        providers=[CustomProvider(id="p1", name="p1", base_url="https://x.example/v1")],
+        providers=[
+            CustomProvider(
+                id="p1",
+                name="p1",
+                base_url="https://x.example/v1",
+                models=[CustomModel(id="m1", model_type="chat")],
+            )
+        ],
     )
     caps = capability_status(settings)
     assert caps["llm"]["ready"] is True
@@ -131,6 +139,69 @@ def test_health_reports_missing_chat_model():
     caps = capability_status(Settings())
     assert caps["llm"]["ready"] is False
     assert caps["llm"]["reason"] == LLM_MISSING_HINT
+
+
+def test_pick_model_id_never_falls_back_across_types():
+    """feat-058: an embedding model must never be auto-picked as chat (or vice versa)."""
+    from memoria.web.config import CustomModel, CustomProvider, pick_model_id
+
+    provider = CustomProvider(
+        id="p1",
+        name="p1",
+        base_url="https://x.example/v1",
+        models=[
+            CustomModel(id="emb-1", model_type="embedding"),
+            CustomModel(id="chat-1", model_type="chat", enabled=False),
+        ],
+    )
+    assert pick_model_id(provider, "chat") == ""  # disabled chat skipped, no emb fallback
+    assert pick_model_id(provider, "embedding") == "emb-1"
+    assert pick_model_id(provider, "unknown-type") == ""
+
+
+def test_resolve_active_chat_model_repairs_cross_typed_selector():
+    """A live config was found with an embedding model as active_chat_model; the
+    resolver must treat such a selector as unconfigured and self-heal instead of
+    reporting the gateway ready with a model that cannot chat."""
+    from memoria.web.config import (
+        CustomModel,
+        CustomProvider,
+        Settings,
+        capability_status,
+        resolve_active_chat_model,
+    )
+
+    provider = CustomProvider(
+        id="p1",
+        name="p1",
+        base_url="https://x.example/v1",
+        models=[
+            CustomModel(id="emb-1", model_type="embedding"),
+            CustomModel(id="chat-1", model_type="chat"),
+            CustomModel(id="chat-2", model_type="chat"),
+        ],
+    )
+
+    # The corrupted shape seen in the wild: active_chat_model is an embedding id.
+    corrupted = Settings(
+        active_provider_id="p1",
+        active_chat_model="emb-1",
+        providers=[provider],
+    )
+    assert resolve_active_chat_model(corrupted) == "chat-1"
+    assert capability_status(corrupted)["llm"]["ready"] is True
+
+    # A genuine chat selector passes through untouched.
+    healthy = Settings(active_provider_id="p1", active_chat_model="chat-2", providers=[provider])
+    assert resolve_active_chat_model(healthy) == "chat-2"
+
+    # A disabled active provider resolves to nothing (flat fields take over at runtime).
+    provider.enabled = False
+    disabled = Settings(active_provider_id="p1", active_chat_model="chat-2", providers=[provider])
+    assert resolve_active_chat_model(disabled) == ""
+
+    # No provider selected: the flat env-style path applies.
+    assert resolve_active_chat_model(Settings()) == ""
 
 
 # Dummy keys shaped like the setup placeholder. These are NOT real credentials;
@@ -421,19 +492,7 @@ def test_frontend_static_serving(api_client):
     assert "<div id=\"root\">" in resp.text
 
 
-def test_load_settings_supports_legacy_files_without_presets(tmp_path):
-    from memoria.web.config import load_settings
-
-    path = tmp_path / "settings.json"
-    path.write_text('{"llm_model": "legacy-model"}', encoding="utf-8")
-
-    settings = load_settings(path)
-
-    assert settings.llm_model == "legacy-model"
-    assert settings.presets == []
-
-
-def test_load_settings_filters_non_public_urls_and_presets(tmp_path, monkeypatch):
+def test_load_settings_filters_non_public_urls(tmp_path, monkeypatch):
     from memoria.web.config import load_settings
 
     monkeypatch.setenv("MEMORIA_LLM_BASE_URL", "https://env-llm.example/v1")
@@ -441,12 +500,7 @@ def test_load_settings_filters_non_public_urls_and_presets(tmp_path, monkeypatch
     path = tmp_path / "settings.json"
     path.write_text(
         '{"llm_base_url":"http://127.0.0.1/v1",'
-        '"embed_base_url":"http://10.0.0.1/v1","presets":['
-        '{"name":"legacy","llm_base_url":"http://localhost/v1","llm_api_key":"k",'
-        '"llm_model":"m","embed_base_url":"","embed_api_key":"","embed_model":"e"},'
-        '{"name":"public","llm_base_url":"https://saved.example/v1","llm_api_key":"k",'
-        '"llm_model":"m","embed_base_url":"https://saved.example/v1",'
-        '"embed_api_key":"","embed_model":"e"}]}',
+        '"embed_base_url":"http://10.0.0.1/v1"}',
         encoding="utf-8",
     )
 
@@ -454,48 +508,31 @@ def test_load_settings_filters_non_public_urls_and_presets(tmp_path, monkeypatch
 
     assert settings.llm_base_url == "https://env-llm.example/v1"
     assert settings.embed_base_url == "https://env-embed.example/v1"
-    assert [preset.name for preset in settings.presets] == ["public"]
 
 
-def test_config_api_rejects_non_public_https_urls(api_client, monkeypatch):
-    from memoria.web.config import ModelPreset, Settings
-
+def test_config_api_rejects_non_public_https_urls(api_client):
     client, _, _ = api_client
     credential_marker = "x" * 12
-    current = Settings(
-        presets=[
-            ModelPreset(
-                name="bad",
-                llm_base_url="http://localhost/v1",
-                llm_api_key="",
-                llm_model="m",
-                embed_base_url="",
-                embed_api_key="",
-                embed_model="e",
-            )
-        ]
-    )
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", lambda settings: None)
-    invalid = {
-        "llm_base_url": "http://localhost/v1",
-        "llm_api_key": credential_marker,
-        "llm_model": "m",
-        "embed_base_url": "",
-        "embed_api_key": credential_marker,
-        "embed_model": "e",
-    }
 
-    assert client.post("/api/config", json=invalid).status_code == 400
-    assert client.post("/api/config/presets", json={**invalid, "name": "bad-http"}).status_code == 400
     assert client.post("/api/config/models", json={"base_url": "http://localhost/v1", "api_key": credential_marker}).status_code == 400
     assert client.post("/api/config/models", json={"base_url": "https://gateway.example:8443/v1"}).status_code == 400
-    assert client.post("/api/config/test", json={**invalid, "llm_base_url": "https://localhost/v1"}).status_code == 400
-    assert client.post("/api/config/presets/bad/apply").status_code == 400
-    assert all(credential_marker not in response.text for response in [
-        client.post("/api/config", json=invalid),
-        client.post("/api/config/presets", json={**invalid, "name": "bad-http"}),
-    ])
+    assert client.post(
+        "/api/config/test",
+        json={
+            "llm_base_url": "https://localhost/v1",
+            "llm_api_key": credential_marker,
+            "llm_model": "m",
+            "embed_base_url": "",
+            "embed_api_key": credential_marker,
+            "embed_model": "e",
+        },
+    ).status_code == 400
+    assert all(
+        credential_marker not in response.text
+        for response in [
+            client.post("/api/config/models", json={"base_url": "http://localhost/v1", "api_key": credential_marker}),
+        ]
+    )
 
 
 def test_fetch_models_falls_back_to_the_stored_key(api_client, monkeypatch):
@@ -559,202 +596,6 @@ def test_fetch_models_error_carries_the_reason(api_client, monkeypatch):
     message = resp.json()["message"]
     assert "401" in message, f"the status code must reach the user: {message!r}"
     assert resp.json()["models"] == []
-
-
-def test_config_endpoints_redact_keys_and_preserve_empty_updates(api_client, monkeypatch):
-    from memoria.web.config import Settings
-
-    client, _, _ = api_client
-    llm_secret = "x" * 12
-    embed_secret = "y" * 12
-    replacement_secret = "z" * 12
-    current = Settings(
-        llm_base_url="https://api.openai.com/v1",
-        llm_api_key=llm_secret,
-        llm_model="gpt-4o-mini",
-        embed_base_url="https://api.openai.com/v1",
-        embed_api_key=embed_secret,
-        embed_model="text-embedding-3-small",
-    )
-    saved = []
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", saved.append)
-
-    get_resp = client.get("/api/config")
-    assert get_resp.status_code == 200
-    cfg = get_resp.json()
-    assert "llm_base_url" in cfg
-    assert "llm_api_key" not in cfg
-    assert "embed_api_key" not in cfg
-    assert cfg["llm_api_key_set"] is True
-    assert cfg["embed_api_key_set"] is True
-    assert llm_secret not in get_resp.text
-    assert embed_secret not in get_resp.text
-
-    post_resp = client.post(
-        "/api/config",
-        json={
-            "llm_base_url": "https://api.deepseek.com/v1",
-            "llm_api_key": "",
-            "llm_model": "deepseek-chat",
-            "embed_base_url": "https://api.deepseek.com/v1",
-            "embed_api_key": "  ",
-            "embed_model": "text-embedding-3-small",
-            "demo_mode": False,
-        },
-    )
-    assert post_resp.status_code == 200
-    assert post_resp.json()["status"] == "ok"
-    assert saved[-1].llm_api_key == llm_secret
-    assert saved[-1].embed_api_key == embed_secret
-    assert saved[-1].llm_model == "deepseek-chat"
-
-    client.post(
-        "/api/config",
-        json={
-            "llm_base_url": "https://api.deepseek.com/v1",
-            "llm_api_key": replacement_secret,
-            "llm_model": "deepseek-chat",
-            "embed_base_url": "https://api.deepseek.com/v1",
-            "embed_api_key": "",
-            "embed_model": "text-embedding-3-small",
-            "demo_mode": False,
-        },
-    )
-    assert saved[-1].llm_api_key == replacement_secret
-    assert saved[-1].embed_api_key == embed_secret
-
-
-def test_config_presets_save_apply_and_delete_without_exposing_keys(api_client, monkeypatch):
-    from memoria.web.config import Settings
-
-    client, _, _ = api_client
-    current_key = "a" * 12
-    current_embed_key = "b" * 12
-    preset_key = "c" * 12
-    current = Settings(
-        llm_base_url="https://current.example/v1",
-        llm_api_key=current_key,
-        llm_model="current-model",
-        embed_base_url="https://current.example/v1",
-        embed_api_key=current_embed_key,
-        embed_model="current-embed-model",
-    )
-
-    def load_current():
-        return current.model_copy(deep=True)
-
-    def save_current(settings):
-        nonlocal current
-        current = settings.model_copy(deep=True)
-
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
-
-    save_response = client.post(
-        "/api/config/presets",
-        json={
-            "name": "  Work  ",
-            "llm_base_url": "https://preset.example/v1",
-            "llm_api_key": preset_key,
-            "llm_model": "preset-model",
-            "embed_base_url": "https://preset.example/v1",
-            "embed_api_key": "",
-            "embed_model": "preset-embed-model",
-            "demo_mode": False,
-        },
-    )
-    assert save_response.status_code == 200
-    assert save_response.json()["preset"]["name"] == "Work"
-    assert preset_key not in save_response.text
-    assert current_embed_key not in save_response.text
-    assert current.llm_model == "current-model"
-    assert current.presets[0].llm_api_key == preset_key
-    assert current.presets[0].embed_api_key == current_embed_key
-
-    get_response = client.get("/api/config")
-    assert get_response.status_code == 200
-    assert get_response.json()["presets"][0]["name"] == "Work"
-    assert preset_key not in get_response.text
-
-    save_current_response = client.post(
-        "/api/config",
-        json={
-            "llm_base_url": "https://saved.example/v1",
-            "llm_api_key": "",
-            "llm_model": "saved-current-model",
-            "embed_base_url": "https://saved.example/v1",
-            "embed_api_key": "",
-            "embed_model": "saved-current-embed-model",
-            "demo_mode": False,
-        },
-    )
-    assert save_current_response.status_code == 200
-    assert current.llm_model == "saved-current-model"
-    assert current.llm_api_key == current_key
-    assert len(current.presets) == 1
-
-    apply_response = client.post("/api/config/presets/work/apply")
-    assert apply_response.status_code == 200
-    assert apply_response.json()["config"]["llm_model"] == "preset-model"
-    assert preset_key not in apply_response.text
-    assert current.llm_model == "preset-model"
-    assert current.llm_api_key == preset_key
-    assert len(current.presets) == 1
-
-    delete_response = client.delete("/api/config/presets/WORK")
-    assert delete_response.status_code == 200
-    assert delete_response.json()["presets"] == []
-    assert current.llm_model == "preset-model"
-    assert current.presets == []
-
-    assert client.post("/api/config/presets/missing/apply").status_code == 404
-    assert client.delete("/api/config/presets/missing").status_code == 404
-
-
-def test_config_preset_names_are_unique_and_limited_to_ten(api_client, monkeypatch):
-    from memoria.web.config import Settings
-
-    client, _, _ = api_client
-    current = Settings(llm_api_key="d" * 12, embed_api_key="e" * 12)
-    saved = []
-
-    def load_current():
-        return current.model_copy(deep=True)
-
-    def save_current(settings):
-        nonlocal current
-        current = settings.model_copy(deep=True)
-        saved.append(settings)
-
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
-
-    def body(name):
-        return {
-            "name": name,
-            "llm_base_url": "https://preset.example/v1",
-            "llm_api_key": "",
-            "llm_model": "preset-model",
-            "embed_base_url": "https://preset.example/v1",
-            "embed_api_key": "",
-            "embed_model": "preset-embed-model",
-            "demo_mode": False,
-        }
-
-    for invalid_name in ("", ".", "..", "../bad", "..\\bad"):
-        assert client.post("/api/config/presets", json=body(invalid_name)).status_code == 400
-    assert saved == []
-
-    assert client.post("/api/config/presets", json=body("Work")).status_code == 200
-    assert client.post("/api/config/presets", json=body("work")).status_code == 409
-    assert len(saved) == 1
-
-    for index in range(9):
-        assert client.post("/api/config/presets", json=body(f"Preset {index}")).status_code == 200
-    assert len(saved) == 10
-    assert client.post("/api/config/presets", json=body("Overflow")).status_code == 409
-    assert len(saved) == 10
 
 
 def test_cors_allows_only_local_development_origins(api_client):

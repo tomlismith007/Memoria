@@ -11,10 +11,10 @@ from typing import Annotated, Any
 from pydantic import BaseModel, BeforeValidator, Field
 
 from memoria.llm import (
-    API_FORMAT_ANTHROPIC_MESSAGES,
     API_FORMAT_CHAT_COMPLETIONS,
     build_chat_request,
     normalize_api_format,
+    provider_auth_headers,
 )
 from memoria.net import SafeRequestError, safe_request, validate_public_https_url
 
@@ -23,17 +23,6 @@ DEFAULT_LLM_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_EMBED_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_LLM_MODEL = "gpt-4o-mini"
 DEFAULT_EMBED_MODEL = "text-embedding-3-small"
-
-
-class ModelPreset(BaseModel):
-    name: str
-    llm_base_url: str
-    llm_api_key: str
-    llm_model: str
-    embed_base_url: str
-    embed_api_key: str
-    embed_model: str
-    demo_mode: bool = False
 
 
 class CustomModel(BaseModel):
@@ -70,7 +59,6 @@ class Settings(BaseModel):
     embed_api_key: str = Field(default="")
     embed_model: str = Field(default=DEFAULT_EMBED_MODEL)
     demo_mode: bool = Field(default=False)
-    presets: list[ModelPreset] = Field(default_factory=list)
 
 
 class ModelsRequest(BaseModel):
@@ -100,6 +88,39 @@ def _key_is_real(key: str) -> bool:
     return bool(key) and key.strip() != "" and key.strip().lower() not in _PLACEHOLDER_KEYS
 
 
+def pick_model_id(provider: CustomProvider, model_type: str) -> str:
+    """First enabled model of `model_type`, else "" — never a cross-type fallback.
+
+    An embedding model must never be auto-activated as chat (or vice versa); the
+    routes used to fall back to `models[0]`, which is how a live config ended up
+    with an embedding model as its active chat model.
+    """
+    return next(
+        (m.id for m in provider.models if m.enabled and m.model_type == model_type), ""
+    )
+
+
+def resolve_active_chat_model(settings: Settings) -> str:
+    """The effective chat model for the active provider.
+
+    The `active_chat_model` selector is only trusted when it actually points at
+    an enabled chat model of the enabled active provider; anything else (stale
+    id, cross-typed id, empty) resolves to the provider's first enabled chat
+    model. No provider selected -> "" (the flat fields are the fallback path).
+    """
+    provider = next(
+        (p for p in settings.providers if p.id == settings.active_provider_id), None
+    )
+    if provider is None or not provider.enabled:
+        return ""
+    if settings.active_chat_model and any(
+        m.id == settings.active_chat_model and m.enabled and m.model_type == "chat"
+        for m in provider.models
+    ):
+        return settings.active_chat_model
+    return pick_model_id(provider, "chat")
+
+
 def capability_status(settings: Settings) -> dict[str, dict[str, str | bool]]:
     """Report whether each LLM capability is actually configured.
 
@@ -109,13 +130,7 @@ def capability_status(settings: Settings) -> dict[str, dict[str, str | bool]]:
     and lets the endpoints fail with an instruction instead of a socket timeout.
     """
     providers = {p.id: p for p in settings.providers}
-    chat_provider = providers.get(settings.active_provider_id)
-    chat_model = settings.active_chat_model
-    if not chat_model and chat_provider and chat_provider.models:
-        chat_model = next(
-            (m.id for m in chat_provider.models if m.enabled and m.model_type == "chat"),
-            chat_provider.models[0].id if chat_provider.models else "",
-        )
+    chat_model = resolve_active_chat_model(settings)
 
     embed_provider = providers.get(settings.active_embed_provider_id)
     if embed_provider is not None and embed_provider.enabled:
@@ -190,12 +205,6 @@ def _sanitize_settings(settings: Settings, fallback: Settings) -> Settings:
         if not settings.embed_base_url.strip() or _is_public_url(settings.embed_base_url)
         else fallback.embed_base_url
     )
-    presets = [
-        preset
-        for preset in settings.presets
-        if _is_public_url(preset.llm_base_url)
-        and (not preset.embed_base_url.strip() or _is_public_url(preset.embed_base_url))
-    ]
     providers = [
         provider
         for provider in settings.providers
@@ -205,7 +214,6 @@ def _sanitize_settings(settings: Settings, fallback: Settings) -> Settings:
         update={
             "llm_base_url": llm_url,
             "embed_base_url": embed_url,
-            "presets": presets,
             "providers": providers,
         }
     )
@@ -229,13 +237,7 @@ def save_settings(settings: Settings, path: Path = DEFAULT_SETTINGS_PATH) -> Non
 
 
 def _model_auth_headers(api_key: str, api_format: str) -> dict[str, str]:
-    protocol = normalize_api_format(api_format)
-    if protocol == API_FORMAT_ANTHROPIC_MESSAGES:
-        return {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-        }
-    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    return provider_auth_headers(api_key, normalize_api_format(api_format))
 
 
 def fetch_remote_models(

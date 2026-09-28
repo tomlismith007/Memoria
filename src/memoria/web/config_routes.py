@@ -16,19 +16,16 @@ from memoria.web.config import (
     CustomModel,
     CustomProvider,
     DEFAULT_LLM_MODEL,
-    ModelPreset,
     ModelsRequest,
     Settings,
     TestConfigRequest,
     fetch_remote_models,
     load_settings,
+    pick_model_id,
+    resolve_active_chat_model,
     save_settings,
     test_model_connectivity,
 )
-
-
-class PresetSaveRequest(Settings):
-    name: str
 
 
 class ProviderSaveRequest(BaseModel):
@@ -68,21 +65,6 @@ def _masked_secret(value: str) -> str:
     return "***" if value else ""
 
 
-def _public_preset(preset: ModelPreset) -> dict[str, Any]:
-    return {
-        "name": preset.name,
-        "llm_base_url": preset.llm_base_url,
-        "llm_model": preset.llm_model,
-        "llm_api_key_set": bool(preset.llm_api_key),
-        "masked_llm_key": _masked_secret(preset.llm_api_key),
-        "embed_base_url": preset.embed_base_url,
-        "embed_model": preset.embed_model,
-        "embed_api_key_set": bool(preset.embed_api_key),
-        "masked_embed_key": _masked_secret(preset.embed_api_key),
-        "demo_mode": preset.demo_mode,
-    }
-
-
 def _public_model(model: CustomModel) -> dict[str, Any]:
     return {
         "id": model.id,
@@ -106,26 +88,6 @@ def _public_provider(provider: CustomProvider) -> dict[str, Any]:
     }
 
 
-def _public_settings(settings: Settings) -> dict[str, Any]:
-    return {
-        "active_provider_id": settings.active_provider_id,
-        "active_chat_model": settings.active_chat_model,
-        "active_embed_provider_id": settings.active_embed_provider_id,
-        "active_embed_model": settings.active_embed_model,
-        "providers": [_public_provider(p) for p in settings.providers],
-        "llm_base_url": settings.llm_base_url,
-        "llm_model": settings.llm_model,
-        "llm_api_key_set": bool(settings.llm_api_key),
-        "masked_llm_key": _masked_secret(settings.llm_api_key),
-        "embed_base_url": settings.embed_base_url,
-        "embed_model": settings.embed_model,
-        "embed_api_key_set": bool(settings.embed_api_key),
-        "masked_embed_key": _masked_secret(settings.embed_api_key),
-        "demo_mode": settings.demo_mode,
-        "presets": [_public_preset(preset) for preset in settings.presets],
-    }
-
-
 def _validate_config_urls(llm_base_url: str, embed_base_url: str = "") -> None:
     try:
         validate_public_https_url(llm_base_url)
@@ -145,78 +107,6 @@ def register_config_routes(
     def persist_and_activate(settings: Settings) -> None:
         save_settings(settings)
         activate_settings(settings)
-
-    @app.get("/api/config")
-    def api_get_config():
-        return _public_settings(load_settings())
-
-    @app.post("/api/config")
-    def api_save_config(req: Settings):
-        _validate_config_urls(req.llm_base_url, req.embed_base_url)
-        current = load_settings()
-        effective = req.model_copy(update={
-            "llm_api_key": req.llm_api_key.strip() or current.llm_api_key,
-            "embed_api_key": req.embed_api_key.strip() or current.embed_api_key,
-            "presets": current.presets,
-        })
-        persist_and_activate(effective)
-        return {"status": "ok", "message": "Settings saved successfully"}
-
-    @app.post("/api/config/presets")
-    def api_save_preset(req: PresetSaveRequest):
-        _validate_config_urls(req.llm_base_url, req.embed_base_url)
-        name = req.name.strip()
-        if (
-            not name
-            or len(name) > 64
-            or name in {".", ".."}
-            or "/" in name
-            or "\\" in name
-            or any(ord(char) < 32 for char in name)
-        ):
-            raise HTTPException(status_code=400, detail="Preset name must be 1-64 safe characters")
-        current = load_settings()
-        if len(current.presets) >= 10:
-            raise HTTPException(status_code=409, detail="Preset limit reached")
-        if any(preset.name.casefold() == name.casefold() for preset in current.presets):
-            raise HTTPException(status_code=409, detail="Preset name already exists")
-        preset = ModelPreset(
-            name=name,
-            llm_base_url=req.llm_base_url,
-            llm_api_key=req.llm_api_key.strip() or current.llm_api_key,
-            llm_model=req.llm_model,
-            embed_base_url=req.embed_base_url,
-            embed_api_key=req.embed_api_key.strip() or current.embed_api_key,
-            embed_model=req.embed_model,
-            demo_mode=req.demo_mode,
-        )
-        updated = current.model_copy(update={"presets": [*current.presets, preset]})
-        save_settings(updated)
-        return {"status": "ok", "preset": _public_preset(preset)}
-
-    @app.post("/api/config/presets/{name}/apply")
-    def api_apply_preset(name: str):
-        current = load_settings()
-        preset = next((p for p in current.presets if p.name.casefold() == name.casefold()), None)
-        if preset is None:
-            raise HTTPException(status_code=404, detail="Preset not found")
-        effective = current.model_copy(update=preset.model_dump(exclude={"name"}))
-        _validate_config_urls(effective.llm_base_url, effective.embed_base_url)
-        persist_and_activate(effective)
-        return {"status": "ok", "config": _public_settings(effective)}
-
-    @app.delete("/api/config/presets/{name}")
-    def api_delete_preset(name: str):
-        current = load_settings()
-        remaining = [p for p in current.presets if p.name.casefold() != name.casefold()]
-        if len(remaining) == len(current.presets):
-            raise HTTPException(status_code=404, detail="Preset not found")
-        updated = current.model_copy(update={"presets": remaining})
-        save_settings(updated)
-        return {
-            "status": "ok",
-            "presets": [_public_preset(preset) for preset in remaining],
-        }
 
     @app.post("/api/config/models")
     def api_fetch_models(req: ModelsRequest):
@@ -320,8 +210,8 @@ def register_config_routes(
             if active_id == saved_provider.id:
                 if req.active_chat_model:
                     active_chat = req.active_chat_model
-                elif not active_chat and saved_provider.models:
-                    active_chat = saved_provider.models[0].id
+                elif not active_chat:
+                    active_chat = pick_model_id(saved_provider, "chat")
 
             active_embed = current.active_embed_model
             if req.active_embed_model:
@@ -355,7 +245,7 @@ def register_config_routes(
             enabled_remaining = [p for p in remaining if p.enabled]
             if enabled_remaining:
                 active_id = enabled_remaining[0].id
-                active_model = enabled_remaining[0].models[0].id if enabled_remaining[0].models else ""
+                active_model = pick_model_id(enabled_remaining[0], "chat")
             else:
                 active_id = ""
                 active_model = ""
@@ -411,7 +301,6 @@ def register_config_routes(
         active_chat = current.active_chat_model
         if provider_id == current.active_provider_id and not active_chat and saved_model.enabled and saved_model.model_type == "chat":
             active_chat = saved_model.id
-
         updates = {
             "providers": providers,
             "active_chat_model": active_chat,
@@ -523,43 +412,20 @@ def register_config_routes(
             raise HTTPException(status_code=404, detail="Provider not found")
 
         if req.model_type == "embedding":
-            if req.model_id:
-                active_embed_model = req.model_id
-            else:
-                embedding_models = [
-                    m for m in provider.models if m.enabled and m.model_type == "embedding"
-                ]
-                active_embed_model = embedding_models[0].id if embedding_models else ""
+            active_embed = req.model_id or pick_model_id(provider, "embedding")
             updated = current.model_copy(update={
                 "active_embed_provider_id": provider.id,
-                "active_embed_model": active_embed_model,
+                "active_embed_model": active_embed,
             })
-            persist_and_activate(updated)
-            return {
-                "status": "ok",
-                "active_provider_id": updated.active_provider_id,
-                "active_chat_model": updated.active_chat_model,
-                "active_embed_provider_id": updated.active_embed_provider_id,
-                "active_embed_model": updated.active_embed_model,
-            }
-
-        active_chat = current.active_chat_model
-        if req.model_id:
-            active_chat = req.model_id
-        elif provider.models:
-            chat_models = [m for m in provider.models if m.enabled and m.model_type == "chat"]
-            if chat_models:
-                active_chat = chat_models[0].id
-            else:
-                active_chat = provider.models[0].id
-
-        updated = current.model_copy(update={
-            "active_provider_id": provider.id,
-            "active_chat_model": active_chat,
-            "llm_base_url": provider.base_url,
-            "llm_api_key": provider.api_key or current.llm_api_key,
-            "llm_model": active_chat or current.llm_model,
-        })
+        else:
+            active_chat = req.model_id or pick_model_id(provider, "chat")
+            updated = current.model_copy(update={
+                "active_provider_id": provider.id,
+                "active_chat_model": active_chat,
+                "llm_base_url": provider.base_url,
+                "llm_api_key": provider.api_key or current.llm_api_key,
+                "llm_model": active_chat or current.llm_model,
+            })
         persist_and_activate(updated)
         return {
             "status": "ok",

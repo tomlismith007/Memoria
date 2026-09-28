@@ -13,21 +13,26 @@
 3. **feat-058 后端**：删 presets 子系统与 flat `GET/POST /api/config` 路由（前端零调用）；新增 `pick_model_id` / `resolve_active_chat_model` 统一 7 处重复推导，**禁止跨类型回退**；`provider_auth_headers` 抽取；`api_mail_triage` 去重复调用；`api_activate_provider` 分支合并；mail `__init__` 砍无调用重导出。
 4. **feat-059 前端**：删 localStorage 供应商镜像（5 key + 8 处调用 + 迁移分支）；AskView 抽 `<AskInput>`、历史校验器 120→35 行；删 5 文件 72 处 `dark:` 变体。
 5. **端到端验收**：详见 `progress.md` 2026-09-28 两条记录。要点：health 对用户真实配置**立即如实报告** `llm.ready:false`（自愈逻辑生效）；设置 CRUD 全流程、真实问答失败路径（假网关 DNS 快速失败 → 带原因的错误卡片）、localStorage 镜像零残留、历史加载器坏档/好档双场景、UI 删除闭环全部通过。
+6. **feat-060 用户实测问题修复**（同日第二轮）：药丸点击=添加/选中（不再隐式激活）、后端激活跨类型 400 守卫、类型转换清空失效 embed 选择器。详见 progress.md 同日第三条。
 
-## 关键发现：用户真实配置有一处待修
+## 用户配置两处待修（代码已自愈/已修，数据需用户在 UI 操作）
 
-`data/settings.json`（未跟踪）的 `active_chat_model = "BAAI/bge-large-zh-v1.5"` 是硅基流动的
-**embedding** 模型——旧代码的跨类型回退造成的腐化，正是本次统一推导的动因。**代码侧已自愈**
-（health 如实报未配置 + 运行时自动回退到 provider 首个启用 chat 模型），但建议用户在
-设置里把对话模型切回商汤的某个 chat 模型以根治。embed 侧配置是好的（硅基流动 BAAI 系列真实可用）。
+1. `data/settings.json` 的 `active_chat_model = "BAAI/bge-large-zh-v1.5"` 是硅基流动的
+   **embedding** 模型（旧跨类型回退所致）。代码侧 health 如实报未配置 + 运行时自愈；
+   用户在设置里把对话模型切回任一 chat 模型即根治。
+2. 硅基流动的 15 个模型当初全部按 embedding 类型导入（含 Qwen 等真对话模型）。
+   feat-060 之后：对话页签点药丸即可把错类型条目**纠正为对话模型**（upsert 语义），
+   再点"使用"激活。
+3. 取模型失败系用户本地代理 fake-IP DNS（198.18.0.0/15）被 net.py SSRF 防护拒绝——
+   **用户明确要求不改代码**，代理关闭/换 redir-host 模式即恢复。
 
 ## Verification Evidence
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| 后端全量 | `python -m pytest -q` | **182 passed** (15.6s) | 184 → -4 删（presets/flat 测试）+2 增（pick/resolve 焦点测试）；fixture 补 chat 模型适配收紧语义 |
+| 后端全量 | `python -m pytest -q` | **184 passed** | feat-058 轮 182（-4 删 +2 增），feat-060 轮 +2（激活类型守卫、转换清空 embed 选择器） |
 | 前端构建 | `cd frontend && npm run build` | green | CSS 37.84→35.25 kB、JS 327.90→323.56 kB（dark: 清理瘦身） |
-| 全量回归 | `pwsh -NoProfile -File ./init.ps1` | green | 182 passed + build green |
+| 全量回归 | `pwsh -NoProfile -File ./init.ps1` | green | pytest + build 全绿（feat-058 轮；feat-060 轮另行全量 pytest 184 + build） |
 | 浏览器 E2E | control-browser，8010 端口生产构建 | 全场景通过 | 见 progress.md；settings.json 备份→还原，真实数据零污染 |
 | API 联动 | `curl /api/health` | 通过 | 自愈报告（llm false）→ E2E 激活后双 ready + 模型名联动 |
 
@@ -57,7 +62,7 @@ fced0a2 docs(audit): 同步规划、架构与状态文件 (feat-058/059 收尾)
 
 ## Next Session Startup
 
-1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 182 passed + build green）。
+1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 184 passed + build green）。
 2. 阅读 `AGENTS.md` → `docs/ARCHITECTURE.md`（§7.5 新增第 5 条选择器信任规则）→ `docs/NEXT_PLAN.md` → `feature_list.json`（feat-058/059 含 evidence）→ `progress.md`（2026-09-28 三条）→ 本文件。
 3. **建议转告用户**：在设置里把对话模型从 `BAAI/bge-large-zh-v1.5` 切回商汤任一 chat 模型（UI 一键），即根治配置腐化；届时 health 将显示双 ready，问答链路完整可用。
 4. 剩余可选项：feat-038（多步 ingest 图循环）、feat-039（SSE 流式）——均为 `todo`，未被要求时不要动。

@@ -556,6 +556,16 @@
       ],
       "status": "completed",
       "evidence": "cd frontend && npm run build green（tsc + vite，1607 modules）；CSS 37.84→35.25 kB、JS 327.90→323.56 kB（dark: 清理瘦身）；grep 确认 hook 内 localStorage 引用为 0、src/ 内 dark: 为 0。浏览器端到端验收见 progress.md 同日记录。"
+    },
+    {
+      "id": "feat-060",
+      "name": "Model settings interaction fix: click-to-add, explicit-use",
+      "description": "用户实测报告：①获取模型后点击药丸添加不了；②点击药丸直接激活（误用模型）；③点击 embedding 药丸后横幅报'未配置对话模型'。根因：药丸点击统一走 handleSelectModel（自动添加+立即激活），且 alreadyExists 只看 id 不看类型——全部按 embedding 导入的模型在对话页签永远显示'待添加'药丸，点击不加却把 embedding 模型激活为对话模型，resolve_active_chat_model 判选择器无效报错。修复：前端新增 handleAddFetchedModel（药丸=只添加/纠正类型，三种 toast），已保存药丸=仅表单选中；激活只剩显式路径（使用按钮/设为当前/首页选择器）。后端 api_activate_provider 对显式 model_id 校验存储类型（跨类型 400，自由文本 id 仍放行以保留'免获取直接切换'契约）；api_save_provider_model 类型转换时若转换的是当前激活 embed 模型则自动清空 embed 选择器。用户环境备注：取模型失败系本地代理 fake-IP DNS（198.18.0.0/15）被 net.py SSRF 防护拒绝，按用户要求不改代码，代理关闭/换模式即恢复。",
+      "dependencies": [
+        "feat-058"
+      ],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 184 passed（+2：test_activate_rejects_cross_typed_model、test_model_type_conversion_clears_stale_embed_selector）；npm run build green。浏览器实测（8010，settings.json 备份→还原）：使用按钮激活 deepseek-flash → /api/health llm ready 联动；API 直发跨类型激活 → 400 'BAAI/bge-m3 是向量模型，不能设为对话模型'；添加模型对话框把 bge-m3 重存为 chat → 类型转换与 embed 选择器保持均正确。"
     }
   ]
 }

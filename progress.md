@@ -204,6 +204,12 @@
   - **环境还原**：settings.json 恢复备份原状（含原有的跨类型选择器，由 resolve 逻辑在运行时自愈直至用户重选）、临时 checkpoint 删除、8010 端口释放、验收页签关闭。
   - **工具链记录**：本轮服务进程曾被外部终止一次（退出码 0xC000013A，日志无异常，期间仅 GET 请求）；IAB 中 Playwright `click()` 可操作性等待超时 + `cua`/`dom_cua` 点击间歇失灵时，evaluate 派发真实 DOM click 稳定可用（React 19 合成事件正常响应）；截图后端卡死通过重开标签页恢复。
 
+- [x] feat-060 模型设置交互修复 (2026-09-28): 用户实测报告三个问题——①获取模型后点击药丸"添加不了"；②点击药丸直接激活（用了不想用的模型）；③点击 embedding 模型药丸后横幅报"未配置对话模型"。根因：药丸点击统一走 `handleSelectModel`（自动添加 + **立即激活**），且 `alreadyExists` 只看 id 不看类型——硅基流动的 15 个模型当初在向量页签"全部添加"全部存成 embedding 类型，在对话页签它们永远显示"待添加"药丸，点击时既不加（id 已存在）又把 embedding 模型激活为对话模型 → `resolve_active_chat_model` 判选择器无效 → 横幅报错。
+  - **前端（点击 ≠ 使用）**：新增 `handleAddFetchedModel`——获取药丸点击只添加（upsert 时以当前页签类型重存，顺带纠正存量错类型条目，toast 分"已添加/已在列表中/类型已更正"三种）；已保存模型药丸点击只做表单选中（"已选择"高亮）。激活只剩显式路径：行内"使用"按钮、更多菜单"设为当前"、首页模型选择器。
+  - **后端写边界守卫**：`api_activate_provider` 对显式 model_id 校验存储类型，跨类型激活返回 400（`BAAI/bge-m3 是向量模型，不能设为对话模型`）；未存储的自由文本 id 仍放行（保留"模型可免获取直接切换"契约）。`api_save_provider_model` 类型转换时若转换的是当前激活 embed 模型 → 自动清空 embed 选择器，不留悬空指向。
+  - **用户环境备注（按用户要求不改代码）**：取模型失败是本地代理 fake-IP DNS（198.18.0.0/15 + 2001:2::/64）被 net.py SSRF 防护拒绝所致，代理换模式或关闭即恢复。
+  - **验证**：`python -m pytest -q` → **184 passed**（+2：跨类型激活 400 守卫、类型转换清空 embed 选择器）；`npm run build` green。浏览器实测（8010，settings.json 备份→还原）："使用"激活 deepseek-flash → health llm ready 联动；API 直发跨类型激活 → 400；添加模型对话框把 bge-m3 重存为 chat → 列表转换生效且 embed 选择器不受影响。获取药丸路径因代理环境无法在线上渲染，由后端测试 + 与对话框共用同一 saveProviderModel 链路覆盖。
+
 ## Notes for Next Session
 
 - Read `docs/ARCHITECTURE.md` first — it holds the full spec from the product brief.

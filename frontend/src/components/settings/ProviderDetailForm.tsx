@@ -79,6 +79,13 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
     handleSaveNewProvider,
   } = ctrl;
 
+  // Models the gateway offers that are not in this provider yet. Drives both the
+  // "N 个待添加" count and the 全部添加 button, so a fully-imported provider reads
+  // as finished instead of showing an empty block.
+  const pendingFetchedCount = filteredFetchedModels.filter(
+    (fm) => !currentModelList.some((m) => m.id === fm)
+  ).length;
+
   return (
     <div className="p-5 sm:p-6 space-y-5 max-w-2xl animate-fade-in">
       {/* Provider Header Toolbar */}
@@ -302,10 +309,15 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs text-zinc-500">
-                {fetchedModels.length > 0 ? "可用模型" : "已添加模型"}
+                可用模型
+                {/* Say what is still missing: after 全部添加 every pill moves to
+                    the saved list and this block would otherwise look broken. */}
+                {pendingFetchedCount > 0
+                  ? `（${pendingFetchedCount} 个待添加）`
+                  : "（已全部添加）"}
               </span>
 
-              {fetchedModels.length > 0 && (
+              {pendingFetchedCount > 0 && (
                 <button
                   type="button"
                   onClick={handleImportAllFetched}

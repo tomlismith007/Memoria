@@ -442,21 +442,28 @@ export const useProviderConfig = (isOpen: boolean) => {
 
     if (!selectedProvider) return;
     try {
-      for (const mId of fetchedModels.slice(0, 30)) {
-        if (!selectedProvider.models.some((m) => m.id === mId)) {
-          await api.saveProviderModel(selectedProvider.id, {
-            id: mId,
-            name: mId,
-            tags: [deriveTag(mId, settingsTab === "embedding")],
-            enabled: true,
-            model_type: settingsTab,
-          });
-        }
+      const pending = fetchedModels
+        .slice(0, 30)
+        .filter((mId) => !selectedProvider.models.some((m) => m.id === mId));
+      for (const mId of pending) {
+        await api.saveProviderModel(selectedProvider.id, {
+          id: mId,
+          name: mId,
+          tags: [deriveTag(mId, settingsTab === "embedding")],
+          enabled: true,
+          model_type: settingsTab,
+        });
       }
       const refreshed = await api.getProviders();
       setProviders(refreshed.providers);
       syncToLocalStorage(refreshed.providers, activeProviderId, activeChatModel);
-      showToast("success", `已批量导入模型至列表`);
+      // Say what actually changed: a bare "已导入" reads the same whether 1 or
+      // 30 models landed, and the pending pills vanishing is otherwise the only
+      // signal that anything happened.
+      showToast(
+        "success",
+        pending.length > 0 ? `已添加 ${pending.length} 个模型` : "所有模型均已添加"
+      );
     } catch (e: any) {
       showToast("error", e.message || "批量导入失败");
     }

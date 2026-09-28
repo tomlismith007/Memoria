@@ -3,8 +3,17 @@
 ## Current Objective
 
 - Goal: Maintain the full-stack Memoria personal knowledge system — React 19 + TypeScript + Tailwind frontend, FastAPI Web API, LangGraph orchestration.
-- Current status: feat-001..feat-045 completed. The 2026-09-25 roadmap (feat-023, feat-032..feat-037) landed earlier; this session (2026-09-27) added **feat-040..feat-045** — a five-item LLM cost-and-caching remediation derived from studying five open-source agent codebases, plus the project decision that **LangGraph is the formal production orchestrator**.
-- Working tree: **dirty and uncommitted**. It carries changes from two sessions: the 2026-09-26 SettingsModal refactor (split into `settings/useProviderConfig.ts`, `ProviderDetailForm.tsx`, `ModelFormDialog.tsx`; 1695 → 148 lines) and the 2026-09-27 cache/cost work. Nothing from either session is committed. See "Commit State" below.
+- Current status: feat-001..feat-049 completed（除 feat-046 标记 wont-fix）。The 2026-09-25 roadmap (feat-023, feat-032..feat-037) landed earlier; 2026-09-27 added **feat-040..045**（LLM 缓存与调用开销整改 + LangGraph 正式编排器）与 **feat-047..049**（配置缺失早暴露）。计划文档 `docs/NEXT_PLAN.md`。
+- Working tree: **clean**。四个提交已落地：`a00eabe`（SettingsModal 拆分 + 后端死代码清理）、`257f3b0`（`/api/agent` 补漏）、`3d7b144`（feat-040..045）、`bd45d32`（feat-047..049）。
+
+## 阻塞项：需要用户配置 embedding 供应商
+
+`data/settings.json`（未被 git 跟踪）的嵌入配置不完整。商汤网关不提供
+`/embeddings` 端点（`sensenova-embedding` / `embedding-2` / `BAAI/bge-m3` 均 404），
+用户需自行补一个可用的 embedding 供应商才能恢复问答与摄入。
+
+feat-047..049 已让这个缺口**可见且可行动**（`/api/health` 报 `embed.ready:false`、
+端点返回带指引的 502、前端显示提示条），但**无法替用户决定用哪家的 embedding 服务**。
 
 ## Completed This Session (2026-09-27)
 
@@ -32,27 +41,31 @@
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| 后端全量 | `python -m pytest -q` | **137 passed** (12.9s) | 基线 118 → +19：wiki 5、answer 2、graph 1、mail 4（feat-040..043），cli 4 + web 3（feat-045） |
+| 后端全量 | `python -m pytest -q` | **145 passed** (13.9s) | 基线 118 → +27：feat-040..043 +12、feat-045 +7、feat-047..049 +8 |
 | 前端构建 | `cd frontend && npm run build` | green | 1607 modules |
 | 专项 | `pytest tests/test_wiki_ops.py` | 13 passed | 含 5 个新增缓存布局测试 |
 | 专项 | `pytest tests/test_rag_answer.py` | 12 passed | 含 2 个缓存标记边界测试 |
 | 专项 | `pytest tests/test_mail_triage.py` | 10 passed | 含 4 个批量分类测试（含红线） |
 | 专项 | `pytest tests/test_graph.py` | 10 passed | 含 token 预算截断测试 |
 | 专项 | `pytest tests/test_cli.py` | 7 passed | 含 4 个 CLI 走图的守卫测试 |
+| 专项 | `pytest tests/test_web_api.py` | 52 passed | 含 8 个配置就绪度与 502 指引测试 |
 | 手工 | `python -m memoria --help` / `agent "测试"` | pass | 四子命令可见；agent 的 traceback 停在 router 节点，证明路由真实发生 |
 
 **尚未做的验证**：本轮无浏览器验证（纯后端改动，未触及 UI）。`feat-041` 的 `cache_control` 未经真实 Anthropic 网关验证——仅离线断言了请求体结构。若要确认缓存实际命中，需用真实网关观察 `cache_read_input_tokens`。`/api/agent` 的邮件分支（停在人工确认中断并返回 thread_id）只有单元测试覆盖，未做过端到端手工验证。
 
 ## Commit State
 
-**工作区脏，未提交。** 本次会话与上次会话的改动混在一起：
+工作区**干净**，本轮四个提交均已落地：
 
-- 2026-09-27（本次）：`src/memoria/{wiki/ops.py, llm.py, graph/nodes.py, graph/state.py, mail/classify.py, mail/__init__.py}` + 5 个测试文件 + `docs/{UPGRADE_SPEC.md, ARCHITECTURE.md}` + `README.md`、`feature_list.json`、`progress.md`
-- 2026-09-26（上次）：`frontend/src/components/ui/{SettingsModal.tsx, PillBadge.tsx, PillButton.tsx, RoundedCard.tsx}`、`frontend/src/types.ts`、`src/memoria/{net.py, web/*, rag/*}`、`tests/{test_graph.py, test_rag_ingest.py}` + 3 个新增 settings 组件
+```
+bd45d32 feat(config): 配置缺失早暴露，不再伪装成网络故障 (feat-047..049)
+3d7b144 feat(perf): LLM 缓存布局、调用折叠与 LangGraph 正式编排器 (feat-040..045)
+257f3b0 feat(api): 新增 POST /api/agent 自由文本端点 (feat-045 补漏)
+a00eabe refactor(settings): 拆分 SettingsModal 并清理后端死代码
+```
 
-`git status` 中的其余后端改动（`net.py`、`web/{app,config}.py`、`rag/{__init__,ingest}.py`、`web/__init__.py`）**已核对，属 2026-09-26 的 ponytail 死代码清理**，对应 `progress.md` 中记录的：`_host_header` 死端口三元组（`_validate_url` 已强制 443，参数随之删除）、`rag/ingest.delete_document` 纯委托删除、`config._is_public_url(allow_empty=…)` 未使用参数、`web/__init__` 的 `create_app` 再导出、`app.py` 的 `except HTTPException: raise`。
-
-即：**后端改动可干净地拆成两个提交**（2026-09-26 清理 / 2026-09-27 cache+cost），前端 `SettingsModal` 等属上次的 UI 重构。仍建议提交前完整过一遍 `git diff`，但不必再追查来源。
+注：3d7b144 的 commit message 声明了 feat-045 但漏暂存 `web/app.py`，
+已由 257f3b0 补上。混合改动的文件不能整块暂存——下次提交前逐个核对。
 
 ## Key Decisions
 
@@ -69,7 +82,7 @@
 
 1. 运行 `pwsh -NoProfile -File ./init.ps1`（Bash 下 `./init.sh`）。
 2. 阅读 `AGENTS.md` → `docs/ARCHITECTURE.md`（注意新增第 7 节）→ `docs/UPGRADE_SPEC.md` → `feature_list.json` → `progress.md` → 本文件。
-3. **先处理 Commit State**：逐个 `git diff` 确认来源不明的文件，再决定提交拆分。提交信息应区分 2026-09-26 的 SettingsModal 重构与 2026-09-27 的 cache/cost 工作。
+3. **提交前逐个核对暂存清单**：3d7b144 曾因整块暂存混合改动的 `web/app.py` 而漏提交 `/api/agent`。混合来源的文件要拆分或单独成 commit。
 4. **若继续 feat-045 的后续**：`/api/agent` 目前只有后端与测试，无前端入口。是否加 AskView 的自由文本模式由用户决定。
 5. 剩余可选项：feat-038（多步 ingest 图循环）、feat-039（SSE 流式）—— 均为 `todo`，未被要求时不要动。
 6. **可考虑的后续优化**（未登记为 feature，需用户确认）：`chat_completions` 路径的 `prompt_cache_key` 支持（需先确认目标网关）、embedding 向量缓存（当前每次查询都重新 embedding）、`KEEP_RECENT_TOKENS` 接真 tokenizer。

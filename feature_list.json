@@ -460,6 +460,34 @@
       "dependencies": [],
       "status": "wont-fix",
       "evidence": "已评估并记录为 wont-fix。ZCode 的 architecture-policy.yaml 门禁对单人项目成本高于收益；config_routes.py 555 行超 400 行门槛但无实际阻塞。详见 docs/UPGRADE_SPEC.md §3.7"
+    },
+    {
+      "id": "feat-047",
+      "name": "/api/health reports real capability readiness",
+      "description": "背景：浏览器验收时 /api/ask 与 /api/ingest 全部 502，/api/health 却返回 {status:ok} —— 系统报告健康但实际不可用。根因：Settings 的 embed_base_url/embed_model 带默认值（text-embedding-3-small），无法区分「用户选的」与「从没配过」；真正的信号是 active_embed_provider_id / active_embed_model 这类空选择器，而 create_app 启动时根本不加载 settings（只在配置路由被调用时读），所以健康检查对此完全失明。方案：config.py 新增 capability_status() 作为唯一判定处（健康检查、端点守卫、前端提示条共用），create_app 启动时加载一次 settings 并跟踪 current_settings。status 字段语义不变（仍为进程存活），新增 capabilities 明细。就绪判定必须校验 API Key 为真实值 —— sk-1234567890 这类设置期占位串会被误判为已配置（_key_is_real + _PLACEHOLDER_KEYS）。验收：实测 /api/health 的 capabilities.embed.ready 由错误的 true 变为正确的 false。",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "web/config.py: 新增 capability_status()、_key_is_real()、_PLACEHOLDER_KEYS、EMBED_MISSING_HINT / LLM_MISSING_HINT。web/app.py: create_app 启动时 load_settings() 并跟踪 current_settings，/api/health 追加 capabilities 字段。测试：test_health 改为断言 status + capabilities；新增 3 个就绪判定测试（缺嵌入/已配置/缺对话）。实测 GET /api/health → embed.ready=false 且 reason 指向「设置 → 向量模型」。pytest 137 → 143 passed。"
+    },
+    {
+      "id": "feat-048",
+      "name": "Actionable 502 when a required capability is unconfigured",
+      "description": "问题：/api/ask 与 /api/ingest 的 502 detail 是「[WinError 10060] 由于连接方在一段时间后没有正确答复」，外加 180 秒超时。真实原因是没配向量模型，但用户无从得知。方案：app.py 新增 _require(capability) 守卫，在 /api/ask、/api/ingest（含/api/ingest/file 共用 run_ingest）、/api/agent 的问答分支调用图之前校验，未就绪时直接抛带指引的 502。仅拦截配置确实缺失的情况 —— 注入依赖（测试）与demo mode 一律放行，其他错误仍走原路径不被吞掉。验收：实测同一场景从「180 秒超时 + WinError 10060」变为「即时返回 + 未配置向量模型：请在「设置 → 向量模型」中添加并启用一个 embedding 供应商后重试」。",
+      "dependencies": [
+        "feat-047"
+      ],
+      "status": "completed",
+      "evidence": "web/app.py: 新增 _require(capability)；在 api_ask、run_ingest、api_agent 的问答分支前置调用。测试：test_missing_embedding_config_returns_actionable_502 驱动真实守卫（monkeypatch app_mod.load_settings 模拟验收时的配置），断言 ask 与 ingest 均返回 502 且 detail 含「向量模型」「设置」；test_configured_embedding_is_not_blocked 断言已配置时不拦截；test_injected_embedder_is_never_blocked 断言注入依赖永远不被拦。pytest 143 → 145 passed。"
+    },
+    {
+      "id": "feat-049",
+      "name": "Front-end banner + status badge for missing capability config",
+      "description": "问题：设置页「向量模型 → 暂无模型」与问答页的原始 502 之间没有任何联系，用户要等提问失败才知道自己缺配置。方案：App.tsx 启动时与设置关闭后拉一次 /api/health，embed（或 llm）未就绪时在 main 顶部渲染琥珀色提示条，含原因文案与「去设置」按钮（点击打开设置弹窗）。types.ts 补 HealthResponse / CapabilityStatus，api.ts 补 getHealth()。同时修正一个自相矛盾：顶栏状态徽标原本恒显示绿点 +「本地就绪」，与提示条冲突，改为未就绪时显示琥珀点 + 「配置待补全」。验收：浏览器实测提示条正确显示、点击「去设置」成功打开弹窗、顶栏徽标与提示条一致。",
+      "dependencies": [
+        "feat-047"
+      ],
+      "status": "completed",
+      "evidence": "frontend/src/types.ts: 新增 CapabilityStatus / HealthResponse。frontend/src/api.ts: 新增 getHealth()。frontend/src/App.tsx: 新增 notReadyReason 状态 + refreshHealth()（在 settingsOpen 变化时随 refreshModelInfo 一并触发），main 顶部条件渲染提示条（amber-50 底 + TriangleAlert 图标 + PillButton「去设置」），顶栏徽标改为随 notReadyReason 切换绿/琥珀点与文案。浏览器验收（ZCode Computer Use）：提示条文案与 /api/health 的 reason 一致；「去设置」点击后「模型设置」弹窗可见（Playwright click 超时，改用 cua 坐标点击，与 progress.md 记录的该环境特性一致）；顶栏显示琥珀点 +「配置待补全」。npm run build green（tsc 零诊断）。"
     }
   ]
 }

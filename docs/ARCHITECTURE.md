@@ -77,7 +77,7 @@ FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感
 | 前端工程 | Vite + React 19 + TypeScript 5.7 + Tailwind v3 | 秒级构建、类型安全；圆角卡片 (`rounded-3xl`) 与胶囊按键 (`rounded-full`) 设计系统。**无状态管理库、无 markdown 库、无组件库**——`useState` + 手写 `MarkdownRenderer.tsx` + 7 个自建 UI 基础组件；运行时依赖仅 `react` / `react-dom` / `lucide-react` |
 | 邮件接入 | Gmail API + OAuth（本地离线/交互授权生成 token.json） | 最小权限（只读 + 归档写权限）；凭据只放本地密钥文件，永不入库 |
 | 文档解析 | pypdf（PDF）/ Markdown 直接读 / 网页抽取 | 够用优先；重型解析（OCR、复杂表格）需求出现再换 |
-| 测试 | pytest（137 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 13 秒跑完 |
+| 测试 | pytest（145 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 13 秒跑完 |
 | Python 环境 | >= 3.11 | 本机 3.14，CI 亦用 3.14；标准库优先，离线单元测试 100% 模拟隔离 |
 
 ## 5. 关键约束（红线 — 永不违反）
@@ -137,6 +137,31 @@ Provider 的前缀缓存只在**字节完全相同**的前缀上命中，因此 
 **禁止**在遍历循环里逐个调用 LLM。`graph/nodes.py` 的邮件分拣曾用 `[classify(e, llm) for e in emails]`，N 封邮件 N 次 HTTP 往返；现已改为 `classify_batch()` 单次调用。
 
 折叠调用时**红线判定不得一并折叠**：`is_protected` 仍逐封独立执行，批量只作用于 LLM 分类与摘要那一步。
+
+### 7.5 配置缺失必须早暴露，不能伪装成网络故障
+
+`Settings` 的 `embed_base_url` / `embed_model` / `llm_model` 带有默认值
+（`text-embedding-3-small` 等），因此**无法从这些字段区分"用户选的"和"从没配过"**。
+真正的信号是 `active_embed_provider_id` / `active_embed_model` 这类空字符串选择器。
+
+由此产生的失真路径（feat-047..049 修复）：
+
+```
+未配向量模型 → 默认值兜底 → 指向 api.deepseek.com → 连接超时 180s
+            → WinError 10060 → 用户完全不知道该去设置里改什么
+```
+
+强制规则：
+
+1. `/api/health` 必须报告 `capabilities.{llm,embed}.ready` 与 `reason`，
+   `status` 字段仅表示进程存活，不得代表依赖可用
+2. 依赖 `/api/agent`（问答分支）、`/api/ask`、`/api/ingest` 在调用图之前
+   校验就绪状态，未就绪时返回**带指引的 502**，不得让请求跑到网络层超时
+3. 判定就绪必须校验 API Key 为真实值——`sk-1234567890` 这类设置期占位串
+   会被误判为已配置（`_key_is_real`）
+4. 前端顶栏状态徽标必须与提示条一致，不得在缺失配置时仍显示"本地就绪"
+
+新增依赖 LLM 能力的路径时，一并接入 `capability_status` 判定。
 
 ## 8. 非目标（明确不做）
 

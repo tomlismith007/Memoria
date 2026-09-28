@@ -73,7 +73,207 @@ def test_health(api_client):
     client, _, _ = api_client
     resp = client.get("/api/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok", "version": "0.1.0"}
+    body = resp.json()
+    # feat-047: status stays "ok" (process liveness), capabilities carry readiness.
+    assert body["status"] == "ok"
+    assert body["version"] == "0.1.0"
+    # Injected fakes are ready by construction.
+    assert body["capabilities"]["llm"]["ready"] is True
+    assert body["capabilities"]["embed"]["ready"] is True
+
+
+def test_health_reports_missing_embedding_config(tmp_path):
+    """feat-047: a missing embedding config must be visible, not a silent timeout later."""
+    from memoria.web.config import (
+        EMBED_MISSING_HINT,
+        CustomProvider,
+        Settings,
+        capability_status,
+    )
+
+    # What the acceptance run actually looked like: selectors empty, defaults filled in.
+    settings = Settings(
+        active_provider_id="p1",
+        active_chat_model="m1",
+        active_embed_provider_id="",
+        active_embed_model="",
+        embed_base_url="https://api.deepseek.com/v1",
+        embed_api_key="",
+        embed_model="text-embedding-3-small",  # the default, not a user choice
+        providers=[CustomProvider(id="p1", name="p1", base_url="https://x.example/v1")],
+    )
+    caps = capability_status(settings)
+    assert caps["llm"]["ready"] is True
+    assert caps["embed"]["ready"] is False
+    assert caps["embed"]["reason"] == EMBED_MISSING_HINT
+    assert caps["embed"]["model"] == ""  # the default must not be reported as configured
+
+
+def test_health_reports_ready_when_embedding_is_configured():
+    from memoria.web.config import Settings, capability_status
+
+    settings = Settings(
+        active_provider_id="p1",
+        active_chat_model="m1",
+        active_embed_model="text-embedding-3-large",
+        embed_api_key="sk-real",
+        embed_model="text-embedding-3-large",
+    )
+    caps = capability_status(settings)
+    assert caps["embed"]["ready"] is True
+    assert caps["embed"]["model"] == "text-embedding-3-large"
+    assert caps["embed"]["reason"] == ""
+
+
+def test_health_reports_missing_chat_model():
+    from memoria.web.config import LLM_MISSING_HINT, Settings, capability_status
+
+    caps = capability_status(Settings())
+    assert caps["llm"]["ready"] is False
+    assert caps["llm"]["reason"] == LLM_MISSING_HINT
+
+
+# Dummy keys shaped like the setup placeholder. These are NOT real credentials;
+# the point of the tests below is that they must not read as configured.
+PLACEHOLDER_KEY = "-".join(["sk", "1234567890"])
+FAKE_KEY = "sk-" + "not-a-real-credential"
+
+
+def test_placeholder_api_key_does_not_count_as_configured():
+    """feat-049: a leftover setup placeholder must not read as a working key.
+
+    The acceptance run had a placeholder embed key with no embedding provider
+    selected, which the first version of this check wrongly called "ready".
+    """
+    from memoria.web.config import EMBED_MISSING_HINT, Settings, capability_status
+
+    settings = Settings(
+        active_provider_id="p1",
+        active_chat_model="m1",
+        active_embed_provider_id="",
+        active_embed_model="",
+        embed_api_key=PLACEHOLDER_KEY,
+        embed_model="text-embedding-3-small",
+    )
+    caps = capability_status(settings)
+    assert caps["embed"]["ready"] is False
+    assert caps["embed"]["reason"] == EMBED_MISSING_HINT
+
+    # A non-placeholder key plus a model is accepted.
+    ok = Settings(
+        active_provider_id="p1",
+        active_chat_model="m1",
+        embed_api_key=FAKE_KEY,
+        embed_model="text-embedding-3-small",
+    )
+    assert capability_status(ok)["embed"]["ready"] is True
+
+
+def test_embedding_provider_with_placeholder_key_is_not_ready():
+    from memoria.web.config import CustomProvider, Settings, capability_status
+
+    settings = Settings(
+        active_provider_id="p1",
+        active_chat_model="m1",
+        active_embed_provider_id="p1",
+        active_embed_model="emb-1",
+        providers=[
+            CustomProvider(
+                id="p1", name="p1", base_url="https://x.example/v1", api_key=PLACEHOLDER_KEY
+            )
+        ],
+    )
+    assert capability_status(settings)["embed"]["ready"] is False
+
+
+def test_missing_embedding_config_returns_actionable_502(tmp_path, monkeypatch):
+    """feat-048: ask/ingest must say what to fix instead of leaking a socket timeout.
+
+    Drives the real guard with the acceptance run's settings: chat configured,
+    embedding selector empty, no injected embedder.
+    """
+    from memoria.web import app as app_mod
+    from memoria.web.config import EMBED_MISSING_HINT, CustomProvider, Settings
+
+    unconfigured = Settings(
+        active_provider_id="p1",
+        active_chat_model="m1",
+        active_embed_model="",
+        providers=[CustomProvider(id="p1", name="p1", base_url="https://x.example/v1")],
+    )
+    # app.py imported load_settings by name, so patch the reference it uses.
+    monkeypatch.setattr(app_mod, "load_settings", lambda *a, **kw: unconfigured)
+
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    app = create_app(
+        {
+            "store": ChromaStore(path=str(tmp_path / "chroma")),
+            "wiki": wiki,
+            "checkpointer": MemorySaver(),
+        }
+    )
+    client = TestClient(app)
+
+    health = client.get("/api/health").json()
+    assert health["capabilities"]["embed"]["ready"] is False
+
+    ask = client.post("/api/ask", json={"question": "hi"})
+    assert ask.status_code == 502
+    assert ask.json()["detail"] == EMBED_MISSING_HINT
+    assert "向量模型" in ask.json()["detail"]
+
+    ing = client.post("/api/ingest", json={"text": "x", "origin": "n.txt"})
+    assert ing.status_code == 502
+    assert ing.json()["detail"] == EMBED_MISSING_HINT
+
+
+def test_configured_embedding_is_not_blocked(tmp_path, monkeypatch):
+    """feat-048: the guard only fires on a genuinely missing config."""
+    from memoria.web import app as app_mod
+    from memoria.web.config import CustomProvider, Settings
+
+    ready = Settings(
+        active_provider_id="p1",
+        active_chat_model="m1",
+        active_embed_model="text-embedding-3-large",
+        embed_api_key=FAKE_KEY,
+        providers=[CustomProvider(id="p1", name="p1", base_url="https://x.example/v1")],
+    )
+    monkeypatch.setattr(app_mod, "load_settings", lambda *a, **kw: ready)
+
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    app = create_app(
+        {
+            "store": ChromaStore(path=str(tmp_path / "chroma")),
+            "wiki": wiki,
+            "checkpointer": MemorySaver(),
+            "llm": SmartChat(),
+        }
+    )
+    client = TestClient(app)
+    assert client.get("/api/health").json()["capabilities"]["embed"]["ready"] is True
+    # Not blocked by the guard — it proceeds to the real call path.
+    resp = client.post("/api/ask", json={"question": "hi"})
+    assert "未配置向量模型" not in resp.text
+
+
+def test_injected_embedder_is_never_blocked(tmp_path):
+    """feat-048: tests and demo mode inject fakes; the guard must stand aside."""
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    app = create_app(
+        {
+            "store": ChromaStore(path=str(tmp_path / "chroma")),
+            "embedder": FakeEmbedder(),
+            "llm": SmartChat(),
+            "wiki": wiki,
+            "checkpointer": MemorySaver(),
+        }
+    )
+    client = TestClient(app)
+    assert client.get("/api/health").json()["capabilities"]["embed"]["ready"] is True
 
 
 def test_default_checkpointer_is_sqlite(tmp_path):

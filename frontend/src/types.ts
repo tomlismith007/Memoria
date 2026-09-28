@@ -106,3 +106,19 @@ export interface ProvidersConfigResponse {
   active_embed_model: string;
   providers: CustomProvider[];
 }
+
+/** feat-049: which LLM capabilities are actually configured. */
+export interface CapabilityStatus {
+  ready: boolean;
+  model: string;
+  reason: string;
+}
+
+export interface HealthResponse {
+  status: string;
+  version: string;
+  capabilities?: {
+    llm: CapabilityStatus;
+    embed: CapabilityStatus;
+  };
+}

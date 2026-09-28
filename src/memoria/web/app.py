@@ -25,7 +25,7 @@ from memoria.llm import ChatLLM, OpenAICompatibleChat
 from memoria.mail import Email, request_archive
 from memoria.rag import ChromaStore, Citation, OpenAICompatibleEmbedder, doc_id_for_origin
 from memoria.sync import archive_qa, archive_fact
-from memoria.web.config import Settings
+from memoria.web.config import Settings, capability_status, load_settings
 from memoria.web.config_routes import register_config_routes
 from memoria.wiki import Wiki, extract_links, lint as wiki_lint
 
@@ -132,8 +132,19 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
 
     compiled_graph = build_compiled()
 
+    # feat-047: tracked so /api/health can report real readiness. Loaded once at
+    # startup because the config routes only read settings on demand, which left
+    # the health check blind to a missing embedding config.
+    current_settings: Settings | None = None
+    if "llm" not in overrides or "embedder" not in overrides:
+        try:
+            current_settings = load_settings()
+        except Exception:
+            current_settings = None  # unreadable settings: fall back to live probes
+
     def activate_settings(settings: Settings) -> None:
-        nonlocal llm, embedder, compiled_graph
+        nonlocal llm, embedder, compiled_graph, current_settings
+        current_settings = settings
         if settings.demo_mode:
             from memoria.llm import FakeChat
             from memoria.rag import FakeEmbedder
@@ -201,14 +212,37 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
 
     register_config_routes(app, activate_settings=activate_settings)
 
+    def _require(capability: str) -> None:
+        """feat-048: fail with an instruction, not a socket timeout.
+
+        Only intercepts a genuinely missing config. Injected deps (tests) and demo
+        mode are ready by construction; every other error keeps its original path.
+        """
+        if current_settings is None or "embedder" in overrides:
+            return
+        caps = capability_status(current_settings)
+        if not caps[capability]["ready"]:
+            raise HTTPException(status_code=502, detail=caps[capability]["reason"])
+
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": "0.1.0"}
+        # feat-047: process liveness was reported as "ok" even when the embedding
+        # config was missing and every ask/ingest call failed with a socket timeout.
+        body: dict[str, Any] = {"status": "ok", "version": "0.1.0"}
+        if current_settings is None:
+            body["capabilities"] = {
+                "llm": {"ready": True, "model": "injected", "reason": ""},
+                "embed": {"ready": True, "model": "injected", "reason": ""},
+            }
+        else:
+            body["capabilities"] = capability_status(current_settings)
+        return body
 
     @app.post("/api/ask")
     def api_ask(req: AskRequest):
         # conversation_id is the LangGraph thread: the checkpointer replays the
         # prior turns (feat-034) and survives restarts via SqliteSaver.
+        _require("embed")
         conversation_id = req.conversation_id or uuid.uuid4().hex
         config = {"configurable": {"thread_id": conversation_id}}
         try:
@@ -245,6 +279,8 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         """
         conversation_id = req.conversation_id or uuid.uuid4().hex
         config = {"configurable": {"thread_id": conversation_id}}
+        if not req.intent or req.intent == "问答":
+            _require("embed")  # only the qa branch reaches the vector store
         payload: dict[str, Any] = {"text": req.text}
         if req.intent:
             payload["intent"] = req.intent
@@ -463,6 +499,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         }
 
     def run_ingest(source_path: Path, origin: str) -> dict:
+        _require("embed")
         config = {"configurable": {"thread_id": uuid.uuid4().hex}}
         try:
             result = compiled_graph.invoke(

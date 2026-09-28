@@ -79,6 +79,67 @@ class ModelsRequest(BaseModel):
     api_format: ApiFormat = API_FORMAT_CHAT_COMPLETIONS
 
 
+EMBED_MISSING_HINT = "未配置向量模型：请在「设置 → 向量模型」中添加并启用一个 embedding 供应商后重试。"
+LLM_MISSING_HINT = "未配置对话模型：请在「设置 → 对话模型」中选择一个启用的模型后重试。"
+
+# A stored key is not proof of a working one: a placeholder left over from
+# setup ("sk-1234567890") would otherwise read as configured and the first real
+# call would still fail. Treat obvious dummy values as unset.
+_PLACEHOLDER_KEYS = {
+    "sk-1234567890",
+    "sk-xxxxxxx",
+    "your-api-key",
+    "changeme",
+}
+
+
+def _key_is_real(key: str) -> bool:
+    return bool(key) and key.strip() != "" and key.strip().lower() not in _PLACEHOLDER_KEYS
+
+
+def capability_status(settings: Settings) -> dict[str, dict[str, str | bool]]:
+    """Report whether each LLM capability is actually configured.
+
+    The empty-string active_* fields are the signal: the *_base_url / *_model
+    fields carry defaults, so they cannot distinguish "the user chose this" from
+    "nothing was ever configured". Checking the selectors keeps /api/health honest
+    and lets the endpoints fail with an instruction instead of a socket timeout.
+    """
+    providers = {p.id: p for p in settings.providers}
+    chat_provider = providers.get(settings.active_provider_id)
+    chat_model = settings.active_chat_model
+    if not chat_model and chat_provider and chat_provider.models:
+        chat_model = next(
+            (m.id for m in chat_provider.models if m.enabled and m.model_type == "chat"),
+            chat_provider.models[0].id if chat_provider.models else "",
+        )
+
+    embed_provider = providers.get(settings.active_embed_provider_id)
+    if embed_provider is not None and embed_provider.enabled:
+        embed_ready = bool(settings.active_embed_model) and _key_is_real(
+            embed_provider.api_key or ""
+        )
+    else:
+        # No provider selected: the standalone embed_* fields must carry a real key.
+        embed_ready = _key_is_real(settings.embed_api_key) and bool(settings.embed_model)
+    llm_ready = bool(chat_model)
+
+    return {
+        "llm": {
+            "ready": llm_ready,
+            "model": chat_model or settings.llm_model,
+            "reason": "" if llm_ready else LLM_MISSING_HINT,
+        },
+        "embed": {
+            "ready": embed_ready,
+            "model": (
+                (settings.active_embed_model or settings.embed_model) if embed_ready else ""
+            ),
+            "reason": "" if embed_ready else EMBED_MISSING_HINT,
+        },
+    }
+
+
 class TestConfigRequest(BaseModel):
     llm_base_url: str = DEFAULT_LLM_BASE_URL
     llm_api_key: str = ""

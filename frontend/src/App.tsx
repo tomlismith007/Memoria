@@ -5,10 +5,11 @@ import { WikiView } from "./views/WikiView";
 import { MailView } from "./views/MailView";
 import { IngestView } from "./views/IngestView";
 
-import { Settings } from "lucide-react";
+import { Settings, TriangleAlert } from "lucide-react";
 import { SettingsModal } from "./components/ui/SettingsModal";
+import { PillButton } from "./components/ui/PillButton";
 import { api } from "./api";
-import type { ProvidersConfigResponse } from "./types";
+import type { HealthResponse, ProvidersConfigResponse } from "./types";
 
 interface ActiveModelInfo {
   providerName: string;
@@ -26,6 +27,24 @@ export const App: React.FC = () => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelInfo, setModelInfo] = useState<ActiveModelInfo>(DEFAULT_MODEL_INFO);
   const [providersData, setProvidersData] = useState<ProvidersConfigResponse | null>(null);
+  // feat-049: warn about a missing embedding config up front, instead of letting
+  // the first question fail with a raw socket-timeout 502.
+  const [notReadyReason, setNotReadyReason] = useState("");
+
+  const refreshHealth = useCallback(async () => {
+    try {
+      const data: HealthResponse = await api.getHealth();
+      const caps = data.capabilities;
+      if (!caps) {
+        setNotReadyReason("");
+        return;
+      }
+      const missing = [caps.llm, caps.embed].filter((c) => !c.ready);
+      setNotReadyReason(missing.length > 0 ? missing[0].reason : "");
+    } catch {
+      setNotReadyReason("");
+    }
+  }, []);
 
   const refreshModelInfo = useCallback(async () => {
     try {
@@ -51,7 +70,8 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (settingsOpen) return;
     refreshModelInfo();
-  }, [settingsOpen, refreshModelInfo]);
+    refreshHealth();
+  }, [settingsOpen, refreshModelInfo, refreshHealth]);
 
   const handleSelectModel = useCallback(
     async (providerId: string, modelId: string) => {
@@ -85,9 +105,17 @@ export const App: React.FC = () => {
           <SegmentedNav activeTab={activeTab} onChange={setActiveTab} />
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            {/* feat-049: the badge must not claim "ready" while a capability is
+                missing — the banner below would otherwise contradict it. */}
             <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="hidden sm:inline">本地就绪</span>
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  notReadyReason ? "bg-amber-500" : "bg-emerald-500 animate-pulse"
+                }`}
+              ></span>
+              <span className="hidden sm:inline">
+                {notReadyReason ? "配置待补全" : "本地就绪"}
+              </span>
             </div>
             <button
               type="button"
@@ -105,6 +133,22 @@ export const App: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 min-w-0 max-w-5xl w-full mx-auto px-4 md:px-8 py-4 flex flex-col">
+        {notReadyReason && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3">
+            <TriangleAlert className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+            <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-amber-900">
+              {notReadyReason}
+            </p>
+            <PillButton
+              variant="outline"
+              size="sm"
+              icon={<Settings className="h-3.5 w-3.5" aria-hidden="true" />}
+              onClick={() => setSettingsOpen(true)}
+            >
+              去设置
+            </PillButton>
+          </div>
+        )}
         {activeTab === "ask" && (
           <AskView
             onNavigateWiki={handleNavigateWiki}

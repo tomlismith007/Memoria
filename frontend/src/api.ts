@@ -4,6 +4,7 @@ import type {
   CustomModel,
   CustomProvider,
   DocumentListResponse,
+  HealthResponse,
   IngestResponse,
   MailItem,
   ModelApiFormat,
@@ -100,6 +101,9 @@ export const api = {
   },
 
   getProviders: () => request<ProvidersConfigResponse>("/api/config/providers"),
+
+  // feat-049: readiness, so the UI can warn before a call fails with a raw 502.
+  getHealth: () => request<HealthResponse>("/api/health"),
 
   saveProvider: (provider: {
     id?: string;

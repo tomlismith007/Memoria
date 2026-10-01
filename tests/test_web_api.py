@@ -1599,6 +1599,60 @@ def test_save_provider_models_batch(api_client, monkeypatch):
     assert resp_404.status_code == 404
 
 
+def test_model_save_routes_agree_on_blank_ids(api_client, monkeypatch):
+    """feat-065: the single and batch model endpoints share one upsert helper.
+
+    They do not share blank-id handling, and that difference is the contract:
+    a blank id on the single endpoint is a client error, while the batch
+    endpoint (which also accepts an empty list as a no-op) skips it. Pin both
+    so the shared helper cannot quietly unify them.
+    """
+    from memoria.web.config import Settings
+    client, _, _ = api_client
+    current = Settings()
+    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current.model_copy(deep=True))
+
+    def save_current(s):
+        nonlocal current
+        current = s.model_copy(deep=True)
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+
+    save_resp = client.post(
+        "/api/config/providers",
+        json={
+            "id": "p-blank",
+            "name": "BlankProvider",
+            "base_url": "https://api.blank.example/v1",
+            "api_key": FAKE_KEY,
+            "scope": "chat",
+        },
+    )
+    assert save_resp.status_code == 200
+
+    # Single: blank id is a 400.
+    resp = client.post("/api/config/providers/p-blank/models", json={"id": "   "})
+    assert resp.status_code == 400
+
+    # Batch: blank ids are skipped, and an empty payload is a valid no-op.
+    resp = client.post(
+        "/api/config/providers/p-blank/models/batch",
+        json={"models": [{"id": ""}, {"id": "  "}]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["provider"]["models"] == []
+
+    resp = client.post("/api/config/providers/p-blank/models/batch", json={"models": []})
+    assert resp.status_code == 200
+    assert resp.json()["provider"]["models"] == []
+
+    # A real id still round-trips through the same helper.
+    resp = client.post(
+        "/api/config/providers/p-blank/models/batch",
+        json={"models": [{"id": "m-ok", "name": "OK", "model_type": "chat"}]},
+    )
+    assert [m["id"] for m in resp.json()["provider"]["models"]] == ["m-ok"]
+
+
 def test_rag_reindex_requires_embed_ready(tmp_path, monkeypatch):
     """feat-064: POST /api/rag/reindex must return 502 with hint if embedding is unconfigured."""
     from memoria.web import app as app_mod

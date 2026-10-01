@@ -8,6 +8,7 @@ import type {
   MailItem,
   ModelApiFormat,
   ProvidersConfigResponse,
+  TestResultResponse,
   WikiListResponse,
   WikiPageDetail,
 } from "./types";
@@ -170,18 +171,13 @@ export const api = {
     ),
 
   testProvider: (providerId: string, modelId?: string, modelType: "chat" | "embedding" = "chat") =>
-    request<{
-      status: string;
-      llm_ok: boolean;
-      llm_latency_ms: number;
-      llm_message: string;
-      embed_ok?: boolean;
-      embed_latency_ms?: number;
-      embed_message?: string;
-    }>(`/api/config/providers/${encodeURIComponent(providerId)}/test`, {
+    request<TestResultResponse>(
+      `/api/config/providers/${encodeURIComponent(providerId)}/test`,
+      {
       method: "POST",
-      body: JSON.stringify({ model_id: modelId || "", model_type: modelType }),
-    }),
+        body: JSON.stringify({ model_id: modelId || "", model_type: modelType }),
+      }
+    ),
 
   testConfig: (params: {
     llm_base_url?: string;
@@ -192,15 +188,7 @@ export const api = {
     embed_api_key?: string;
     embed_model?: string;
   }) =>
-    request<{
-      status: string;
-      llm_ok: boolean;
-      llm_latency_ms: number;
-      llm_message: string;
-      embed_ok?: boolean;
-      embed_latency_ms?: number;
-      embed_message?: string;
-    }>("/api/config/test", {
+    request<TestResultResponse>("/api/config/test", {
       method: "POST",
       body: JSON.stringify({
         llm_base_url: params.llm_base_url || "",

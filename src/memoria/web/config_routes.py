@@ -91,6 +91,87 @@ def _public_provider(provider: CustomProvider) -> dict[str, Any]:
     }
 
 
+def _apply_model_saves(
+    current: Settings,
+    provider: CustomProvider,
+    items: list[ModelItemRequest],
+) -> tuple[CustomProvider, list[CustomModel], Settings]:
+    """Upsert `items` into `provider` and thread the active-model selectors.
+
+    Returns the updated provider, the saved models in request order, and the
+    settings to persist. Items with a blank id are skipped. Selector rules, all
+    per item:
+      - a chat model claims the active chat slot while that slot is still empty
+      - re-saving an id under a new type converts it, since a gateway never
+        serves one id as two types; a converted-away model can no longer be the
+        active embedding, so that selector is cleared rather than left pointing
+        at a chat model
+      - an embedding model claims the embed slot while that slot is still empty
+    """
+    models = list(provider.models)
+    by_id = {m.id: m for m in models}
+    saved: list[CustomModel] = []
+
+    active_chat = current.active_chat_model
+    active_embed_provider_id = current.active_embed_provider_id
+    active_embed_model = current.active_embed_model
+
+    for item in items:
+        model_id = item.id.strip()
+        if not model_id:
+            continue
+        existing = by_id.get(model_id)
+        fields = {
+            "name": item.name.strip() or model_id,
+            "tags": item.tags,
+            "enabled": item.enabled,
+            "model_type": item.model_type,
+        }
+        saved_model = (
+            existing.model_copy(update=fields)
+            if existing
+            else CustomModel(id=model_id, **fields)
+        )
+        by_id[model_id] = saved_model
+        if not existing:
+            models.append(saved_model)
+        saved.append(saved_model)
+
+        if (
+            provider.id == current.active_provider_id
+            and not active_chat
+            and saved_model.enabled
+            and saved_model.model_type == "chat"
+        ):
+            active_chat = saved_model.id
+
+        if (
+            existing
+            and existing.model_type != saved_model.model_type
+            and active_embed_provider_id == provider.id
+            and active_embed_model == model_id
+        ):
+            active_embed_provider_id = ""
+            active_embed_model = ""
+
+        if (
+            saved_model.model_type == "embedding"
+            and saved_model.enabled
+            and not active_embed_model
+        ):
+            active_embed_provider_id = provider.id
+            active_embed_model = saved_model.id
+
+    updated_provider = provider.model_copy(update={"models": [by_id[m.id] for m in models]})
+    providers = [updated_provider if p.id == provider.id else p for p in current.providers]
+    return updated_provider, saved, current.model_copy(update={
+        "providers": providers,
+        "active_chat_model": active_chat,
+        "active_embed_provider_id": active_embed_provider_id,
+        "active_embed_model": active_embed_model,
+    })
+
+
 def _validate_config_urls(llm_base_url: str = "", embed_base_url: str = "") -> None:
     if not llm_base_url and not embed_base_url:
         raise HTTPException(status_code=400, detail="公网 HTTPS/443 网关地址无效")
@@ -277,67 +358,14 @@ def register_config_routes(
         provider = next((p for p in current.providers if p.id == provider_id), None)
         if not provider:
             raise HTTPException(status_code=404, detail="Provider not found")
-
-        model_id = req.id.strip()
-        if not model_id:
+        if not req.id.strip():
             raise HTTPException(status_code=400, detail="模型 ID 不能为空")
 
-        models = list(provider.models)
-        existing = next((m for m in models if m.id == model_id), None)
-        if existing:
-            saved_model = existing.model_copy(update={
-                "name": req.name.strip() or model_id,
-                "tags": req.tags,
-                "enabled": req.enabled,
-                "model_type": req.model_type,
-            })
-            models = [saved_model if m.id == model_id else m for m in models]
-        else:
-            saved_model = CustomModel(
-                id=model_id,
-                name=req.name.strip() or model_id,
-                tags=req.tags,
-                enabled=req.enabled,
-                model_type=req.model_type,
-            )
-            models.append(saved_model)
-
-        updated_provider = provider.model_copy(update={"models": models})
-        providers = [updated_provider if p.id == provider_id else p for p in current.providers]
-
-        active_chat = current.active_chat_model
-        if provider_id == current.active_provider_id and not active_chat and saved_model.enabled and saved_model.model_type == "chat":
-            active_chat = saved_model.id
-        updates = {
-            "providers": providers,
-            "active_chat_model": active_chat,
-        }
-        # Re-saving an id with a new type converts it (the gateway never serves
-        # one id as two types, so a mismatch means the stored type was wrong).
-        # A converted-away model can no longer be the active embedding — clear
-        # the selector instead of pointing it at a chat model.
-        if (
-            existing
-            and existing.model_type != saved_model.model_type
-            and current.active_embed_provider_id == provider_id
-            and current.active_embed_model == model_id
-        ):
-            updates["active_embed_provider_id"] = ""
-            updates["active_embed_model"] = ""
-        if (
-            saved_model.model_type == "embedding"
-            and saved_model.enabled
-            and not current.active_embed_model
-        ):
-            updates.update({
-                "active_embed_provider_id": provider_id,
-                "active_embed_model": saved_model.id,
-            })
-        updated_settings = current.model_copy(update=updates)
-        persist_and_activate(updated_settings)
+        updated_provider, saved, updated = _apply_model_saves(current, provider, [req])
+        persist_and_activate(updated)
         return {
             "status": "ok",
-            "model": _public_model(saved_model),
+            "model": _public_model(saved[0]),
             "provider": _public_provider(updated_provider),
         }
 
@@ -348,69 +376,8 @@ def register_config_routes(
         if not provider:
             raise HTTPException(status_code=404, detail="Provider not found")
 
-        models = list(provider.models)
-        models_by_id = {m.id: m for m in models}
-
-        active_chat = current.active_chat_model
-        active_embed_provider_id = current.active_embed_provider_id
-        active_embed_model = current.active_embed_model
-
-        for item in req.models:
-            model_id = item.id.strip()
-            if not model_id:
-                continue
-            existing = models_by_id.get(model_id)
-            if existing:
-                saved_model = existing.model_copy(update={
-                    "name": item.name.strip() or model_id,
-                    "tags": item.tags,
-                    "enabled": item.enabled,
-                    "model_type": item.model_type,
-                })
-                models_by_id[model_id] = saved_model
-            else:
-                saved_model = CustomModel(
-                    id=model_id,
-                    name=item.name.strip() or model_id,
-                    tags=item.tags,
-                    enabled=item.enabled,
-                    model_type=item.model_type,
-                )
-                models_by_id[model_id] = saved_model
-                models.append(saved_model)
-
-            if provider_id == current.active_provider_id and not active_chat and saved_model.enabled and saved_model.model_type == "chat":
-                active_chat = saved_model.id
-
-            if (
-                existing
-                and existing.model_type != saved_model.model_type
-                and active_embed_provider_id == provider_id
-                and active_embed_model == model_id
-            ):
-                active_embed_provider_id = ""
-                active_embed_model = ""
-
-            if (
-                saved_model.model_type == "embedding"
-                and saved_model.enabled
-                and not active_embed_model
-            ):
-                active_embed_provider_id = provider_id
-                active_embed_model = saved_model.id
-
-        final_models = [models_by_id[m.id] for m in models]
-        updated_provider = provider.model_copy(update={"models": final_models})
-        providers = [updated_provider if p.id == provider_id else p for p in current.providers]
-
-        updates = {
-            "providers": providers,
-            "active_chat_model": active_chat,
-            "active_embed_provider_id": active_embed_provider_id,
-            "active_embed_model": active_embed_model,
-        }
-        updated_settings = current.model_copy(update=updates)
-        persist_and_activate(updated_settings)
+        updated_provider, _saved, updated = _apply_model_saves(current, provider, req.models)
+        persist_and_activate(updated)
         return {
             "status": "ok",
             "provider": _public_provider(updated_provider),

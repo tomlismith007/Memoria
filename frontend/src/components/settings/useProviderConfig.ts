@@ -5,6 +5,7 @@ import type {
   CustomProvider,
   ModelApiFormat,
   ProvidersConfigResponse,
+  TestResultResponse,
 } from "../../types";
 import type { DeleteConfirmTarget } from "./DeleteConfirmDialog";
 
@@ -53,17 +54,6 @@ export const splitTags = (raw: string): string[] =>
     .split(/[,，\s]+/)
     .map((t) => t.trim())
     .filter(Boolean);
-
-// Anonymous return type of api.testProvider / api.testConfig, which both
-// declare it inline; named once here so the test flow can annotate it.
-type ConnectivityResult = {
-  llm_ok: boolean;
-  llm_latency_ms: number;
-  llm_message: string;
-  embed_ok?: boolean;
-  embed_latency_ms?: number;
-  embed_message?: string;
-};
 
 // All provider/model configuration state and actions for the settings modal.
 // Plain hook: no store, no reducer, no context. The backend
@@ -669,7 +659,7 @@ export const useProviderConfig = (isOpen: boolean) => {
         (settingsTab === "embedding" ? "" : "gpt-4o-mini");
 
     try {
-      let res: ConnectivityResult;
+      let res: TestResultResponse;
       if (formApiKey.trim() || isCreatingNew) {
         res =
           settingsTab === "embedding"

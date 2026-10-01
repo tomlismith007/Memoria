@@ -110,3 +110,13 @@ export interface HealthResponse {
     embed: CapabilityStatus;
   };
 }
+
+/** Connectivity probe result: one latency and message per protocol half. */
+export interface TestResultResponse {
+  llm_ok: boolean;
+  llm_latency_ms: number;
+  llm_message: string;
+  embed_ok?: boolean;
+  embed_latency_ms?: number;
+  embed_message?: string;
+}

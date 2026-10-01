@@ -843,7 +843,6 @@ export const useProviderConfig = (isOpen: boolean) => {
     fetchedModels,
     modelSearchQuery,
     isCreatingNew,
-    draftModels,
     isAddModelOpen,
     modelFormId,
     modelFormName,
@@ -878,18 +877,15 @@ export const useProviderConfig = (isOpen: boolean) => {
 
     // derived
     selectedProvider,
-    allProviderModels,
     currentModelList,
     filteredFetchedModels,
 
     // actions
     refreshProviders,
-    showToast,
     handleStartCreate,
     handleSwitchSettingsTab,
     handleCancelCreate,
     handleSelectProvider,
-    requireHttpsUrl,
     handleFetchModels,
     handleSelectModel,
     handleAddFetchedModel,
@@ -897,12 +893,15 @@ export const useProviderConfig = (isOpen: boolean) => {
     handleSaveCurrentProvider,
     handleSaveNewProvider,
     handleExecuteDelete,
-    runConnectionTest,
     handleTestConnection,
     handleTestModel,
-    resetModelForm,
     handleSaveModel,
   };
 };
 
 export type ProviderConfigCtrl = ReturnType<typeof useProviderConfig>;
+
+/** Every settings child takes the whole controller; declared once here. */
+export interface ProviderCtrlProps {
+  ctrl: ProviderConfigCtrl;
+}

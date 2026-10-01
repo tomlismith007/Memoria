@@ -48,7 +48,7 @@ def _deps(args, overrides: dict | None):
     )
 
 
-def _graph(args, store, embedder, llm, wiki, overrides: dict | None):
+def _graph(store, embedder, llm, wiki, overrides: dict | None):
     from langgraph.checkpoint.memory import MemorySaver
 
     from memoria.graph.graph import build_graph
@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None, deps: dict | None = None) -> int:
         print(f"broken={report.broken} orphans={report.orphans}")
         return 0
 
-    g = _graph(args, store, embedder, llm, wiki, deps)
+    g = _graph(store, embedder, llm, wiki, deps)
     cfg = {"configurable": {"thread_id": uuid.uuid4().hex}}
 
     if args.cmd == "ingest":

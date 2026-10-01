@@ -7,7 +7,6 @@ export interface Citation {
 
 export interface AskResponse {
   text: string;
-  conversation_id?: string;
   source: "wiki" | "rag+wiki";
   wiki_pages: string[];
   citations: Citation[];
@@ -17,7 +16,6 @@ export interface AskResponse {
 interface DocumentInfo {
   doc_id: string;
   name: string;
-  size: number;
   chunks: number;
 }
 
@@ -34,7 +32,6 @@ export interface DocumentListResponse {
 interface WikiPageSummary {
   name: string;
   links: string[];
-  length: number;
 }
 
 export interface WikiListResponse {
@@ -55,10 +52,8 @@ export interface WikiPageDetail {
 
 export interface MailItem {
   id: string;
-  msg_id: string;
   subject: string;
   sender: string;
-  snippet: string;
   category: "营销" | "通知" | "待办";
   summary: string;
   protected: boolean;
@@ -69,8 +64,6 @@ export interface IngestResponse {
   doc_id: string;
   chunks: number;
   wiki_pages: string[];
-  origin?: string;
-  filename?: string;
 }
 
 export type ModelApiFormat =
@@ -91,7 +84,6 @@ export interface CustomProvider {
   name: string;
   base_url: string;
   api_format: ModelApiFormat;
-  api_key?: string;
   api_key_set: boolean;
   masked_api_key?: string;
   enabled: boolean;
@@ -99,7 +91,6 @@ export interface CustomProvider {
 }
 
 export interface ProvidersConfigResponse {
-  status: string;
   active_provider_id: string;
   active_chat_model: string;
   active_embed_provider_id: string;
@@ -110,13 +101,10 @@ export interface ProvidersConfigResponse {
 /** feat-049: which LLM capabilities are actually configured. */
 export interface CapabilityStatus {
   ready: boolean;
-  model: string;
   reason: string;
 }
 
 export interface HealthResponse {
-  status: string;
-  version: string;
   capabilities?: {
     llm: CapabilityStatus;
     embed: CapabilityStatus;

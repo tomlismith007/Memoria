@@ -30,7 +30,6 @@ class MemoriaState(TypedDict, total=False):
     pending_archive: list[str]
     confirmed_ids: list[str]
     archived: list[str]
-    failed_ids: list[str]  # archive calls that raised on the Gmail side
 
     # ingest branch
     material: str  # text-only ingest (wiki compile, no vectors)

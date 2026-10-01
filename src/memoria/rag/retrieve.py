@@ -78,10 +78,6 @@ class DocumentFrequency:
                 df[token] = df.get(token, 0) + 1
         return cls(count, df)
 
-    @property
-    def size(self) -> int:
-        return self._n
-
     def weight(self, token: str) -> float:
         """Smoothed IDF, never negative; unknown tokens keep full weight."""
         if self._n <= 0:
@@ -123,7 +119,6 @@ def retrieve(
     embedder: Embedder,
     k: int = 30,
     top_n: int = 4,
-    alpha: float = 0.7,
     use_idf: bool = True,
 ) -> list[dict]:
     """Hybrid retrieval: vector recall, then IDF-weighted keyword rerank.
@@ -136,6 +131,7 @@ def retrieve(
     network LLM round-trip measured in seconds. `top_n` is left at 4 because
     that value *is* the LLM token cost, which is a different trade-off.
     """
+    alpha = 0.7  # blend of the cosine and keyword terms; no caller tunes it
     qvec = embedder.embed([question])[0]
     hits = store.search(qvec, k=k)
     # feat-053: build the DF table from the candidate pool, so a token present in

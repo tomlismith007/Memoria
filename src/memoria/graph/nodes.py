@@ -21,8 +21,9 @@ KEEP_RECENT_TOKENS = 20_000
 _CHARS_PER_TOKEN = 1.5
 
 
-def _recent_turns(history: list, budget: int = KEEP_RECENT_TOKENS) -> list:
+def _recent_turns(history: list) -> list:
     """Newest turns that fit the token budget; the oldest are dropped first."""
+    budget = KEEP_RECENT_TOKENS
     kept: list = []
     used = 0.0
     for turn in reversed(history):
@@ -110,7 +111,6 @@ def confirm_archive(state: dict) -> dict:
 def make_mail_archive(service):
     def mail_archive(state: dict) -> dict:
         done: list[str] = []
-        failed: list[str] = []
         for mid in state.get("confirmed_ids", []):
             if service is None:
                 done.append(mid)  # offline mode: confirmation recorded, no Gmail call
@@ -119,8 +119,8 @@ def make_mail_archive(service):
                 archive(service, mid, confirmed=True)
                 done.append(mid)
             except Exception:
-                failed.append(mid)
-        return {"archived": done, "failed_ids": failed}
+                pass  # Gmail refused this id; it stays out of `archived` and is never retried
+        return {"archived": done}
 
     return mail_archive
 

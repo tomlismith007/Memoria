@@ -121,8 +121,9 @@ class LintReport:
     contradictions: list[str] = field(default_factory=list)
 
 
-def lint(wiki: Wiki, llm: ChatLLM | None = None, max_pairs: int = 5) -> LintReport:
+def lint(wiki: Wiki, llm: ChatLLM | None = None) -> LintReport:
     """Static broken-link + orphan check; LLM contradiction check on linked pairs only."""
+    max_pairs = 5
     report = LintReport()
     pages = wiki.list_pages()
     known = set(pages)

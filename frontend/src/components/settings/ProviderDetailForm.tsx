@@ -2,7 +2,6 @@ import React from "react";
 import {
   Activity,
   AlertCircle,
-  Box,
   Check,
   CheckCircle2,
   Cpu,
@@ -20,14 +19,10 @@ import {
 } from "lucide-react";
 import type { ModelApiFormat } from "../../types";
 import { PillButton } from "../ui/PillButton";
-import type { ProviderConfigCtrl } from "./useProviderConfig";
-
-interface ProviderDetailFormProps {
-  ctrl: ProviderConfigCtrl;
-}
+import type { ProviderCtrlProps } from "./useProviderConfig";
 
 /* VIEW B: Provider Detail & Model Management Form */
-export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) => {
+export const ProviderDetailForm: React.FC<ProviderCtrlProps> = ({ ctrl }) => {
   const {
     formName,
     setFormName,
@@ -618,34 +613,5 @@ export const ProviderDetailForm: React.FC<ProviderDetailFormProps> = ({ ctrl }) 
         </div>
       </div>
     </div>
-  );
-};
-
-interface ProviderEmptyStateProps {
-  ctrl: ProviderConfigCtrl;
-}
-
-/* VIEW C: Empty State */
-export const ProviderEmptyState: React.FC<ProviderEmptyStateProps> = ({ ctrl }) => {
-  const { handleStartCreate } = ctrl;
-
-  return (
-  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-400 gap-3">
-    <Box className="w-12 h-12 text-zinc-300" />
-    <h3 className="text-base font-medium text-zinc-700">
-      未选择模型供应商
-    </h3>
-    <p className="text-xs text-zinc-400 max-w-sm">
-      从左侧列表中选择一个供应商进行配置，或者点击“添加供应商”新建。
-    </p>
-    <PillButton
-      variant="primary"
-      size="sm"
-      onClick={handleStartCreate}
-      icon={<Plus className="w-3.5 h-3.5" />}
-    >
-      添加供应商
-    </PillButton>
-  </div>
   );
 };

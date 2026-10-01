@@ -1,14 +1,10 @@
 import React from "react";
 import { X } from "lucide-react";
 import { PillButton } from "../ui/PillButton";
-import { splitTags, type ProviderConfigCtrl } from "./useProviderConfig";
-
-interface ModelFormDialogProps {
-  ctrl: ProviderConfigCtrl;
-}
+import { splitTags, type ProviderCtrlProps } from "./useProviderConfig";
 
 /* Modal: Add/Edit Model Dialog */
-export const ModelFormDialog: React.FC<ModelFormDialogProps> = ({ ctrl }) => {
+export const ModelFormDialog: React.FC<ProviderCtrlProps> = ({ ctrl }) => {
   const {
     isAddModelOpen,
     setIsAddModelOpen,

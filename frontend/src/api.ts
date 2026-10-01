@@ -1,7 +1,6 @@
 import type {
   AskResponse,
   Citation,
-  CustomModel,
   CustomProvider,
   DocumentListResponse,
   HealthResponse,
@@ -59,16 +58,10 @@ export const api = {
     request<{
       triages: MailItem[];
       thread_id: string;
-      pending: string[];
-      error?: string;
     }>("/api/mail/triage"),
 
   archiveMail: (confirmed_ids: string[], thread_id: string) =>
-    request<{
-      archived: string[];
-      blocked: string[];
-      message: string;
-    }>("/api/mail/archive", {
+    request<{ message: string }>("/api/mail/archive", {
       method: "POST",
       body: JSON.stringify({ confirmed_ids, thread_id }),
     }),
@@ -82,17 +75,15 @@ export const api = {
   listDocuments: () => request<DocumentListResponse>("/api/documents"),
 
   deleteDocument: (docId: string) =>
-    request<{ deleted: string; raw_removed: string | null }>(
+    request<{ deleted: string }>(
       `/api/documents/${encodeURIComponent(docId)}`,
       { method: "DELETE" }
     ),
 
   reindex: () =>
     request<{
-      status: string;
       documents_reindexed: number;
       total_chunks: number;
-      documents: Array<{ name: string; doc_id?: string; chunks?: number; error?: string }>;
     }>("/api/rag/reindex", {
       method: "POST",
     }),
@@ -124,15 +115,14 @@ export const api = {
     enabled?: boolean;
     scope?: "chat" | "embedding";
     active_chat_model?: string;
-    active_embed_model?: string;
   }) =>
-    request<{ status: string; provider: CustomProvider }>("/api/config/providers", {
+    request<{ provider: CustomProvider }>("/api/config/providers", {
       method: "POST",
       body: JSON.stringify(provider),
     }),
 
   deleteProvider: (id: string) =>
-    request<{ status: string; providers: CustomProvider[] }>(
+    request<{ providers: CustomProvider[] }>(
       `/api/config/providers/${encodeURIComponent(id)}`,
       { method: "DELETE" }
     ),
@@ -147,7 +137,7 @@ export const api = {
       model_type?: "chat" | "embedding";
     }
   ) =>
-    request<{ status: string; model: CustomModel; provider: CustomProvider }>(
+    request<{ provider: CustomProvider }>(
       `/api/config/providers/${encodeURIComponent(providerId)}/models`,
       {
         method: "POST",
@@ -165,7 +155,7 @@ export const api = {
       model_type?: "chat" | "embedding";
     }>
   ) =>
-    request<{ status: string; provider: CustomProvider }>(
+    request<{ provider: CustomProvider }>(
       `/api/config/providers/${encodeURIComponent(providerId)}/models/batch`,
       {
         method: "POST",
@@ -174,7 +164,7 @@ export const api = {
     ),
 
   deleteProviderModel: (providerId: string, modelId: string) =>
-    request<{ status: string; provider: CustomProvider }>(
+    request<{ provider: CustomProvider }>(
       `/api/config/providers/${encodeURIComponent(providerId)}/models/${encodeURIComponent(modelId)}`,
       { method: "DELETE" }
     ),
@@ -229,7 +219,6 @@ export const api = {
     modelType: "chat" | "embedding" = "chat"
   ) =>
     request<{
-      status: string;
       active_provider_id: string;
       active_chat_model: string;
       active_embed_provider_id: string;
@@ -249,7 +238,7 @@ export const api = {
     api_format: ModelApiFormat = "chat_completions",
     provider_id?: string
   ) =>
-    request<{ status: string; models: string[]; message?: string }>("/api/config/models", {
+    request<{ models: string[]; message?: string }>("/api/config/models", {
       method: "POST",
       body: JSON.stringify({
         base_url,

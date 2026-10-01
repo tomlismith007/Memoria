@@ -1,10 +1,10 @@
 import React from "react";
-import { Plus, RefreshCw, X } from "lucide-react";
+import { Box, Plus, RefreshCw, X } from "lucide-react";
 import { PillButton } from "./PillButton";
 import { DeleteConfirmDialog } from "../settings/DeleteConfirmDialog";
 import { ProviderSidebar } from "../settings/ProviderSidebar";
 import { ModelFormDialog } from "../settings/ModelFormDialog";
-import { ProviderDetailForm, ProviderEmptyState } from "../settings/ProviderDetailForm";
+import { ProviderDetailForm } from "../settings/ProviderDetailForm";
 import { useProviderConfig } from "../settings/useProviderConfig";
 
 interface SettingsModalProps {
@@ -139,7 +139,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {selectedProvider || isCreatingNew ? (
               <ProviderDetailForm ctrl={ctrl} />
             ) : (
-              <ProviderEmptyState ctrl={ctrl} />
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-400 gap-3">
+                <Box className="w-12 h-12 text-zinc-300" />
+                <h3 className="text-base font-medium text-zinc-700">未选择模型供应商</h3>
+                <p className="text-xs text-zinc-400 max-w-sm">
+                  从左侧列表中选择一个供应商进行配置，或者点击“添加供应商”新建。
+                </p>
+                <PillButton
+                  variant="primary"
+                  size="sm"
+                  onClick={handleStartCreate}
+                  icon={<Plus className="w-3.5 h-3.5" />}
+                >
+                  添加供应商
+                </PillButton>
+              </div>
             )}
           </div>
         </div>

@@ -37,7 +37,6 @@ class ProviderSaveRequest(BaseModel):
     enabled: bool = True
     scope: str = "chat"
     active_chat_model: str = ""
-    active_embed_model: str = ""
 
 
 class ModelItemRequest(BaseModel):

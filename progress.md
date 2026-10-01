@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-10-01
-**Active Feature:** none — feat-001..feat-064 completed; only feat-038 / feat-039 remain (both optional)
+**Active Feature:** none — feat-001..feat-065 completed; only feat-038 / feat-039 remain (both optional)
 
 ## Status
 
@@ -74,6 +74,7 @@
 - [x] feat-029: 将 ProviderTemplatePicker、ProviderSidebar、DeleteConfirmDialog 从 SettingsModal 拆为纯受控组件；主文件 1,932→1,642 行，状态/API/localStorage 仍集中；修复 390px Provider 头部与模型操作行挤压；`init.ps1` 101 passed + frontend build green，浏览器模板/侧栏/删除确认/移动端冒烟通过
 - [x] feat-030: 按用户参考图将模型设置收敛为极简双栏；压缩标题/说明、去除重复徽章与重复入口、合并模型区、简化模板选择器和模型行；保留 Provider/Model 全部状态与 API 流程；`SettingsModal.tsx` 1,642→1,571 行；`init.ps1` 101 passed + frontend build green，1280px/390px 浏览器验收通过
 - [x] feat-031: 删除对话/向量手填输入框；设置页新增对话模型与向量模型页签；后端新增 `active_embed_provider_id`，向量 Provider 保存/激活/删除与对话 Provider 完全隔离；embedding-only 连通性测试支持；全量 103 passed + frontend build green，1280px/390px 浏览器验收通过
+- [x] feat-065: 全仓库 ponytail-audit 整改，分三批独立提交。删 3 份结论已被反转的计划文档（1088 行）、裁剪 progress.md 的 Evidence 段（-1219 行文档与状态）、`.agents/` 取消跟踪；删后端 4 处写死没人读 + 前端 6 个零引用 hook 键 / 10 个零引用 tailwind 色 / 15+ 个未读响应字段；模型保存的单条与批量路由合并到 `_apply_model_saves`（config_routes.py 547→514）。净减 1263 行，跟踪文件 102→88。196 passed + frontend build green
 
 ### What's In Progress
 

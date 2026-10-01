@@ -606,6 +606,16 @@
       ],
       "status": "completed",
       "evidence": "python -m pytest -q → 195 passed（+3：test_reset_collection_clears_all_vectors、test_rag_reindex_requires_embed_ready、test_rag_reindex_rebuilds_store，且断言了 RAG 与 Wiki Prompt 前缀缓存顺序）；cd frontend && npm run build green（1607 modules）；./init.ps1 全量门禁通过。"
+    },
+    {
+      "id": "feat-065",
+      "name": "Repo-wide ponytail-audit cleanup (stale docs, proven dead code, duplicated model-save paths)",
+      "description": "全仓库 ponytail-audit 的整改，分三批独立提交。批次1 文档与状态：删除三份结论已被后续提交全部反转的计划文档（CODE_AUDIT_2026-09-24/UPGRADE_SPEC/NEXT_PLAN，共 1088 行），保留 RAG_UPGRADE_PLAN.md（它是检索评测基线的唯一出处，被 ARCHITECTURE.md:190 与 test_rag_eval.py:15 同时引用）；裁剪 progress.md 的 Evidence 段（其内容在 feature_list 已有副本且测试数全过时）；.agents/ 取消跟踪。批次2 已证实的死代码：后端 4 处写死没人读 + 3 处永远取默认值的旋钮；前端 useProviderConfig 6 个零引用返回键、tailwind 10 个零引用色、types/api 15+ 个从未读取的响应字段、三份重复的 Props 接口；ProviderEmptyState 内联。批次3 结构重复：api_save_provider_model 与 api_save_provider_models_batch 合并到 _apply_model_saves。连通性测试响应类型三份合一。\n\n评估后明确不做：net.py 传输层换 requests（SSRF 策略层，风险最高，另开一批）；CustomModel.tags（审查误判为死字段，实为 ModelFormDialog 的用户可编辑标签输入）；graph/nodes.py 5 个闭包工厂改普通函数（LangGraph add_node 只传一个 state 参数，改后只是把闭包搬进 graph.py 变成 5 个 lambda）；三处 modal 合一与 SegmentedNav 参数化（前者净增行数，后者需给底部导航塞一堆可选开关）；ChromaStore.count()、retrieve(use_idf=)、load_settings(path=) 均有测试承载。",
+      "dependencies": [
+        "feat-064"
+      ],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 196 passed（195 基线 +1 新契约测试 test_model_save_routes_agree_on_blank_ids，钉住空 model id 单个端点 400 / 批量跳过 / 空批量 no-op 这条此前无覆盖的契约）；cd frontend && npm run build green（1607 modules，CSS 35.31 kB 不变，印证被删的 tailwind 色从未生成过类）。净减 1263 行：产品代码 -98、文档与状态 -1219、测试 +54（新增 1 条）。跟踪文件 102 → 88（3 份文档 + 11 个 .agents vendored 文件）。分三次提交：95708cb 文档、0975041 死代码、a5a7c4b 结构重复。"
     }
   ]
 }

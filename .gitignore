@@ -7,4 +7,5 @@ node_modules/
 dist/
 .mimosa/
 .zcode/
+.agents/
 gui-test-screenshots/

@@ -2,8 +2,8 @@
 
 ## Current State
 
-**Last Updated:** 2026-09-25
-**Active Feature:** none — provider template system removed (custom-only provider creation); feat-023 remains the only todo feature
+**Last Updated:** 2026-10-01
+**Active Feature:** none — feat-001..feat-064 completed; only feat-038 / feat-039 remain (both optional)
 
 ## Status
 
@@ -77,20 +77,19 @@
 
 ### What's In Progress
 
-- [ ] 无；feat-001..feat-031 已完成，feat-023 仅登记为 todo。
+- [ ] 无；feat-001..feat-064 已完成，feat-023 已完成。
 
 ### What's Next
 
-1. `SettingsModal` 下一刀仅拆 ModelListItem / ModelFormDialog 等纯展示区，不抽状态 hook
-2. `feat-023` 仅登记引用完整性后续计划，尚未实现
-3. 保持全套测试与 Harness 门禁（`./init.ps1`）100% 绿灯通过
+1. feat-038（多步摄入图循环）与 feat-039（SSE 流式回答）均标记为可选，未排期
+2. 保持全套测试与 Harness 门禁（`./init.ps1`）100% 绿灯通过
 
 ## Blockers / Risks
 
 - [ ] No `bash` on this Windows machine — `./init.sh` cannot run here; use `./init.ps1`. Risk: agent following AGENTS.md blindly runs init.sh and fails. Mitigation: AGENTS.md documents both.
 - [ ] feat-019 残余边界：CORS 不是认证；`data/settings.json` 仍以本地明文保存 Key；邮件候选集合仅适用于单用户单 worker。
 - [ ] feat-018 边界：localStorage 恢复的是前端时间线，不会自动作为模型上下文；未完成请求在刷新后不恢复。
-- [ ] feat-029 残余边界：`SettingsModal.tsx` 仍有 1,762 行并集中 Provider/Model 状态与异步流程；后续仍应拆 `ModelListItem` / `ModelFormDialog` 纯展示区。
+- [ ] feat-024 残余边界：Provider/Model 状态与异步流程集中在 `useProviderConfig.ts`（908 行，79 个返回键）；本次精简只删了 6 个无引用键，尚未拆分。
 - [ ] feat-031 残余边界：切换向量模型不会自动重建既有向量索引；不同向量模型的维度/语义空间可能不兼容，需要人工重建或后续校验。
 
 ## Decisions Made
@@ -99,136 +98,6 @@
 - **Hand-write core retrieval** (~100 lines: vector search + rerank + generate); LangChain only for integrations.
 - **Feature granularity**: 31 features, one at a time; red lines encoded in AGENTS.md § Red Lines.
 - **Minimalist Capsule Design**: Canvas `#FAFAF9`, Obsidian Black `#09090b` accents, `rounded-3xl` cards, `rounded-full` pills, zero decorative emoji / heavy drop-shadows.
-
-## Evidence of Completion
-
-- [x] feat-001: `python -m pytest -q` → green (smoke)
-- [x] feat-002: `python -m pytest -q` → `8 passed` (tests/test_rag_ingest.py, offline)
-- [x] feat-003: `python -m pytest -q` → `14 passed` (tests/test_rag_answer.py, offline)
-- [x] feat-004: `python -m pytest -q` → `21 passed` (tests/test_wiki_structure.py, offline)
-- [x] feat-005: `python -m pytest -q` → `28 passed` (tests/test_wiki_ops.py, offline)
-- [x] feat-006: `python -m pytest -q` → `34 passed` (tests/test_mail_triage.py, offline)
-- [x] feat-007: `python -m pytest -q` → `39 passed` (tests/test_graph.py, offline)
-- [x] feat-008: `python -m pytest -q` → `44 passed` (tests/test_sync.py, offline)
-- [x] feat-009: `python -m pytest -q` → `48 passed` (tests/test_cli.py, offline)
-- [x] feat-010: `tests/test_web_api.py` 6 tests pass; 54 passed total
-- [x] feat-011: `npm run build` in `frontend/` succeeds cleanly; design system complete
-- [x] feat-012: AskView & WikiView with citations and backlinks implemented
-- [x] feat-013: MailView & IngestView with protected safety rules and confirm modal implemented
-- [x] feat-015: Settings drawer + /api/config runtime switching + 获取模型 (Fetch Models) & 测试连接 (Test Connectivity) 连通性诊断卡片 (58 pytest tests passed)
-- [x] feat-016: scripts/auth_gmail.py + memoria/mail/auth.py turnkey Gmail OAuth helper
-- [x] feat-019: `pwsh -NoProfile -File ./init.ps1` → 70 passed + frontend build green; config secrets redacted, empty keys preserved, CORS allowlist enforced, stale/unknown mail IDs blocked, unsafe ingest paths rejected
-- [x] feat-017: `pwsh -NoProfile -File ./init.ps1` → 73 passed + frontend build green; up to 10 redacted server-side presets with save/apply/delete and legacy settings compatibility
-- [x] feat-018: `pwsh -NoProfile -File ./init.ps1` → 73 passed + frontend build green; browser smoke verified refresh/tab restoration, citation and archive metadata, new-session clearing, and corrupt JSON fallback
-- [x] feat-020: `pwsh -NoProfile -File ./init.ps1` → 73 passed + frontend build green; browser verification at 390×844 and 320×800 confirmed no page-level horizontal overflow across all views and Settings; desktop navigation preserved at 1280×720
-- [x] feat-021: `python -m pytest -q` → 92 passed (baseline) + frontend build green; all direct requests.get/post call sites migrated to the SSRF-safe standard-library client
-- [x] feat-022: `python -m pytest -q` → 95 passed; `npm run build` → OK; public HTTPS/443-only network/configuration policy, legacy filtering, API rejection coverage, and residue search clean
-- [x] feat-024: `powershell -File ./init.ps1` → 97 passed + frontend build green; custom provider CRUD, model management, dual persistence in settings.json & localStorage, and active model switcher
-- [x] feat-025: `./init.sh` → 102 passed + frontend build green; Chat Completions / Anthropic Messages / OpenAI Responses request matrices, provider protocol persistence, model-list and connectivity auth, legacy defaults, and unknown-format rejection
-- [x] feat-026: `./init.ps1` → 102 passed + frontend build green (0 errors); SettingsModal inline right-panel creation workflow, draft model management, pre-save config test API, zero popup windows
-- [x] feat-027: `AGENTS.md` harness review and update; `validate-harness.mjs` → 100/100; `./init.ps1` → 102 passed + frontend build green
-- [x] feat-028: audit-driven cleanup and config route split; focused Web API tests → 31 passed; full `./init.ps1` → 101 passed + frontend build green; `git diff --check` passed
-- [x] feat-029: SettingsModal first pure-UI split → 1,642 lines; strict TypeScript → 0 diagnostics; `./init.ps1` → 101 passed + frontend build green; browser smoke covered template picker, sidebar, delete confirmation, and 390px layout; evidence in `gui-test-screenshots/feat-029/`
-- [x] feat-030: model settings visual simplification → 1,571 lines; strict TypeScript → 0 diagnostics; `./init.ps1` → 101 passed + frontend build green; browser acceptance at 1280×720 and 390×844 covered empty/template/provider/model views and delete confirmation; evidence in `gui-test-screenshots/feat-030/`
-- [x] feat-031: chat/embedding separation; focused Web API tests → 33 passed; full `./init.ps1` → 103 passed + frontend build green; browser verified manual model inputs removed and vector tab at desktop/mobile; evidence in `gui-test-screenshots/feat-031/`
-- [x] UI Refinements: Centered slender search bar, Obsidian black circular submit button, smooth bottom anchoring, 模型快速选择胶囊、网络耗时/诊断反馈卡片
-- [x] Remove provider template system (2026-09-25): `ProviderTemplatePicker.tsx` deleted; `SettingsModal.tsx` 添加供应商 now enters a blank custom draft via `handleStartCreate`; `ProviderSidebar` prop `showTemplatePicker` removed and `onOpenTemplatePicker` → `onAddProvider`; `grep -rin template frontend/src` → 0 hits; `cd frontend && npm run build` → tsc + vite green
-- [x] Model settings visual quieting (2026-09-25): unified detail column to `max-w-2xl`; model list merged into single `rounded-lg border divide-y` container with soft-gray active rows; create-mode name input now borderless inline text (no autoFocus box); sidebar selected state `bg-zinc-200/70` fill (no border/shadow); footer `border-t` removed and spacing tightened (space-y-5/p-6/pt-3); diagnostics/empty-state radii → `rounded-lg`. Verified in real browser with temp provider+models (restored after): desktop screenshots of populated form, model list, and draft state. Full `./init.ps1` → 103 passed + frontend build green
-- [x] Ask page model badge fix (2026-09-25): AskView previously read `memoria_*` localStorage cache keys (unreliably synced by SettingsModal; `storage` event doesn't fire same-tab), so it fell back to 自定义供应商/默认模型. Now App.tsx owns the display: fetches `/api/config/providers` on mount and on settings-modal close, resolves active provider name + active chat model (`m.name || m.id`), passes `activeModelInfo` to AskView (both badge sites). Browser-verified: shows 商汤 / sensenova-6.8-flash-lite; `npm run build` green
-- [x] Homepage model picker (2026-09-25): capsule badge is now a cascading selector (Cherry Studio-style per user reference) — trigger shows 当前模型 provider/model + chevron; menu lists current selection with check, provider rows with fly-out submenu of chat models (name + tags + current check), and 管理模型 opens the settings modal. Selecting calls `api.activateProvider(providerId, modelId, "chat")` then refreshes; submenu renders at menu root (NOT inside the overflow-y-auto list, which clipped it). Removed the 使用 button from SettingsModal model rows (activation now lives on the homepage; 设为当前 in more-menu kept). Browser-verified full switch flow glm-5.2 ↔ sensenova-6.8-flash-lite with backend sync; `./init.ps1` gate → 103 pytest passed + build green
-- [x] Official LangChain/LangGraph agent skills installed (2026-09-25): 8 skills from `langchain-ai/langchain-skills` (official LangChain GitHub org, MIT) pinned to commit `f179d57c66da0911556ce4960b55dd1f3f3b8480` — ecosystem-primer, langchain-{fundamentals,middleware,dependencies,rag}, langgraph-{fundamentals,persistence,human-in-the-loop} (+ references/). Every file git-blob-sha1 verified against the official repo tree; provenance at `.agents/skills/.langchain-skills-install.json`. `npx skills` git clone failed (github.com:443 unreachable) so files were fetched via raw.githubusercontent and hash-verified instead; `npx skills ls` → all 8 recognized as project-local
-- [x] Picker placement fix (2026-09-25): conversation-state badge sits above the bottom input, so its menu opened downward past the viewport (page scrollbar + clipped menu). `ModelPickerBadge` gained `placement` prop — bottom badge opens upward (`bottom-full mb-2`) with bottom-aligned submenu, and right-aligned menus fly the submenu LEFT (`sm:right-full`) to avoid horizontal overflow. Seeded a temp ask-history entry to reproduce the conversation state (removed after); verified no vertical/horizontal scrollbars with menu and submenu open; `npm run build` green
-- [x] feat-023 citation integrity (2026-09-25): red-line enforcement — `rag/answer.py` new `citations_complete()` checks every sentence (CJK/latin/bullet split) carries an in-range `[n]`; sentence regex glues trailing markers after 句号 to the preceding sentence; `wiki/ops.py query` requires a `[[页名]]` source; `sync.py HybridAnswer` ANDs wiki+rag halves; `/api/ask` returns `citations_verified`; AskView shows amber 部分内容未溯源 badge when false. `./init.ps1` → 107 pytest (+4) + frontend build green; strict tsc 0 diagnostics
-- [x] feat-034 conversation memory (2026-09-25): graph state gained history ([{question, answer}], last 6 turns); qa node folds prior turns into the user message as a transcript (all LLM backends/fakes stay single-turn; follow-ups resolve references); conversation_id = LangGraph thread_id, persisted by SqliteSaver across restarts; /api/ask accepts+returns conversation_id (auto-mints when absent); AskView generates, persists (localStorage), and rotates session_id on new-session. Graph-level test asserts the follow-up prompt carries the prior turn; web-level test asserts same-id memory, clean memory on a new id, and auto thread creation. `./init.ps1` → 116 pytest + frontend build green; strict tsc 0 diagnostics
-- [x] feat-035 LLM retry (2026-09-25): graph LLM nodes (router/qa/mail_triage/ingest) carry langgraph RetryPolicy(max_attempts=3) — transient-only retries (connection/timeout/429/5xx); the interrupt-bearing confirm node is retry-free. FlakyChat test: two ConnectionErrors then success → ingest completes with llm.calls == 3. `./init.ps1` → 116 pytest + frontend build green; strict tsc 0 diagnostics
-- [x] feat-036 contradiction lint wiring (2026-09-25): /api/wiki/pages?deep=true runs wiki_lint with llm (one call per linked pair; default stays LLM-free for cost), lint.contradictions in response; WikiView gained an AI 矛盾检测 button and rose contradiction badges in the lint banner. `./init.ps1` → 118 pytest + frontend build green; strict tsc 0 diagnostics
-- [x] feat-037 mail fact write-back (2026-09-25): POST /api/mail/fact (page name rejects traversal, archive_fact dedups, origin=mail:{msg_id}) + MailView inline 摘录进 Wiki action for 通知/待办 mails (page + fact inputs prefilled from summary). Tests cover write+dedup+400. `./init.ps1` → 118 pytest + frontend build green; strict tsc 0 diagnostics
-- [x] feat-033 wire LangGraph into Web API (2026-09-25): architecture red line landed — create_app compiles the graph with SqliteSaver (data/checkpoints.sqlite, check_same_thread=False, JsonPlusSerializer allowlist for Email/Triage) and recompiles after model settings change; /api/ask, /api/mail/triage, /api/mail/archive, /api/ingest(/file) all execute through the graph (web layer = HTTP<->state only); graph qa node now wraps hybrid_answer (wiki-first + rag fallback preserved), ingest node dual-writes via source_path (agent never writes raw/), router skips its LLM call when the caller presets intent; mail archive flows through interrupt -> Command(resume) keyed by triage thread_id; confirm node whitelists against pending_archive and re-checks protected; latest_candidates dual-track HITL deleted; MailView stores and returns thread_id. New dep: langgraph-checkpoint-sqlite 3.1.1 (pyproject updated). `./init.ps1` → 113 pytest (+3) + frontend build green; strict tsc 0 diagnostics
-- [x] feat-032 document deletion closed loop (2026-09-25): red-line surface — `GET /api/documents` maps raw/ files to doc_ids via public `doc_id_for_origin` (sha256 of resolved path) + new `ChromaStore.documents()` chunk counts, with a separate `vector_only` section for URL-ingested or orphaned docs; `DELETE /api/documents/{doc_id}` purges ALL vectors, hard-fails if any remain, removes the matching raw file, and logs to log.md (404 unknown); IngestView gained a document library with delete confirmation. `./init.ps1` → 110 pytest (+3) + frontend build green; strict tsc 0 diagnostics
-- [x] feat-040..044 LLM 缓存与调用开销整改 (2026-09-27): 基于五个开源 agent 源码调研（`zai-org/ZCode`、`deepseek-ai/deepseek-harness`、`earendil-works/pi`、`anomalyco/opencode`、`MiniMax-AI/minimax-code`）制定 `docs/UPGRADE_SPEC.md` 并执行 P0/P1 五项。`python -m pytest -q` → **130 passed**（+12）；`npm run build` green。
-  - **feat-040 wiki ingest prompt 拆分**（缓存前提）：`wiki/ops.py` 新增 `_select_relevant()`，复用 `rag.retrieve.keyword_score`（已有 CJK 二元组分词，未新增算法）。`ingest()` 由「material + 全部页面正文」改为「稳定目录 index_block（仅页名）→ 变动 material → top-K 选中页正文」三段式，目录排最前形成可复用前缀；原布局每次 ingest 重写整个 prompt，前缀缓存永不命中。log 追加「展开 N/M 页正文」便于事后观察选择质量。
-  - **feat-041 显式缓存标记**：`llm.py build_chat_request` 的 anthropic_messages 路径，system 由字符串改为 `[{type:text, text, cache_control:{type:ephemeral}}]`。**chat_completions / openai_responses 刻意不发**——无法假定用户自配的任意网关支持 `prompt_cache_key`，盲目下发等于给兼容端塞未知字段（对齐 ZCode 的处理范围）。
-  - **feat-042 history 按 token 预算**：`graph/nodes.py` 新增 `_recent_turns()`，`KEEP_RECENT_TOKENS=20_000`（对齐 pi 默认值），系数 1.5 char/token 取 CJK 保守侧，替换原 `[-6:]` 轮数截断。已加 `ponytail:` 注释声明是字符估算非真 tokenizer，升级路径是接 tiktoken。
-  - **feat-043 邮件批量分类**：`mail/classify.py` 新增 `classify_batch()`，`classify()` 单封签名保留（既有测试零改动）。`graph/nodes.py` 的 `[classify(e, llm) for e in emails]`（N 次 HTTP）→ 1 次。**红线：is_protected 仍逐封独立执行**，批量只折叠 LLM 调用；单封时回退到 `classify()` 以免白付批量 prompt 成本。
-  - **feat-044 锁定 reducer 决策**：`graph/state.py` history 字段加 `ponytail:` 注释，说明故意不用 `operator.add`（checkpointer 回放已传入累积 turns，加 reducer 会双重累加），并给出升级路径。顺带修正同文件 docstring 的陈旧事实：原文写 MemorySaver，实际 `app.py` 用 SqliteSaver。
-  - **实现中发现并修正的两处真实缺陷**：① `_parse_batch` 原按行独立解析，类别与摘要在不同行时会丢摘要——改为按编号跨行累积，由新增测试暴露；② `test_web_api.py` 的 `SmartChat` fixture 仍按单封格式回复，批量后 m2 营销邮件误判为不可归档——fixture 增加批量提示词分支。
-  - **未做（已记录决策）**：feat-045 router 死代码（`app.py` 四个 invoke 全部预设 intent，router 的 LLM 分支生产从不执行）标记 `blocked`，需先回答「LangGraph 是否必须成为正式生产编排器」；feat-046 架构门禁 CI 标记 `wont-fix`（单人项目成本高于收益，改用 commit message 纪律）。
-- [x] feat-045 LangGraph 正式生产编排器 (2026-09-27): 用户拍板「LangGraph 必须成为正式生产编排器」，解开 CODE_AUDIT 自 2026-09-24 起悬置的定位问题。方案 A 落地：`python -m pytest -q` → **137 passed**（基线 130，+7）；`npm run build` green。
-  - **新增 `POST /api/agent`**：自由文本入口，**刻意不预设 `intent`**，由图内 router 节点调 LLM 决定分支。这是生产环境里唯一真正走通 `add_conditional_edges` 动态路由的路径——此前四个结构化端点全部预设 intent，router 的 LLM 分支只在测试中被执行过。响应按 intent 返回 qa / ingest / 邮件 三种形态；邮件分支停在人工确认中断并返回 `thread_id` 供 `/api/mail/archive` 续用，红线链路不变。
-  - **CLI 全面改为经图编排**：`cli.py` 原先直调 `sync.dual_ingest` / `sync.hybrid_answer`，是第二条未经验证的编排链路。现 `ingest`/`ask` 改走 `compiled_graph.invoke`，新增 `agent` 子命令（CLI 侧的 router 入口）。`lint` 因图中无对应分支仍直调 `wiki.lint`——它是只读文件审计，不参与编排，不是第三条编排路径。
-  - **结构化子命令继续预设 intent**：URL 与参数已表明意图，重问模型是纯浪费。跳过逻辑是有意设计，已改写 `nodes.py` 的 router 注释说明这点，避免后人误读为死代码。
-  - **新增守卫测试**：`test_cli_runs_through_the_graph` 用 monkeypatch 让 `sync.hybrid_answer` / `sync.dual_ingest` 抛 `AssertionError`，若 CLI 哪天又绕过图会立刻失败——这比断言输出格式更能防回归。另有 router 触发/跳过、ingest 分支形态等 6 个测试。
-  - **手工验证**：`python -m memoria --help` 列出四个子命令；`python -m memoria agent "测试"` 的 traceback 停在 `During task with name 'router'`，从侧面证明 CLI 确实把请求交给了 router 节点（网络失败是沙箱无网关所致，非缺陷）。
-  - **浏览器验收（2026-09-27，ZCode 内置 Computer Use）**：`python run_web.py` 起服务后逐视图检查。四个标签页（问答与溯源 / 知识漫游 / 邮件安全 / 文档双写）全部正常渲染，无控制台报错、无布局破损；设置弹窗的对话模型页（6 个模型、当前 badge、测试/保存 footer）与向量模型页均正常，SettingsModal 的四文件拆分工作良好。UI 对后端 502 的错误呈现正确（显示红色「请求遇到问题」而非静默失败或白屏）。**真实 LLM 端到端验证通过**：直接调用商汤网关跑通 feat-040 改造后的 `wiki.ingest()`，LLM 编译出「服务 A / 续费政策 / 续费提醒日程」三个页面，界面上正确渲染出结构化 Markdown、Wiki Lint 诊断（0 断链 3 孤立页）与正/反向链接面板；`wiki.query()` 返回带 `[[页名]]` 引用的回答。
-  - **验收中发现的既有配置缺陷（非本次改动引入）**：`data/settings.json` 的嵌入配置不完整——`active_embed_provider_id` 与 `active_embed_model` 均为空，`embed_base_url` 回退到 `https://api.deepseek.com/v1` 但无有效凭据（实测 401）。由于 `rag/retrieve.py:43` 的 `embedder.embed()` 在问答与摄入路径上必被调用，导致 `/api/ask` 与 `/api/ingest` 一律 502。设置界面「向量模型」页正确显示「暂无模型」，与文件状态一致。已确认：① 商汤网关不提供 `/embeddings` 端点（`sensenova-embedding` / `embedding-2` / `BAAI/bge-m3` 均 404）；② `data/settings.json` 未被 git 跟踪，本次改动一行未碰。**需用户在设置界面补一个可用的 embedding 供应商才能恢复问答与摄入**。验收产生的临时 wiki 页面与 raw 文件已清理。
-- [x] feat-047..049 配置缺失早暴露 (2026-09-27): 承接上一条发现的 502。**真正的问题不是"配置坏了"，而是"坏了也没人知道"**：`/api/health` 报 ok 而系统完全不可用；配置缺失被三层静默兜底吞掉（`config.py` 的默认值、`app.py` 的 `"no-key"`），最终伪装成"连接超时"。计划见 `docs/NEXT_PLAN.md`。`python -m pytest -q` → **145 passed**（137 → 145，+8）；`npm run build` green。
-  - **根因分析（决定了全部三项设计）**：`Settings` 的 `embed_base_url` / `embed_model` 带默认值（`text-embedding-3-small`），**无法从这些字段区分"用户选的"和"从没配过"**；真正的信号是 `active_embed_provider_id` / `active_embed_model` 这类空选择器。而 `create_app` 启动时根本不加载 settings（只在配置路由被调用时才读），所以健康检查对此完全失明。
-  - **feat-047**：`config.py` 新增 `capability_status()` 作为唯一判定处（健康检查、端点守卫、前端提示条共用，避免三处各写一遍）；`create_app` 启动时 `load_settings()` 并跟踪 `current_settings`。`status` 字段语义不变（仍表示进程存活），新增 `capabilities` 明细。**实现中发现并修正的缺陷**：首版用 `embed_api_key and embed_model` 判就绪，被实际配置里的设置期占位串 `sk-1234567890` 骗过，导致 `/api/health` 仍报 `embed.ready: true`。补 `_key_is_real()` + `_PLACEHOLDER_KEYS` 后才正确。
-  - **feat-048**：`app.py` 新增 `_require(capability)` 守卫，在 `api_ask` / `run_ingest`（含 `/api/ingest/file`）/ `api_agent` 的问答分支调用图之前校验。仅拦截配置确实缺失的情况；注入依赖（测试）与 demo mode 一律放行，其他错误不被吞掉。
-  - **feat-049**：`App.tsx` 启动时与设置关闭后拉 `/api/health`，未就绪时在 main 顶部渲染琥珀色提示条（原因 + 「去设置」按钮）。**顺带修掉一个自相矛盾**：顶栏徽标原本恒显示绿点 +「本地就绪」，与提示条冲突，改为未就绪时显示琥珀点 +「配置待补全」。
-  - **实测对比（同一份坏配置）**：修复前 `/api/ask` → 180 秒超时 + `[WinError 10060] 由于连接方在一段时间后没有正确答复`；修复后**即时**返回 `未配置向量模型：请在「设置 → 向量模型」中添加并启用一个 embedding 供应商后重试。`/api/health` 的 `capabilities.embed.ready` 由错误的 `true` 变为正确的 `false`。
-  - **浏览器验收（ZCode Computer Use）**：提示条文案与后端 `reason` 完全一致；「去设置」点击后设置弹窗可见（Playwright `click()` 超时，改用 `cua` 坐标点击，与既有记录一致）；顶栏徽标已切换为琥珀点 +「配置待补全」，与提示条无矛盾。
-- [x] Repo-wide ponytail cleanup (2026-09-26): audit-driven, zero-behavior-change pass.
-  - **Test defect fixed**: `tests/test_graph.py` defined `test_qa_route_wiki_sufficient_and_router_skipped` and `test_ingest_route_source_path_dual_writes` twice (byte-identical); the later `def` shadowed the earlier one, so 11 definitions collected as 9 tests. Duplicates removed — still 118 total, but the 9 real ones now genuinely run.
-  - **Backend dead code deleted**: `rag/ingest.delete_document` (pure delegate; the red-line test now calls `store.delete_document` directly), `web/__init__.create_app` re-export, `config._is_public_url(allow_empty=…)` param (never passed), `net._host_header` port ternary (dead — `_validate_url` already forces 443, so the param was dropped too), and `app.py`'s `except HTTPException: raise` (no `HTTPException` is raised outside `web/`).
-  - **Frontend dead code deleted**: `export default SettingsModal`, `RoundedCard.hoverEffect` + `variant="flat"`, `PillButton.variant="wiki"` + `size="lg"`, `export` on `DocumentInfo`/`VectorOnlyDoc`/`WikiPageSummary` and the three self-referencing props interfaces. `SettingsModal` now imports the existing `DeleteConfirmTarget` instead of re-declaring the shape inline.
-  - **Duplication removed**: 6 copies of the model-tag heuristic → one `deriveTag` helper (this fixed a real bug — the bulk-import path omitted the `|| id.includes("vl")` check, so `*-vl*` models were labelled Chat when imported via 全部添加); `handleTestConnection` + `handleTestModel` → one `runConnectionTest(modelId?)` (this deleted 28 lines of provably unreachable branches — both call sites render only under `selectedProvider || isCreatingNew`, so the 3rd/4th dispatch arms could never run); 4 copies of the HTTPS Base URL rule under 3 wordings → one `requireHttpsUrl`; 2 copies each of the tag-split expression and the model-form reset.
-  - **SettingsModal split**: 1,695 → 148 lines. New `settings/useProviderConfig.ts` (logic), `settings/ProviderDetailForm.tsx` (detail JSX + empty state), `settings/ModelFormDialog.tsx` (add/edit modal). `SettingsModal.tsx` is now just the modal shell, header, tab strip, sidebar mount, render switch, and dialog mounts.
-  - **Verification**: `python -m pytest -q` → 118 passed; `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` → 0 diagnostics; `npm run build` → green. Also diffed every `className=` and every Chinese UI string between the pre-split file and the four new files — identical after reverting one agent-introduced `py-1`→`py-2` padding change on the create-cancel button.
-  - **Deliberately out of scope** (user decision): the 5 unused preset/legacy `/api/config` routes were kept; backend structural rework (`activate_settings`, `test_model_connectivity`, `_first_chat_model`) and the view-layer shared components were deferred.
-  - **Browser acceptance (2026-09-26, ZCode in-app browser)**: exercised the refactored settings modal end to end — detail view (sidebar, Base URL, API 格式 select, masked API Key + eye toggle, 6 model rows with test/edit/delete, 当前 badge, 测试/保存 footer); create mode (draft row in sidebar, borderless name input, default `https://`, 取消/创建 footer, 暂无模型 empty state); `ModelFormDialog` add-model modal (ID/name/tags fields, 6 preset chips, 保存模型); embedding tab (向量模型 active, both embedding-specific notes — 向量接口固定使用 OpenAI 兼容 /embeddings and the vector-index rebuild warning); `DeleteConfirmDialog` (确认删除模型？ with the model name interpolated, proving the imported `DeleteConfirmTarget` type). Tag-preset round-trip verified against the `splitTags` helper: `Chat, 128K` → `+视觉` → `Chat, 128K, 视觉` → clicking the already-present `+128K` correctly no-ops (dedup) → `+Embedding` → `Chat, 128K, 视觉, Embedding`. Cancel was clicked rather than confirming the delete, and `/api/config/providers` was re-read afterwards to confirm all 6 models (incl. `sensenova-6.8-flash-lite`) are intact. The reverted `py-1` padding was measured in the live DOM: class list contains `py-1`, computed padding 4px/4px, button 44×24px. The other 3 views (知识漫游 / 邮件安全 / 文档双写) render their content, RoundedCard empty states and PillButton actions unchanged. Mobile 390×844: no horizontal overflow anywhere on any view; the settings modal keeps its two-column layout (card 366px, sidebar 80px + detail 284px) and the model row's action buttons wrap cleanly.
-  - **Tooling note**: in this IAB, Playwright `click()` timed out on every target while `cua.click` at the element's measured center worked; screenshots additionally required ~2 s of settle time to avoid catching the `animate-fade-in` mid-transition, and the screenshot backend wedged at 390 px until the tab was reopened. Layout claims were therefore verified by measured `getBoundingClientRect` / computed styles as well as pixels.
-
-- [x] feat-050..054 RAG 检索质量升级 (2026-09-28): 基于 Context7 查得的 Chroma / LangChain 当前文档 + 代码实测探针制定 `docs/RAG_UPGRADE_PLAN.md` 并全部落地。`python -m pytest -q` → **182 passed**（145 → 182，+37）；`npm run build` green。**评测基线：MRR 0.83 → 1.00**（3/3 查询全部首位命中）。
-  - **feat-050 评测基线（先有尺子）**：4 份主题互斥文档 + 3 条可判定查询，测 recall@4 与首个正确块排名。**方案经实测修正**：初稿用相同向量（flat embedder）隔离关键词项是无效的——向量相同时 `combined_score` 的向量项对所有候选相等，排序退化为 `store.search` 的任意返回顺序，重排根本没被测到（实测「苹果多少钱」正确文档 kw=0.25 却排在 kw=0.0 之后）。改用 FakeEmbedder 测真实混合管线。
-  - **feat-051 语义边界切分**：`chunk_text` 原为纯固定窗口，实测在句子中间硬切（'...需要提前 30 天发起续费' 结尾断在句中）。改为在标点/子句边界切。**红线约束**：切点可变、偏移语义不可变，`chunk.text == source[chunk.start:chunk.end]` 在 size∈{50,80,120,200,400} × overlap∈{0,10,25} 全部组合下成立。
-  - **feat-052 中文分词去噪**：**范围经实测收窄**——`re.findall(r'\w+')` 本身已按标点切分，跨句碎片本就不存在；句内碎片（`候需` vs `提前`）在无词典前提下字符层面同构、原理性不可解。故只做可解部分：过滤纯停用词 run。跨词碎片交由 IDF 处理。代码内 `ponytail:` 注释记录了该限制与升级路径。
-  - **feat-053 IDF 加权**：`keyword_score(query, text, df=None)` 保留两参签名（缺省退化为原行为，`retrieve` 与 `wiki/ops._select_relevant` 两处调用点零改动）。平滑 IDF `log((N+1)/(df+1))+1`，`retrieve` 从候选池构建 DF 表。**效果实测**：feat-050 记录的唯一弱点「服务什么时候到期」从第 2 位升至第 1 位。
-  - **feat-054 扩大 k：8 → 30**。**判断被实测推翻**：小语料（4 份文档）下 k 放宽无任何变化，一度下调优先级；构造 41 份文档、目标埋在第 20 位的语料后推翻——`k=8` **完全召回不到**（答案里没有任何「到期」内容），`k>=15` 命中第 3。延迟实测 2.35ms → 5.89ms，相对秒级 LLM 往返可忽略。`top_n=4` 刻意不变（它才是 LLM token 成本）。已由 `test_narrow_recall_window_finds_nothing` 锁定该失败模式。
-  - **教训记录**：评测语料的规模决定结论的适用范围。小语料上的「无变化」不等于「无影响」——这条已写入 `ARCHITECTURE.md` §7.6。
-  - **遗留未做**：query 向量缓存（多轮追问时重发）、Chroma `configuration` 迁移（旧写法仍可用非缺陷）、嵌入/响应缓存、jieba 等语义分词器（碎片已被 IDF 压低，若仍不够需重新讨论「检索核心自己写」红线）。
-
-- [x] feat-058/059 ponytail-audit 整改 (2026-09-28): 2026-09-28 全仓库 ponytail-audit（8 项发现，净约 -485 行）后规划并执行，计划与决策记录见 `docs/NEXT_PLAN.md`。`python -m pytest -q` → **182 passed**（184：删 4 个 presets/flat 测试 +2 个新焦点测试）；`npm run build` green（CSS 37.84→35.25 kB、JS 327.90→323.56 kB）。
-  - **feat-058 后端配置双轨收敛**：删除 presets 子系统（三条 `/api/config/presets*` 路由、`PresetSaveRequest`、`ModelPreset`、`Settings.presets`、清洗分支、`_public_preset`/`_public_settings`）与 flat `GET/POST /api/config` 路由——前端 api.ts 零调用，单用户本地应用无仓库外消费者；旧 settings.json 的 presets 字段由 pydantic extra=ignore 忽略，无迁移。config_routes.py 570→436 行。
-  - **根因修复（真实配置已咬人）**：用户 `data/settings.json` 实测出现 `active_chat_model = "BAAI/bge-large-zh-v1.5"`（硅基流动的 **embedding** 模型被当对话模型激活），源于各路由各自的「models[0] 跨类型回退」。新增 `pick_model_id(provider, model_type)`（严格按类型、禁跨类型回退）与 `resolve_active_chat_model(settings)`（选择器必须指向 active provider 下真实启用的 chat 模型，否则自愈），替换 `activate_settings`、`capability_status` 与 config_routes 五个路由共 7 处重复推导。
-  - **杂项收缩**：`api_mail_triage` 每封邮件只算一次 `archive_candidate`（原 `request_archive(t)` 调两次）；`api_activate_provider` 两分支合并、响应 dict 只写一次；`llm.py` 抽 `provider_auth_headers` 供 chat 请求与 GET /models 共用；`mail/__init__` 去掉无调用方的 `is_transaction`/`is_verification`/`CATEGORIES` 重导出。
-  - **feat-059 前端状态源统一**：删 useProviderConfig 的 localStorage 供应商镜像（5 个 key、`syncToLocalStorage` 及 8 处调用点、缓存回传迁移分支、`setProviders` 内嵌副作用变通）——后端是唯一事实源。AskView 两份提问表单抽为 `<AskInput>`；约 120 行手写历史校验器缩为约 35 行宽容加载器（坏档清空，写入端不变）。删 5 个文件中 72 处 `dark:` 变体（浅色单主题应用，系统深色偏好下原渲染为半深半浅破碎 UI）。
-  - **明确不做**（决策记录在 NEXT_PLAN.md）：`capability_status` 的 llm key 真实性检查（失败模式是快速 401 非静默超时，避免波及 feat-047..049 契约）；embed 侧选择器类型校验（写入侧已严格）；表单回填 effect 依赖数组（当前行为正确，加依赖反而清空输入中表单）。
-- [x] feat-058/059 浏览器端到端验收 (2026-09-28, ZCode Computer Use / control-browser)：生产构建经 FastAPI 静态挂载（8010 端口，`MEMORIA_CHECKPOINT_DB` 指向临时文件与真实 checkpoints 隔离；`data/settings.json` 先备份后还原，真实 wiki 只读，全程未触碰真实网关）。
-  - **自愈逻辑上线即生效**：服务启动后 `/api/health` 立即如实报告 `llm.ready:false`（用户配置的 `active_chat_model` 是 embedding 模型 `BAAI/bge-large-zh-v1.5`，修复前会谎报 ready）——首页琥珀提示条与徽标「配置待补全」同步出现。
-  - **设置全流程**：双栏弹窗渲染正常（浅色主题一致，无 dark 残留半深色）；新建「E2E临时供应商」（名称/Base URL/Key 表单）→ toast「创建成功并已生效」→ 侧栏激活点正确转移（硅基流动变「在另一个标签中生效」）；手动添加模型 `e2e-chat-model` → 保存 → 「使用」激活 → toast 确认；向量页签给 E2E 供应商添加 `e2e-embed-model` 并激活；此后 `/api/health` 双能力 `ready:true` 且模型名联动。
-  - **真实问答链路**：AskView 提交问题 → 请求真实走图 → 混合检索 → `safe_request`（假网关 DNS 快速失败）→ 502 → 错误卡片显示后端真实原因 `LLM 接口调用失败: DNS resolution failed`，无崩溃无静默；徽标切「本地就绪」、模型胶囊显示 `E2E临时供应商 / e2e-chat-model`（App 从后端刷新，非 localStorage）。
-  - **四页签**：Wiki（真实空库如实显示 0 页 + lint 空态）、Mail（空态 + 红线横幅「物理级只读」）、Ingest（拖拽区/粘贴卡片/文档库/红线说明齐全）。
-  - **feat-059 实证**：整轮设置 CRUD 后 `localStorage` 仅剩 `memoria.ask.history`，5 个供应商镜像 key 零残留；历史加载器双场景——注入损坏 JSON → 重载后干净回到首屏，注入合法 v1 载荷 → 问题/回答/Wiki 徽标完整恢复。
-  - **删除闭环**：更多菜单（lucide 新版图标类名为 `lucide-ellipsis-vertical`）→ 删除供应商 → 确认弹窗带名称 → 删除后 toast + 侧栏还原。
-  - **环境还原**：settings.json 恢复备份原状（含原有的跨类型选择器，由 resolve 逻辑在运行时自愈直至用户重选）、临时 checkpoint 删除、8010 端口释放、验收页签关闭。
-  - **工具链记录**：本轮服务进程曾被外部终止一次（退出码 0xC000013A，日志无异常，期间仅 GET 请求）；IAB 中 Playwright `click()` 可操作性等待超时 + `cua`/`dom_cua` 点击间歇失灵时，evaluate 派发真实 DOM click 稳定可用（React 19 合成事件正常响应）；截图后端卡死通过重开标签页恢复。
-
-- [x] feat-060 模型设置交互修复 (2026-09-28): 用户实测报告三个问题——①获取模型后点击药丸"添加不了"；②点击药丸直接激活（用了不想用的模型）；③点击 embedding 模型药丸后横幅报"未配置对话模型"。根因：药丸点击统一走 `handleSelectModel`（自动添加 + **立即激活**），且 `alreadyExists` 只看 id 不看类型——硅基流动的 15 个模型当初在向量页签"全部添加"全部存成 embedding 类型，在对话页签它们永远显示"待添加"药丸，点击时既不加（id 已存在）又把 embedding 模型激活为对话模型 → `resolve_active_chat_model` 判选择器无效 → 横幅报错。
-  - **前端（点击 ≠ 使用）**：新增 `handleAddFetchedModel`——获取药丸点击只添加（upsert 时以当前页签类型重存，顺带纠正存量错类型条目，toast 分"已添加/已在列表中/类型已更正"三种）；已保存模型药丸点击只做表单选中（"已选择"高亮）。激活只剩显式路径：行内"使用"按钮、更多菜单"设为当前"、首页模型选择器。
-  - **后端写边界守卫**：`api_activate_provider` 对显式 model_id 校验存储类型，跨类型激活返回 400（`BAAI/bge-m3 是向量模型，不能设为对话模型`）；未存储的自由文本 id 仍放行（保留"模型可免获取直接切换"契约）。`api_save_provider_model` 类型转换时若转换的是当前激活 embed 模型 → 自动清空 embed 选择器，不留悬空指向。
-  - **用户环境备注（按用户要求不改代码）**：取模型失败是本地代理 fake-IP DNS（198.18.0.0/15 + 2001:2::/64）被 net.py SSRF 防护拒绝所致，代理换模式或关闭即恢复。
-- [x] feat-061 启动自举、向量测试放行与显式激活修复 (2026-09-29):
-  - **服务冷启动自举激活**：在 `create_app()` 完成 `load_settings()` 后显式调用 `activate_settings(current_settings)`，使重启后内存中的 `llm` 和 `embedder` 立即与 `settings.json` 对齐，彻底解决重启后回退到 env 默认实例导致用户必须进设置点一次激活的缺陷。
-  - **向量测试空 URL 放行**：`TestConfigRequest.llm_base_url` 默认值改为空字符串，`_validate_config_urls` 对空字符串跳过 HTTPS 校验；`test_model_connectivity` 彻底解耦，测向量模型时不再要求对话 URL 或向 OpenAI 盲发探活，解封 400 死锁。
-  - **新建对话供应商显式激活**：`useProviderConfig.ts` 的 `handleSaveNewProvider` 针对对话模型补齐 `await api.activateProvider(newP.id, chosenModel, 'chat')`，且激活状态以最新服务端结果为准，消除 UI 假激活。
-  - **门禁与安全补全**：`_require("llm")` 补齐至 `/api/ask` 和 `/api/agent` 入口，且修正 `overrides` 豁免判断；`api_activate_provider` 增加禁止激活已禁用供应商的 400 守卫；首页模型选择器切换模型后联动触发 `refreshHealth()` 刷新健康徽标。
-- [x] feat-062 出站协议与健壮性治理 (2026-09-29):
-  - **safe_request 透明解压缩**：`src/memoria/net.py` 实现 `_decompress_body`，支持 `gzip` 与 `deflate` 透明流式/内存安全解压（自带 zip bomb 内存超限保护），解封 Cloudflare、Akamai、火山引擎等反代网关的压缩响应误杀；请求头默认声明 `Accept-Encoding: gzip, deflate, identity`。
-  - **OpenAICompatibleEmbedder 批量切片与容错**：`src/memoria/rag/embed.py` 支持按 `batch_size=16` 自动切批获取向量，杜绝长文档切片超限；排序使用 `d.get("index", 0)`，兼容缺省 index 字段的三方或本地兼容端；空输入快速返回 `[]`。
-  - **推理模型兼容**：`src/memoria/llm.py` 在 `extract_chat_text` 中增加对 `content is None` 的容错，优先读取 `reasoning_content` 与 `reasoning`，完美支持 DeepSeek-R1 / reasoner 等思考模型。
-  - **路径哈希规范化**：`src/memoria/rag/parse.py` 中 `load_document` 对本地路径强制执行 `Path(source).resolve()`，彻底对齐 Web 端计算逻辑，解决相对路径 CLI 摄入产生孤儿向量的隐患。
-- [x] feat-063 模型交互与类型一致性治理 (2026-09-29):
-  - **模型拉取与导入类型推导**：`useProviderConfig.ts` 引入 `isEmbeddingModelId` 和 `deriveModelType`（通过正则与常见 embedding 模型名称模式 `embed|bge|gte|e5|sentence-transformers|text2vec` 等自动将拉取的模型标记为 `embedding`，其余为 `chat`），并在获取模型与批量导入时精准赋予推导类型，切断错类型污染源。
-  - **模型编辑弹窗类型切换**：`ModelFormDialog.tsx` 新增分段单选控件（对话模型 Chat vs 向量模型 Embedding），允许用户手动切换并以显式选中的类型持久化；`ProviderDetailForm.tsx` 在打开添加/编辑对话框时正确注入当前模型类型。
-  - **向量页签保持协议格式**：在向量页签保存供应商时保留 `selectedProvider.api_format`，不再盲目重置为 `chat_completions`。
-  - **批量模型保存后端接口**：`config_routes.py` 新增 `POST /api/config/providers/{provider_id}/models/batch`，前端 `handleImportAllFetched` 改为单次原子批量提交，杜绝多条并发请求在 `settings.json` 覆盖写时的竞争与丢模型风险。
-  - **验证**：`python -m pytest -q` → **192 passed**（+1：`test_save_provider_models_batch`）；`npm run build` green（1607 modules）；`./init.ps1` 全量验证通过。
-- [x] feat-064 向量一致性与交互闭环治理 (2026-09-29):
-  - **向量集合重置与重建索引接口**：`ChromaStore` 新增 `reset_collection()`，安全清空已有集合并基于原距离空间重新创建；后端提供 `POST /api/rag/reindex` 接口，在向量模型切换或维度不一致时，清空旧向量并重新读取 `wiki.raw_dir` 下现有全部原始文档进行切片和重新向量化入库，自动记录 Wiki 日志。
-  - **Prompt Prefix Caching 顺序调优**：调整 RAG 问答（`answer.py`）与 Wiki 检索及问答（`ops.py`）中的 Prompt 结构，确保全局稳定的目录索引（`目录：\n{index}`）及召回的文档/页面上下文（`资料：\n{context}`、`页面：\n{context}`）严格置于用户动态输入（`问题：{question}`）之前，最大化发挥现代主流 LLM 网关的 KV 前缀缓存机制，大幅降低高频问答与追问时的延时与 Token 消耗。
-  - **前端摄入页重建索引与首页选择器反馈**：`IngestView.tsx` 文档库卡片新增「重建向量索引」按钮，配备确认弹窗与加载态；`api.ts` 新增 `reindex()` 方法；`App.tsx` 的首页模型选择器在切换激活失败时增加明确弹窗告警，不再静默吞掉异常。
-  - **验证**：`python -m pytest -q` → **195 passed**（+3：`test_reset_collection_clears_all_vectors`、`test_rag_reindex_requires_embed_ready`、`test_rag_reindex_rebuilds_store`，且验证 Prompt 前缀缓存顺序）；`npm run build` green（1607 modules）；`./init.ps1` 全量验证通过。
 
 ## Notes for Next Session
 

@@ -1396,7 +1396,7 @@ def test_startup_activates_saved_settings(tmp_path, monkeypatch):
                 id="p-start",
                 name="StartProvider",
                 base_url="https://api.startup.example/v1",
-                api_key="sk-startup-secret",
+                api_key=FAKE_KEY,
                 models=[CustomModel(id="model-start", name="model-start", model_type="chat")],
             )
         ],
@@ -1427,7 +1427,7 @@ def test_startup_activates_saved_settings(tmp_path, monkeypatch):
     last_chat = captured_chat[-1]
     assert last_chat["base_url"] == "https://api.startup.example/v1"
     assert last_chat["model"] == "model-start"
-    assert last_chat["api_key"] == "sk-startup-secret"
+    assert last_chat["api_key"] == FAKE_KEY
 
 
 def test_missing_llm_config_returns_actionable_502(tmp_path, monkeypatch):
@@ -1489,7 +1489,7 @@ def test_empty_llm_url_passes_embedding_connectivity_test(api_client, monkeypatc
             "llm_base_url": "",
             "embed_base_url": "https://embed.example.com/v1",
             "embed_model": "bge-m3",
-            "embed_api_key": "sk-embed-test",
+            "embed_api_key": FAKE_KEY,
         },
     )
     assert resp.status_code == 200

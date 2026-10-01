@@ -406,7 +406,7 @@
     {
       "id": "feat-040",
       "name": "Split wiki ingest prompt into cacheable prefix + variable suffix",
-      "description": "P0（与 feat-041 必须成对）。wiki/ops.py ingest() 当前把全部页面正文拼进 prompt 且排在 material 之后，导致前缀每次全变、缓存永不命中。改为三段式：固定 system + 稳定 index_block（仅页面名列表）+ 变动 material + top-K 选中页正文。页面选择复用 rag/retrieve.py 的 keyword_score（已支持 CJK 二元组），不新增算法。验收：既有 3 个 ingest 测试全绿；新增测试断言页面数>10 时 prompt 不含未选中页正文；中英文查询均能选出相关页；log 记录选中页数。详见 docs/UPGRADE_SPEC.md §3.1",
+      "description": "P0（与 feat-041 必须成对）。wiki/ops.py ingest() 当前把全部页面正文拼进 prompt 且排在 material 之后，导致前缀每次全变、缓存永不命中。改为三段式：固定 system + 稳定 index_block（仅页面名列表）+ 变动 material + top-K 选中页正文。页面选择复用 rag/retrieve.py 的 keyword_score（已支持 CJK 二元组），不新增算法。验收：既有 3 个 ingest 测试全绿；新增测试断言页面数>10 时 prompt 不含未选中页正文；中英文查询均能选出相关页；log 记录选中页数。",
       "dependencies": [],
       "status": "completed",
       "evidence": "wiki/ops.py: 新增 _select_relevant() 复用 rag.retrieve.keyword_score（已支持 CJK 二元组）；ingest() 改为三段式 prompt（稳定目录 index_block -> 变动 material -> top-K 选中页正文），目录排在最前形成可缓存前缀；log 记录「展开 N/M 页正文」。新增 5 个测试：只发送选中页正文、页数不超 max_pages 时不截断、目录前缀位于变动块之前、跨两次 ingest 目录块保持逐字不变、_select_relevant 处理中英文。pytest tests/test_wiki_ops.py 13 passed"
@@ -414,7 +414,7 @@
     {
       "id": "feat-041",
       "name": "Send explicit prompt cache markers",
-      "description": "P0（依赖 feat-040，单独做无收益）。llm.py 全文无 cache_control / prompt_cache_key，8 个 llm.chat() 全走裸 HTTP，5 个固定 SYSTEM 常量的可缓存前缀未被利用。在 build_chat_request 按协议下发：anthropic_messages 用 system 数组 + cache_control:{type:ephemeral}；chat_completions 的 prompt_cache_key 需先确认目标网关支持，不支持则不发。范围对齐 ZCode（仅对确认支持的协议下发）。验收：新增测试断言 anthropic 路径 system 结构；既有 build_chat_request 测试全绿；设置页「测试连接」对 anthropic 网关仍成功。详见 docs/UPGRADE_SPEC.md §3.2",
+      "description": "P0（依赖 feat-040，单独做无收益）。llm.py 全文无 cache_control / prompt_cache_key，8 个 llm.chat() 全走裸 HTTP，5 个固定 SYSTEM 常量的可缓存前缀未被利用。在 build_chat_request 按协议下发：anthropic_messages 用 system 数组 + cache_control:{type:ephemeral}；chat_completions 的 prompt_cache_key 需先确认目标网关支持，不支持则不发。范围对齐 ZCode（仅对确认支持的协议下发）。验收：新增测试断言 anthropic 路径 system 结构；既有 build_chat_request 测试全绿；设置页「测试连接」对 anthropic 网关仍成功。",
       "dependencies": [
         "feat-040"
       ],
@@ -424,7 +424,7 @@
     {
       "id": "feat-042",
       "name": "Budget history by tokens, not turn count",
-      "description": "P1。graph/nodes.py:37 的 state.get('history', [])[-6:] 按轮数截断，中英文混排下 6 轮可能 3k 也可能 20k token，与 context window 无关。改为 KEEP_RECENT_TOKENS = 20_000（对齐 pi 默认值），从尾部累加 len(question)+len(answer) 超出即停，系数 1.5 取 CJK 保守侧。必须加 ponytail: 注释说明是字符估算非真 tokenizer，升级路径是接 tiktoken。验收：既有 test_qa_route_carries_history_for_follow_ups 全绿；新增测试覆盖超长截断与短历史不误伤。详见 docs/UPGRADE_SPEC.md §3.3",
+      "description": "P1。graph/nodes.py:37 的 state.get('history', [])[-6:] 按轮数截断，中英文混排下 6 轮可能 3k 也可能 20k token，与 context window 无关。改为 KEEP_RECENT_TOKENS = 20_000（对齐 pi 默认值），从尾部累加 len(question)+len(answer) 超出即停，系数 1.5 取 CJK 保守侧。必须加 ponytail: 注释说明是字符估算非真 tokenizer，升级路径是接 tiktoken。验收：既有 test_qa_route_carries_history_for_follow_ups 全绿；新增测试覆盖超长截断与短历史不误伤。",
       "dependencies": [],
       "status": "completed",
       "evidence": "graph/nodes.py: 新增 _recent_turns()，按 KEEP_RECENT_TOKENS=20_000（对齐 pi 默认值）从最新往回累加，超预算即丢最旧；系数 1.5 char/token 取 CJK 保守侧。qa() 的 [-6:] 轮数截断替换为 _recent_turns()。已加 ponytail: 注释声明是字符估算非真 tokenizer，升级路径为接 tiktoken。新增 1 个测试覆盖超长截断 / 保留最新 / 短历史不误伤 / 空历史安全 / 实际占用不超预算。pytest tests/test_graph.py 10 passed"
@@ -432,7 +432,7 @@
     {
       "id": "feat-043",
       "name": "Batch mail classification into one LLM call",
-      "description": "P1。graph/nodes.py:61 的 [classify(e, llm) for e in emails] 是 N 次 HTTP 往返，20 封邮件 = 20 次。合并为一次调用返回多行，扩展 classify.py 的 _parse 为 _parse_batch，沿用已有的正则抽取 + fallback 容错思路。红线约束：is_protected 规则层必须逐封独立执行，批量只作用于 LLM 分类与摘要那一步，不得因批量而跳过保护判定。验收：新增测试断言 10 封邮件只产生 1 次 LLM 调用；新增测试覆盖 LLM 返回部分行时缺失项走 fallback；既有 test_mail_triage.py 与全部红线测试全绿。详见 docs/UPGRADE_SPEC.md §3.4",
+      "description": "P1。graph/nodes.py:61 的 [classify(e, llm) for e in emails] 是 N 次 HTTP 往返，20 封邮件 = 20 次。合并为一次调用返回多行，扩展 classify.py 的 _parse 为 _parse_batch，沿用已有的正则抽取 + fallback 容错思路。红线约束：is_protected 规则层必须逐封独立执行，批量只作用于 LLM 分类与摘要那一步，不得因批量而跳过保护判定。验收：新增测试断言 10 封邮件只产生 1 次 LLM 调用；新增测试覆盖 LLM 返回部分行时缺失项走 fallback；既有 test_mail_triage.py 与全部红线测试全绿。",
       "dependencies": [],
       "status": "completed",
       "evidence": "mail/classify.py: 新增 classify_batch()（classify() 单封签名保留，既有测试不受影响）。10 封邮件由 10 次 HTTP 降为 1 次。_parse_batch() 按编号跨行累积——类别与摘要在不同行时不会丢摘要（实现过程中由此测试发现并修正了一处真实 bug）。红线：is_protected 仍逐封独立执行，批量只折叠 LLM 调用，不允许一次调用决定整批保护状态；单封时回退到 classify() 以免白付批量 prompt 成本。新增 4 个测试：10 封仅 1 次调用、保护状态逐封独立（LLM 全标营销仍拦住验证码与交易）、回复残缺时安全回退、单封与 classify() 一致。同步更新 test_web_api.py 的 SmartChat fixture 使其识别批量提示词格式。pytest tests/test_mail_triage.py 10 passed"
@@ -440,7 +440,7 @@
     {
       "id": "feat-044",
       "name": "Lock the history reducer decision with a comment",
-      "description": "P1。state.py 全字段无 Annotated/reducer，history 靠节点内手工截断写回。若后人给 history 加 operator.add，会与节点内的 turns + [新] 形成双重累加。本项只加 ponytail: 注释不改行为，说明为何故意不用 reducer，并给出升级路径（改用 LangGraph add_messages 语义）。验收：注释存在；test_graph.py 全绿。详见 docs/UPGRADE_SPEC.md §3.5",
+      "description": "P1。state.py 全字段无 Annotated/reducer，history 靠节点内手工截断写回。若后人给 history 加 operator.add，会与节点内的 turns + [新] 形成双重累加。本项只加 ponytail: 注释不改行为，说明为何故意不用 reducer，并给出升级路径（改用 LangGraph add_messages 语义）。验收：注释存在；test_graph.py 全绿。",
       "dependencies": [],
       "status": "completed",
       "evidence": "graph/state.py: history 字段加 ponytail: 注释，说明故意不用 operator.add reducer（checkpointer 回放已传入累积 turns，节点内自行裁剪，加 reducer 会双重累加），并给出升级路径（改用 add_messages 语义）。仅注释，无行为变更。顺带修正同一 docstring 的陈旧事实：原文写 MemorySaver，实际 app.py 用 SqliteSaver。pytest tests/test_graph.py 10 passed"
@@ -448,7 +448,7 @@
     {
       "id": "feat-045",
       "name": "Decide the fate of the dead router node",
-      "description": "P2，需产品决策，不由实现者拍板。app.py 四个 invoke 全部预设 intent，router 的 LLM 分支在生产环境从不执行，graph.py 的动态路由能力从未被真实流量验证。方案 A（保守，推荐）：保留 router，注释说明是为自由文本入口预留，并新增 /api/agent 端点使其可达。方案 B（激进）：删除 router 节点，add_conditional_edges 改静态边，承认 Web 按 endpoint 分流的事实。须与 CODE_AUDIT_2026-09-24.md 提出的「LangGraph 是否必须成为正式生产编排器」一并决策。详见 docs/UPGRADE_SPEC.md §3.6",
+      "description": "P2，需产品决策，不由实现者拍板。app.py 四个 invoke 全部预设 intent，router 的 LLM 分支在生产环境从不执行，graph.py 的动态路由能力从未被真实流量验证。方案 A（保守，推荐）：保留 router，注释说明是为自由文本入口预留，并新增 /api/agent 端点使其可达。方案 B（激进）：删除 router 节点，add_conditional_edges 改静态边，承认 Web 按 endpoint 分流的事实。须与「LangGraph 是否必须成为正式生产编排器」一并决策。",
       "dependencies": [],
       "status": "completed",
       "evidence": "用户决策（2026-09-27）：LangGraph 必须成为正式生产编排器。方案 A 落地。\n(1) 新增 POST /api/agent（web/app.py）：自由文本入口，不预设 intent，由图内 router 节点经 LLM 决定分支；响应按 intent 返回 qa / ingest / 邮件 三种形态，邮件分支停在人工确认中断并返回 thread_id 供 /api/mail/archive 使用。这是生产环境中唯一真正走通 add_conditional_edges 的路径。\n(2) cli.py 全面改为经图编排：新增 agent 子命令；ingest/ask 由直调 sync.dual_ingest / sync.hybrid_answer 改为 compiled_graph.invoke；lint 因图中无对应分支仍直调 wiki.lint（只读审计，非编排路径）。结构化子命令继续预设 intent 以省掉 router 往返。\n(3) nodes.py router 注释改写，说明「预设即跳过」是有意设计而非偶然。\n新增 7 个测试：test_cli.py 4 个（agent 子命令解析、CLI 不得直调 sync.py 的守卫——通过 monkeypatch 让 hybrid_answer/dual_ingest 抛错来证明、agent 会跑 router、ask 不跑 router）；test_web_api.py 3 个（/api/agent 触发 router 并返回 qa 形态、预设 intent 可跳过 router、ingest 分支返回正确形态）。测试用 SmartChat fixture 补了「意图路由」分支。\npytest -q → 137 passed（基线 130，+7）"
@@ -456,10 +456,10 @@
     {
       "id": "feat-046",
       "name": "Architecture gate CI (assessed: not doing it)",
-      "description": "P2，结论是不做。ZCode 有 architecture-policy.yaml + pnpm architecture:check 机械强制（单文件<=400 行、契约<=300、公开方法<=12、禁循环依赖），存量违规进 baseline。评估结论：Memoria 是单人项目，CI 门禁维护成本高于收益；config_routes.py 555 行已超 400 行门槛但无实际阻塞。替代方案是在 AGENTS.md 加「单文件超 400 行需在 commit message 说明理由」，用纪律替代门禁。本项标记 wont-fix 并记录理由，避免后续重复讨论。详见 docs/UPGRADE_SPEC.md §3.7",
+      "description": "P2，结论是不做。ZCode 有 architecture-policy.yaml + pnpm architecture:check 机械强制（单文件<=400 行、契约<=300、公开方法<=12、禁循环依赖），存量违规进 baseline。评估结论：Memoria 是单人项目，CI 门禁维护成本高于收益；config_routes.py 555 行已超 400 行门槛但无实际阻塞。替代方案是在 AGENTS.md 加「单文件超 400 行需在 commit message 说明理由」，用纪律替代门禁。本项标记 wont-fix 并记录理由，避免后续重复讨论。",
       "dependencies": [],
       "status": "wont-fix",
-      "evidence": "已评估并记录为 wont-fix。ZCode 的 architecture-policy.yaml 门禁对单人项目成本高于收益；config_routes.py 555 行超 400 行门槛但无实际阻塞。详见 docs/UPGRADE_SPEC.md §3.7"
+      "evidence": "已评估并记录为 wont-fix。ZCode 的 architecture-policy.yaml 门禁对单人项目成本高于收益；config_routes.py 555 行超 400 行门槛但无实际阻塞。"
     },
     {
       "id": "feat-047",
@@ -545,7 +545,7 @@
         "feat-049"
       ],
       "status": "completed",
-      "evidence": "python -m pytest -q 全量 182 passed（基线 184：删 4 个 presets/flat 测试，新增 test_pick_model_id_never_falls_back_across_types 与 test_resolve_active_chat_model_repairs_cross_typed_selector，test_health_reports_missing_embedding_config 的 fixture 补 chat 模型以匹配收紧后的语义）。config_routes.py 570→436 行。行为变更三条已写入 docs/NEXT_PLAN.md：无启用 chat 模型时选择器落空串、跨类型选择器按未配置自愈、被删路由返回 404。"
+      "evidence": "python -m pytest -q 全量 182 passed（基线 184：删 4 个 presets/flat 测试，新增 test_pick_model_id_never_falls_back_across_types 与 test_resolve_active_chat_model_repairs_cross_typed_selector，test_health_reports_missing_embedding_config 的 fixture 补 chat 模型以匹配收紧后的语义）。config_routes.py 570→436 行。行为变更三条：无启用 chat 模型时选择器落空串、跨类型选择器按未配置自愈、被删路由返回 404。"
     },
     {
       "id": "feat-059",

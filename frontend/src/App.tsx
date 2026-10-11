@@ -52,7 +52,10 @@ export const App: React.FC = () => {
         setNotReadyReason("");
         return;
       }
-      const missing = [caps.llm, caps.embed].filter((c) => !c.ready);
+      // feat-069: mail rides in capabilities too — surface it alongside llm/embed.
+      const missing = [caps.llm, caps.embed, ...(caps.mail ? [caps.mail] : [])].filter(
+        (c) => !c.ready
+      );
       setNotReadyReason(missing.length > 0 ? missing[0].reason : "");
     } catch {
       setNotReadyReason("");

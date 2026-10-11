@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from memoria.graph import build_graph
 from memoria.llm import ChatLLM, OpenAICompatibleChat
 from memoria.mail import Email
+from memoria.mail.auth import get_gmail_service
 from memoria.proposals import (
     ProposalError,
     ProposalInvalid,
@@ -38,6 +39,7 @@ from memoria.rag import (
 from memoria.records import RecordStore
 from memoria.sync import archive_qa, archive_fact
 from memoria.web.config import (
+    MAIL_NOT_CONNECTED_HINT,
     Settings,
     capability_status,
     load_settings,
@@ -135,6 +137,27 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     wiki: Wiki = overrides.get("wiki") or Wiki(wiki_path)
     wiki.ensure_layout()
     mail_service = overrides.get("mail_service")
+    # feat-069: production mail wiring. Injected services (tests) are ready by
+    # construction; otherwise build non-interactively from data/token.json —
+    # startup must never pop a browser OAuth flow, so any failure degrades to
+    # a capability reason instead of blocking boot.
+    if "mail_service" in overrides:
+        mail_status: dict[str, Any] = {
+            "ready": mail_service is not None,
+            "reason": "" if mail_service is not None else "邮件服务已注入为 None（测试/离线模式）",
+        }
+    else:
+        token_path = os.environ.get("MEMORIA_GMAIL_TOKEN", "./data/token.json")
+        if not Path(token_path).exists():
+            mail_service = None
+            mail_status = {"ready": False, "reason": MAIL_NOT_CONNECTED_HINT}
+        else:
+            try:
+                mail_service = get_gmail_service(token_path=token_path, interactive=False)
+                mail_status = {"ready": True, "reason": ""}
+            except Exception as e:
+                mail_service = None
+                mail_status = {"ready": False, "reason": f"Gmail 连接失败：{str(e)[:200]}"}
     cached_emails: list[Email] = overrides.get("emails", [])
 
     # feat-066: single-table record store; proposals live here (tasks/memories later).
@@ -265,13 +288,22 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         # feat-047: process liveness was reported as "ok" even when the embedding
         # config was missing and every ask/ingest call failed with a socket timeout.
         body: dict[str, Any] = {"status": "ok", "version": "0.1.0"}
+        # feat-069: mail readiness rides on the app-level service, not settings.
+        mail_caps = {
+            "ready": bool(mail_status["ready"]),
+            "reason": mail_status["reason"],
+            "model": "gmail",
+        }
         if current_settings is None:
             body["capabilities"] = {
                 "llm": {"ready": True, "model": "injected", "reason": ""},
                 "embed": {"ready": True, "model": "injected", "reason": ""},
+                "mail": mail_caps,
             }
         else:
-            body["capabilities"] = capability_status(current_settings)
+            caps = dict(capability_status(current_settings))
+            caps["mail"] = mail_caps
+            body["capabilities"] = caps
         return body
 
     @app.post("/api/ask")
@@ -428,6 +460,10 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         triages = result.get("triages", [])
         return {
             "thread_id": thread_id,
+            # feat-069: the UI distinguishes "no mail to triage" from "Gmail
+            # not connected / connection broken".
+            "mail_ready": bool(mail_status["ready"]),
+            "mail_reason": mail_status["reason"],
             "pending": [t.email.msg_id for t in triages if t.archive_candidate],
             "triages": [
                 {

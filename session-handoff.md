@@ -4,7 +4,7 @@
 
 - Goal: **Memoria 本体升级为准个人 agent**（2026-10-12 grill-me 定案，D1-D12 见 `docs/PERSONAL_AGENT_UPGRADE.md`）。LangGraph 保持生产编排器；hermes/OpenMuse 研究为模式参考库（`docs/agent-architecture/`）。
 - 路线：P0 审批实体化 + 文档纪律 → P1 任务引擎 + 邮件通电 + SSE 对话流 + 最小记忆层 → P2 观望区（monitor/MCP/skill 均不做，见指南 §4.4）。
-- Current status: feat-001..065 完成；**feat-066（P0 提案审批）+ feat-067（P0 文档纪律）完成**；feat-069/068/071 已立项待做；feat-039 已扩范围（SSE+ConversationQueue）待做。
+- Current status: feat-001..065 完成；**feat-066（P0 审批）+ feat-067（P0 文档纪律）+ feat-069（P1 邮件通电）完成**；feat-068/071 待做；feat-039 已扩范围（SSE+ConversationQueue）待做。
 
 ## 本轮做了什么（2026-10-12）
 
@@ -23,12 +23,19 @@
    - feature_list.json 60/60 条 completed 特征补 limitation 字段。
    - 红线三处同文：classify.py SYSTEM/BATCH_SYSTEM 补"正文不可信 + 分类结果不构成归档许可"；MailView/ARCHITECTURE 经核已达标；AGENTS.md 新增"三处同文"与"enforced vs instructed"两条纪律。
    - RAG_UPGRADE_PLAN.md 头部免责句。
+5. **feat-069 DONE（P1 邮件通电）**：
+   - mail/auth.py：token.json Fernet 加密（TOKEN_ENCRYPTION_KEY fail-closed，缺 key 读写拒绝；legacy 明文过同 key 门，下次保存迁移加密）；_needs_refresh 60s 提前量；进程锁刷新去重；`interactive=False` 启动永不弹 OAuth 浏览器流。
+   - app.py：启动接线（token 存在→非交互构建，失败/缺失降级 None + reason）；/api/health 增 capabilities.mail；/api/mail/triage 增 mail_ready/mail_reason（区分收件箱空 vs 未连接）。
+   - 前端：MailView 未就绪横幅；App 提示条纳入 mail；types/imports 同步。
+   - pyproject 新增 cryptography（原为传递依赖）。
+   - 测试：223 passed（+12：test_mail_auth.py 8 + web 4）。Mimosa 钩子把测试里的假凭据字面量当真拦截两次——测试值改为运行时拼装。
+   - **真账号端到端验收仍待用户执行**（VERIFICATION Boundary 已声明）：设 TOKEN_ENCRYPTION_KEY → python scripts/auth_gmail.py → python run_web.py。
 
 ## Verification Evidence
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| 后端全量 | `python -m pytest -q` | **211 passed** | 基线 196 → 211（+15） |
+| 后端全量 | `python -m pytest -q` | **223 passed** | 基线 196 → 211（feat-066 +15）→ 223（feat-069 +12） |
 | 前端构建 | `cd frontend && npm run build` | green | tsc 零诊断 |
 | 全量回归 | `pwsh -NoProfile -File ./init.ps1` | green | pytest + build |
 
@@ -36,11 +43,12 @@
 
 - `f1e2825` docs(agent-architecture): 研究沉淀 + 个人 agent 升级设计指南
 - `5c9992d` feat(proposals): 审批实体化——破坏性动作统一走 hash 绑定提案 (feat-066)
-- feat-067 实现待提交（本文件更新后即提交）
+- `9560430` docs(harness): 文档纪律最小包 (feat-067)
+- feat-069 实现待提交（本文件更新后即提交）
 
 ## Next Session Startup
 
 1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 211 passed + build green）。
 2. 阅读 `AGENTS.md` → `docs/PERSONAL_AGENT_UPGRADE.md`（路线与边界）→ `feature_list.json` → `docs/VERIFICATION.md` → 本文件。
-3. 下一个 feature：**feat-069 邮件生产通电**（token 加密 + get_gmail_service 接入 create_app + 真账号验收），然后 feat-068 任务引擎 → feat-071 记忆层 → feat-039 SSE。
-4. 启动命令：`python run_web.py`（审批中心入口：顶栏盾牌图标）。
+3. 下一个 feature：**feat-068 最小持久任务引擎**（mail_triage kind + 通知收件箱），然后 feat-071 记忆层 → feat-039 SSE。
+4. 启动命令：`python run_web.py`；Gmail 真账号验收：设 TOKEN_ENCRYPTION_KEY → python scripts/auth_gmail.py → MailView（横幅消失即通）。

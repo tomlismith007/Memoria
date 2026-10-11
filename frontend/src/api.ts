@@ -6,7 +6,7 @@ import type {
   HealthResponse,
   IngestResponse,
   MailArchiveResponse,
-  MailItem,
+  MailTriageResponse,
   ModelApiFormat,
   Proposal,
   ProposalDecideResponse,
@@ -60,11 +60,7 @@ export const api = {
       body: JSON.stringify({ question, answer, citations }),
     }),
 
-  getMailTriage: () =>
-    request<{
-      triages: MailItem[];
-      thread_id: string;
-    }>("/api/mail/triage"),
+  getMailTriage: () => request<MailTriageResponse>("/api/mail/triage"),
 
   archiveMail: (confirmed_ids: string[], thread_id: string) =>
     // feat-066: returns a hash-bound proposal; execution happens via decideProposal.

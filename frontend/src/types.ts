@@ -60,6 +60,16 @@ export interface MailItem {
   can_archive: boolean;
 }
 
+/** feat-069: live Gmail fetch readiness travels with every triage response. */
+export interface MailTriageResponse {
+  triages: MailItem[];
+  thread_id: string;
+  mail_ready: boolean;
+  mail_reason: string;
+  pending?: string[];
+  error?: string;
+}
+
 export interface IngestResponse {
   doc_id: string;
   chunks: number;
@@ -108,6 +118,8 @@ export interface HealthResponse {
   capabilities?: {
     llm: CapabilityStatus;
     embed: CapabilityStatus;
+    /** feat-069: present since the mail production-wiring feature. */
+    mail?: CapabilityStatus;
   };
 }
 

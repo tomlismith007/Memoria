@@ -72,6 +72,15 @@ class ModelsRequest(BaseModel):
 
 EMBED_MISSING_HINT = "未配置向量模型：请在「设置 → 向量模型」中添加并启用一个 embedding 供应商后重试。"
 LLM_MISSING_HINT = "未配置对话模型：请在「设置 → 对话模型」中选择一个启用的模型后重试。"
+MAIL_NOT_CONNECTED_HINT = (
+    "未连接 Gmail：运行 python scripts/auth_gmail.py 完成授权"
+    "（需先设置 TOKEN_ENCRYPTION_KEY 环境变量以加密 token）。"
+)
+MAIL_KEY_MISSING_HINT = (
+    "Gmail token 读取被拒绝：未设置 TOKEN_ENCRYPTION_KEY（fail-closed，feat-069）。"
+    "生成密钥：python -c \"from cryptography.fernet import Fernet; "
+    "print(Fernet.generate_key().decode())\" 并设为环境变量后重启。"
+)
 
 # A stored key is not proof of a working one: a placeholder left over from
 # setup ("sk-1234567890") would otherwise read as configured and the first real

@@ -7,6 +7,7 @@ import {
   Mail,
   RefreshCw,
   ShieldCheck,
+  TriangleAlert,
 } from "lucide-react";
 import { api } from "../api";
 import type { MailItem } from "../types";
@@ -31,6 +32,9 @@ export const MailView: React.FC = () => {
   const [threadId, setThreadId] = useState<string>("");
   const [factDraft, setFactDraft] = useState<FactDraft | null>(null);
   const [savingFact, setSavingFact] = useState(false);
+  // feat-069: live Gmail fetch readiness, surfaced as an in-view guidance banner.
+  const [mailReady, setMailReady] = useState(true);
+  const [mailReason, setMailReason] = useState("");
 
   const loadMails = async () => {
     setLoading(true);
@@ -39,6 +43,8 @@ export const MailView: React.FC = () => {
       const data = await api.getMailTriage();
       setMails(data.triages || []);
       setThreadId(data.thread_id || ""); // the graph interrupt lives on this thread
+      setMailReady(data.mail_ready);
+      setMailReason(data.mail_reason || "");
     } catch (err: any) {
       alert(`获取邮件列表失败: ${err.message}`);
     } finally {
@@ -151,6 +157,17 @@ export const MailView: React.FC = () => {
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl p-4 text-xs flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
           <span>{statusMessage}</span>
+        </div>
+      )}
+
+      {/* feat-069: "not connected / broken connection" must be visible where the
+          user is looking, not buried in a health endpoint. */}
+      {!mailReady && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3">
+          <TriangleAlert className="h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+          <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-amber-900 break-words">
+            {mailReason || "Gmail 未连接：无法拉取真实邮件。"}
+          </p>
         </div>
       )}
 

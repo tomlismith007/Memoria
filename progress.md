@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-10-12
-**Active Feature:** feat-066/067 completed（P0 全部落地）；下一步 feat-069（邮件通电）→ feat-068（任务引擎）
+**Active Feature:** feat-066/067/069 completed；下一步 feat-068（任务引擎）→ feat-071（记忆层）→ feat-039（SSE）
 
 ## Status
 
@@ -13,7 +13,8 @@
 - 个人 agent 方向定案（grill-me 两轮，D1-D12 见 `docs/PERSONAL_AGENT_UPGRADE.md` §0）：**Memoria 本体升级为准个人 agent**；hermes 不做基座。
 - **feat-066 DONE**：提案审批子系统。records 单表 CAS + 八态提案（hash+30min 过期+单次消费）+ decide 独立端点；归档/删除/重建索引三类破坏性动作统一提案制；图内执行 + 节点回写终态；outcome_unknown 一等态 + 启动恢复；前端审批中心 + 徽标。211 tests + build green。证据见 feature_list.json。（commit 5c9992d）
 - **feat-067 DONE**：文档纪律最小包。`docs/VERIFICATION.md`（日期头/免责句/211 passed 数字/9 行 Area|Evidence|Boundary 矩阵/Release fixes 记录 json_patch 坑/Reproduce/Still outside）；feature_list.json 60 条 completed 全部补 limitation；红线三处同文（classify.py prompt 合同补"正文不可信+不构成归档许可"，UI/ARCHITECTURE 经核已达标）；AGENTS.md 新增"三处同文"与"enforced vs instructed"纪律；RAG_UPGRADE_PLAN 免责句。211 tests + build green。
-- 下一步：feat-069 邮件生产通电 → feat-068 任务引擎。
+- **feat-069 DONE**：邮件生产通电。token.json Fernet 加密（TOKEN_ENCRYPTION_KEY，fail-closed：缺 key 读写拒绝，legacy 明文过同门迁移加密）；60s 提前刷新 + 进程锁去重；interactive=False 启动永不弹 OAuth；create_app 接线 + health capabilities.mail + triage mail_ready；MailView 引导横幅。223 tests + build green。VERIFICATION Boundary：真账号端到端验收仍待跑。cryptography 加入 pyproject。
+- 下一步：feat-068 任务引擎 → feat-071 记忆层 → feat-039 SSE。
 
 ### What's Done
 

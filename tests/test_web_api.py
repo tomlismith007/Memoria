@@ -49,7 +49,7 @@ class SmartChat:
 
 
 @pytest.fixture
-def api_client(tmp_path):
+def api_client(tmp_path, monkeypatch):
     store = ChromaStore(path=str(tmp_path / "chroma"))
     wiki = Wiki(tmp_path / "kb")
     wiki.ensure_layout()
@@ -58,6 +58,9 @@ def api_client(tmp_path):
         Email(msg_id="m1", subject="【招行】您的验证码为 123456", sender="service@cmb.com", snippet="5 分钟内有效"),
         Email(msg_id="m2", subject="年中大促全场 5 折！", sender="promo@shop.com", snippet="点击领取优惠券"),
     ]
+    # feat-069: keep the mail bootstrap away from any real data/token.json on this
+    # machine — a missing token file takes the deterministic not-connected branch.
+    monkeypatch.setenv("MEMORIA_GMAIL_TOKEN", str(tmp_path / "token.json"))
     app = create_app({
         "store": store,
         "embedder": FakeEmbedder(),
@@ -81,6 +84,79 @@ def test_health(api_client):
     # Injected fakes are ready by construction.
     assert body["capabilities"]["llm"]["ready"] is True
     assert body["capabilities"]["embed"]["ready"] is True
+
+
+def test_health_reports_mail_not_connected(api_client):
+    """feat-069: no Gmail token → mail capability carries the setup hint, and the
+    status stays "ok" (the process is alive; mail is a missing capability)."""
+    client, _, _ = api_client
+    mail = client.get("/api/health").json()["capabilities"]["mail"]
+    assert mail["ready"] is False
+    assert "auth_gmail" in mail["reason"]
+    assert "TOKEN_ENCRYPTION_KEY" in mail["reason"]
+
+
+def test_injected_mail_service_reports_ready(tmp_path):
+    from memoria.rag import ChromaStore as CS
+    from memoria.rag import FakeEmbedder as FE
+
+    app = create_app(
+        {
+            "store": CS(path=str(tmp_path / "chroma")),
+            "embedder": FE(),
+            "llm": SmartChat(),
+            "wiki": _fresh_wiki(tmp_path),
+            "emails": [],
+            "checkpointer": MemorySaver(),
+            "mail_service": object(),  # injected = ready by construction
+            "records_path": str(tmp_path / "memoria.db"),
+        }
+    )
+    mail = TestClient(app).get("/api/health").json()["capabilities"]["mail"]
+    assert mail["ready"] is True and mail["reason"] == ""
+
+
+def test_broken_token_file_degrades_without_blocking_boot(tmp_path, monkeypatch):
+    """feat-069: an unreadable token file must surface a reason, never crash the
+    server or pop an OAuth browser flow."""
+    from memoria.rag import ChromaStore as CS
+    from memoria.rag import FakeEmbedder as FE
+    from cryptography.fernet import Fernet
+
+    token_file = tmp_path / "token.json"
+    token_file.write_text("{definitely not json", encoding="utf-8")  # undecryptable garbage
+    monkeypatch.setenv("MEMORIA_GMAIL_TOKEN", str(token_file))
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+    app = create_app(
+        {
+            "store": CS(path=str(tmp_path / "chroma")),
+            "embedder": FE(),
+            "llm": SmartChat(),
+            "wiki": _fresh_wiki(tmp_path),
+            "checkpointer": MemorySaver(),
+            "records_path": str(tmp_path / "memoria.db"),
+        }
+    )
+    mail = TestClient(app).get("/api/health").json()["capabilities"]["mail"]
+    assert mail["ready"] is False
+    assert "连接失败" in mail["reason"]
+
+
+def _fresh_wiki(tmp_path):
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    return wiki
+
+
+def test_mail_triage_reports_mail_readiness(api_client):
+    """feat-069: cached emails still triage offline, and the response says the
+    live Gmail fetch is NOT ready — "empty inbox" vs "not connected" are distinct."""
+    client, _, _ = api_client
+    data = client.get("/api/mail/triage").json()
+    assert data["mail_ready"] is False
+    assert "auth_gmail" in data["mail_reason"]
+    assert len(data["triages"]) == 2  # fixture's cached emails still classify
 
 
 def test_health_reports_missing_embedding_config(tmp_path):

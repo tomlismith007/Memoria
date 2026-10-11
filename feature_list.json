@@ -717,8 +717,9 @@
         "feat-016",
         "feat-047"
       ],
-      "status": "todo",
-      "evidence": ""
+      "status": "completed",
+      "evidence": "python -m pytest -q → 223 passed（基线 211，+12：tests/test_mail_auth.py 8 个 + test_web_api.py 4 个）；frontend build green；./init.ps1 全量门禁通过。实现：mail/auth.py 重写——token.json 落盘改为 Fernet 加密（TOKEN_ENCRYPTION_KEY 环境变量，fail-closed：缺 key 读写都拒绝，legacy 明文 token 过同一 key 门并在下次保存时迁移加密），_needs_refresh 60s 提前量，进程内锁刷新去重，get_gmail_credentials(interactive=False) 服务启动永不弹 OAuth 浏览器流；app.py 启动接线（token 存在→非交互构建 mail service，失败/缺失降级 None + reason）；/api/health capabilities.mail（沿用 feat-047 模式，ready 恒真值）；/api/mail/triage 返回 mail_ready/mail_reason（区分'收件箱空'与'未连接/连接坏'）；MailView 未就绪横幅 + App 顶栏提示条纳入 mail。pyproject 新增 cryptography（已是 chromadb 传递依赖，直接声明零成本）。前端 build green。VERIFICATION.md 邮件行 Boundary 已同步：真账号端到端验收仍缺，列为 Still outside。",
+      "limitation": "真实 Gmail 账号端到端验收未执行（授权→拉信→归档需真账号跑一次，VERIFICATION Boundary 已声明）；刷新去重为进程内锁（单进程假设）；token 加密格式无版本字段（换算法需重新授权）"
     },
     {
       "id": "feat-071",

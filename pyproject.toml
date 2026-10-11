@@ -15,6 +15,7 @@ dependencies = [
   "requests",    # Google OAuth transport
   "google-api-python-client",  # Gmail API (feat-006)
   "google-auth-oauthlib",      # Gmail OAuth helper (feat-016)
+  "cryptography",  # Fernet: token.json at rest encryption (feat-069)
   "fastapi",     # web API (feat-010)
   "uvicorn",     # ASGI server (feat-010)
   "python-multipart", # form/upload support (feat-010)

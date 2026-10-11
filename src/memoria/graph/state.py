@@ -30,6 +30,7 @@ class MemoriaState(TypedDict, total=False):
     pending_archive: list[str]
     confirmed_ids: list[str]
     archived: list[str]
+    approval_proposal_id: str  # feat-066: archive executes under this proposal's receipt
 
     # ingest branch
     material: str  # text-only ingest (wiki compile, no vectors)

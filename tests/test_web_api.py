@@ -65,6 +65,7 @@ def api_client(tmp_path):
         "wiki": wiki,
         "emails": emails,
         "checkpointer": MemorySaver(),
+        "records_path": str(tmp_path / "memoria.db"),  # feat-066: isolate the records store
     })
     return TestClient(app), wiki, store
 
@@ -1107,6 +1108,25 @@ def _ingest_raw(client, wiki, name, body):
     return resp.json()["doc_id"]
 
 
+def _approve(client, proposal: dict) -> dict:
+    """Decide helper: approve with the hash the review returned."""
+    resp = client.post(
+        f"/api/proposals/{proposal['id']}/decide",
+        json={"decision": "approved", "content_hash": proposal["content_hash"]},
+    )
+    assert resp.status_code == 200
+    return resp.json()["proposal"]
+
+
+def _deny(client, proposal: dict) -> dict:
+    resp = client.post(
+        f"/api/proposals/{proposal['id']}/decide",
+        json={"decision": "denied", "content_hash": proposal["content_hash"]},
+    )
+    assert resp.status_code == 200
+    return resp.json()["proposal"]
+
+
 def test_documents_list_and_delete_no_orphan_vectors(api_client, tmp_path):
     client, wiki, store = api_client
     doc_id = _ingest_raw(client, wiki, "note-a.md", "服务 A 将于 2027-01-01 到期。" * 10)
@@ -1117,9 +1137,14 @@ def test_documents_list_and_delete_no_orphan_vectors(api_client, tmp_path):
     entry = next(d for d in listing["documents"] if d["doc_id"] == doc_id)
     assert entry["name"] == "note-a.md" and entry["chunks"] > 0
 
-    resp = client.delete(f"/api/documents/{doc_id}")
+    # feat-066: deletion is proposal-gated — propose, then decide with the hash.
+    resp = client.post("/api/proposals", json={"kind": "delete_doc", "payload": {"doc_id": doc_id}})
     assert resp.status_code == 200
-    assert resp.json()["raw_removed"] == "note-a.md"
+    proposal = resp.json()["proposal"]
+    assert proposal["payload"]["name"] == "note-a.md"
+
+    final = _approve(client, proposal)
+    assert final["status"] == "succeeded" and final["result"]["raw_removed"] == "note-a.md"
 
     # Red line: not a single vector of the deleted doc may remain.
     assert store.count() == 0 and doc_id not in store.documents()
@@ -1129,15 +1154,23 @@ def test_documents_list_and_delete_no_orphan_vectors(api_client, tmp_path):
     after = client.get("/api/documents").json()
     assert all(d["doc_id"] != doc_id for d in after["documents"])
 
+    # Single consumption: deciding the same proposal again replays the terminal record.
+    replay = _approve(client, proposal)
+    assert replay["status"] == "succeeded"
+    assert store.count() == 0  # nothing executed twice
+
 
 def test_delete_document_without_raw_file_still_purges_vectors(api_client):
     client, wiki, store = api_client
     doc_id = _ingest_raw(client, wiki, "note-b.md", "内容内容内容。" * 10)
     (wiki.raw_dir / "note-b.md").unlink()  # raw already gone, vectors remain
 
-    resp = client.delete(f"/api/documents/{doc_id}")
-    assert resp.status_code == 200
-    assert resp.json()["raw_removed"] is None
+    proposal = client.post(
+        "/api/proposals", json={"kind": "delete_doc", "payload": {"doc_id": doc_id}}
+    ).json()["proposal"]
+    assert proposal["payload"]["name"] is None
+    final = _approve(client, proposal)
+    assert final["result"]["raw_removed"] is None
     assert store.count() == 0
     vector_only = client.get("/api/documents").json()["vector_only"]
     assert all(d["doc_id"] != doc_id for d in vector_only)
@@ -1145,8 +1178,72 @@ def test_delete_document_without_raw_file_still_purges_vectors(api_client):
 
 def test_delete_unknown_document_404(api_client):
     client, _, _ = api_client
-    resp = client.delete("/api/documents/deadbeefdeadbeef")
+    resp = client.post(
+        "/api/proposals", json={"kind": "delete_doc", "payload": {"doc_id": "deadbeefdeadbeef"}}
+    )
     assert resp.status_code == 404
+
+
+def test_proposal_hash_mismatch_rejected(api_client):
+    """feat-066 anti-swap gate: the decide call must echo the reviewed hash."""
+    client, wiki, store = api_client
+    doc_id = _ingest_raw(client, wiki, "note-h.md", "哈希守卫测试。" * 10)
+    proposal = client.post(
+        "/api/proposals", json={"kind": "delete_doc", "payload": {"doc_id": doc_id}}
+    ).json()["proposal"]
+    resp = client.post(
+        f"/api/proposals/{proposal['id']}/decide",
+        json={"decision": "approved", "content_hash": "0" * 64},
+    )
+    assert resp.status_code == 409
+    assert client.get("/api/proposals?status=awaiting_review").json()["proposals"]
+
+
+def test_archive_proposal_cannot_be_client_created(api_client):
+    """feat-066: archive proposals come only from the mail flow."""
+    client, _, _ = api_client
+    resp = client.post(
+        "/api/proposals", json={"kind": "archive", "payload": {"thread_id": "x"}}
+    )
+    assert resp.status_code == 400
+
+
+def test_chat_channel_cannot_approve_proposals(api_client):
+    """feat-066 boundary: /api/agent's mail branch stops at the interrupt and
+    creates/decides nothing; the only decide route lives under /api/proposals."""
+    client, _, _ = api_client
+    resp = client.post("/api/agent", json={"text": "帮我分拣邮件", "intent": "邮件"})
+    assert resp.status_code == 200
+    assert resp.json()["thread_id"]
+    assert client.get("/api/proposals").json()["proposals"] == []  # no human, no proposal
+    paths = client.get("/openapi.json").json()["paths"]
+    assert [p for p in paths if "decide" in p] == ["/api/proposals/{proposal_id}/decide"]
+
+
+def test_startup_marks_interrupted_executions_unknown(tmp_path):
+    """feat-066: a claimed proposal from a crashed run becomes outcome_unknown on
+    boot — never a silent success."""
+    from memoria.proposals import ProposalService
+    from memoria.records import RecordStore
+
+    db = tmp_path / "memoria.db"
+    svc = ProposalService(RecordStore(db))
+    p = svc.propose("delete_doc", {"doc_id": "x", "name": None})
+    claimed = svc.decide(p["id"], "approved", p["content_hash"])
+    assert claimed["status"] == "executing"  # ...crash here, before complete()
+
+    wiki = Wiki(tmp_path / "kb")
+    wiki.ensure_layout()
+    app = create_app(
+        {
+            "store": ChromaStore(path=str(tmp_path / "chroma")),
+            "wiki": wiki,
+            "checkpointer": MemorySaver(),
+            "records_path": str(db),
+        }
+    )
+    rows = TestClient(app).get("/api/proposals").json()["proposals"]
+    assert rows[0]["status"] == "outcome_unknown"
 
 
 def test_ask_endpoint(api_client):
@@ -1228,23 +1325,29 @@ def test_mail_triage_and_archive_red_line(api_client):
     arch_data = arch_resp.json()
     # Red line: m1 must be blocked from archiving!
     assert "m1" in arch_data["blocked"]
-    assert "m2" in arch_data["archived"]
+    # feat-066: a hash-bound proposal is created for the executable subset only.
+    proposal = arch_data["proposal"]
+    assert proposal["kind"] == "archive" and proposal["status"] == "awaiting_review"
+    assert [m["msg_id"] for m in proposal["payload"]["msgs"]] == ["m2"]
 
-    # The triage thread is finished: another archive round-trip is a no-op.
+    # Execution happens only through decide (server-side graph resume).
+    final = _approve(client, proposal)
+    assert final["status"] == "succeeded"
+    assert final["result"]["archived"] == ["m2"]
+
+    # The triage thread is finished: another archive round-trip proposes nothing.
     again = client.post(
         "/api/mail/archive",
         json={"confirmed_ids": ["m2"], "thread_id": thread_id},
     )
     assert again.status_code == 200
-    assert again.json()["archived"] == []
+    assert again.json()["proposal"] is None
 
-    # Confirmed candidates are single-use.
-    replay = client.post(
-        "/api/mail/archive",
-        json={"confirmed_ids": ["m2"], "thread_id": thread_id},
-    ).json()
-    assert replay["archived"] == []
-    assert "m2" in replay["blocked"]
+    # Confirmed candidates are single-use: replaying the decision returns the
+    # same terminal record and re-runs nothing.
+    replay = _approve(client, proposal)
+    assert replay["status"] == "succeeded"
+    assert replay["result"]["archived"] == ["m2"]
 
 
 def test_wiki_deep_lint_flags_contradictions(api_client, tmp_path):
@@ -1307,7 +1410,7 @@ def test_mail_archive_rejects_ids_without_fresh_triage(api_client):
         "/api/mail/archive", json={"confirmed_ids": ["m2"], "thread_id": "ghost-thread"}
     )
     assert without_triage.status_code == 200
-    assert without_triage.json()["archived"] == []
+    assert without_triage.json()["proposal"] is None
     assert "m2" in without_triage.json()["blocked"]
 
     triage = client.get("/api/mail/triage").json()
@@ -1316,7 +1419,7 @@ def test_mail_archive_rejects_ids_without_fresh_triage(api_client):
         json={"confirmed_ids": ["unknown"], "thread_id": triage["thread_id"]},
     )
     assert unknown.status_code == 200
-    assert unknown.json()["archived"] == []
+    assert unknown.json()["proposal"] is None  # nothing executable -> no proposal
     assert "unknown" in unknown.json()["blocked"]
 
 
@@ -1654,7 +1757,7 @@ def test_model_save_routes_agree_on_blank_ids(api_client, monkeypatch):
 
 
 def test_rag_reindex_requires_embed_ready(tmp_path, monkeypatch):
-    """feat-064: POST /api/rag/reindex must return 502 with hint if embedding is unconfigured."""
+    """feat-064/066: reindex fails at propose time (502 with hint) if embedding is unconfigured."""
     from memoria.web import app as app_mod
     from memoria.web.config import EMBED_MISSING_HINT, Settings
 
@@ -1675,13 +1778,14 @@ def test_rag_reindex_requires_embed_ready(tmp_path, monkeypatch):
         }
     )
     client = TestClient(app)
-    resp = client.post("/api/rag/reindex")
+    resp = client.post("/api/proposals", json={"kind": "reindex", "payload": {}})
     assert resp.status_code == 502
     assert resp.json()["detail"] == EMBED_MISSING_HINT
 
 
 def test_rag_reindex_rebuilds_store(api_client):
-    """feat-064: POST /api/rag/reindex resets collection and re-chunks existing raw files."""
+    """feat-064/066: reindex runs only under an approved proposal; it resets the
+    collection and re-chunks existing raw files."""
     client, wiki, store = api_client
     # 1. Ingest initial documents via web API
     resp1 = client.post("/api/ingest", json={"text": "第一篇技术文档。" * 10, "origin": "doc1.md"})
@@ -1694,14 +1798,16 @@ def test_rag_reindex_rebuilds_store(api_client):
     chunks_before = store.count()
     assert chunks_before > 0
 
-    # 2. Trigger reindex
-    reindex_resp = client.post("/api/rag/reindex")
-    assert reindex_resp.status_code == 200
-    data = reindex_resp.json()
-    assert data["status"] == "ok"
-    assert data["documents_reindexed"] == 2
-    assert data["total_chunks"] == chunks_before
-    assert len(data["documents"]) == 2
+    # 2. Propose + approve the rebuild
+    proposal = client.post("/api/proposals", json={"kind": "reindex", "payload": {}}).json()["proposal"]
+    assert proposal["payload"]["raw_files"] == 2
+    final = _approve(client, proposal)
+    assert final["status"] == "succeeded"
+    result = final["result"]
+    assert result["status"] == "ok"
+    assert result["documents_reindexed"] == 2
+    assert result["total_chunks"] == chunks_before
+    assert len(result["documents"]) == 2
 
     # 3. Store still has the 2 documents
     docs_after = store.documents()

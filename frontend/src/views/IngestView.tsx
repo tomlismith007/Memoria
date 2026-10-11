@@ -10,7 +10,7 @@ import {
   FileCode,
 } from "lucide-react";
 import { api } from "../api";
-import type { DocumentListResponse, IngestResponse } from "../types";
+import type { DocumentListResponse, IngestResponse, ProposalKind } from "../types";
 import { PillBadge } from "../components/ui/PillBadge";
 import { PillButton } from "../components/ui/PillButton";
 import { RoundedCard } from "../components/ui/RoundedCard";
@@ -41,6 +41,14 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
     loadDocs();
   }, [loadDocs]);
 
+  // feat-066: destructive actions run only under an approved proposal — create,
+  // then decide with the returned hash. Failure leaves the proposal in the
+  // approval center for later review (or it expires after 30 minutes).
+  const proposeAndApprove = async (kind: ProposalKind, payload: Record<string, unknown>) => {
+    const { proposal } = await api.createProposal(kind, payload);
+    return api.decideProposal(proposal.id, "approved", proposal.content_hash);
+  };
+
   const handleReindex = async () => {
     if (
       !window.confirm(
@@ -51,13 +59,18 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
     }
     setReindexing(true);
     try {
-      const res = await api.reindex();
+      const decided = await proposeAndApprove("reindex", {});
+      const result = decided.proposal.result as
+        | { documents_reindexed?: number; total_chunks?: number }
+        | null;
       alert(
-        `向量索引重建成功！已重构 ${res.documents_reindexed} 篇文档，生成 ${res.total_chunks} 个向量切块。`
+        `向量索引重建成功！已重构 ${result?.documents_reindexed ?? 0} 篇文档，生成 ${
+          result?.total_chunks ?? 0
+        } 个向量切块。`
       );
       await loadDocs();
     } catch (err: any) {
-      alert(`重建索引失败: ${err.message}`);
+      alert(`重建索引提案执行失败: ${err.message}（提案保留在审批中心）`);
     } finally {
       setReindexing(false);
     }
@@ -73,10 +86,10 @@ export const IngestView: React.FC<IngestViewProps> = ({ onNavigateWiki }) => {
     }
     setDeletingId(docId);
     try {
-      await api.deleteDocument(docId);
+      await proposeAndApprove("delete_doc", { doc_id: docId });
       await loadDocs();
     } catch (err: any) {
-      alert(`删除失败: ${err.message}`);
+      alert(`删除提案执行失败: ${err.message}（提案保留在审批中心）`);
     } finally {
       setDeletingId(null);
     }

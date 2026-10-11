@@ -18,6 +18,7 @@ def build_graph(
     llm: ChatLLM,
     wiki: Wiki,
     mail_service=None,
+    proposals=None,
 ):
     # Transient gateway errors retry 3x; confirm_archive stays retry-free (interrupt).
     llm_retry = RetryPolicy(max_attempts=3)
@@ -28,7 +29,7 @@ def build_graph(
         "mail_triage", nodes.make_mail_triage(llm, service=mail_service), retry_policy=llm_retry
     )
     g.add_node("confirm_archive", nodes.confirm_archive)
-    g.add_node("mail_archive", nodes.make_mail_archive(mail_service))
+    g.add_node("mail_archive", nodes.make_mail_archive(mail_service, proposals))
     g.add_node(
         "ingest", nodes.make_ingest(store, embedder, wiki, llm), retry_policy=llm_retry
     )

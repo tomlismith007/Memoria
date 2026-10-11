@@ -23,6 +23,11 @@ from pydantic import BaseModel, Field
 from memoria.graph import build_graph
 from memoria.llm import ChatLLM, OpenAICompatibleChat
 from memoria.mail import Email
+from memoria.proposals import (
+    ProposalError,
+    ProposalInvalid,
+    ProposalService,
+)
 from memoria.rag import (
     ChromaStore,
     Citation,
@@ -30,6 +35,7 @@ from memoria.rag import (
     doc_id_for_origin,
     ingest_document,
 )
+from memoria.records import RecordStore
 from memoria.sync import archive_qa, archive_fact
 from memoria.web.config import (
     Settings,
@@ -63,6 +69,16 @@ class ArchiveQARequest(BaseModel):
 class MailArchiveRequest(BaseModel):
     confirmed_ids: list[str]
     thread_id: str = ""  # triage session; the graph interrupt lives on this thread
+
+
+class ProposalCreateRequest(BaseModel):
+    kind: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProposalDecideRequest(BaseModel):
+    decision: str  # "approved" | "denied"
+    content_hash: str  # must echo the hash shown at review time (anti-swap)
 
 
 class MailFactRequest(BaseModel):
@@ -121,6 +137,14 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     mail_service = overrides.get("mail_service")
     cached_emails: list[Email] = overrides.get("emails", [])
 
+    # feat-066: single-table record store; proposals live here (tasks/memories later).
+    records_path = overrides.get("records_path") or os.environ.get(
+        "MEMORIA_RECORDS", "./data/memoria.db"
+    )
+    proposals = overrides.get("proposals") or ProposalService(RecordStore(records_path))
+    # A restart during execution leaves the result unknowable: mark it, never fake it.
+    proposals.recover_interrupted()
+
     checkpointer = overrides.get("checkpointer")
     if checkpointer is None:
         checkpoint_db = overrides.get("checkpoint_db") or os.environ.get(
@@ -137,9 +161,9 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         )
 
     def build_compiled():
-        return build_graph(store, embedder, llm, wiki, mail_service).compile(
-            checkpointer=checkpointer
-        )
+        return build_graph(
+            store, embedder, llm, wiki, mail_service, proposals=proposals
+        ).compile(checkpointer=checkpointer)
 
     compiled_graph = build_compiled()
 
@@ -423,11 +447,13 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
 
     @app.post("/api/mail/archive")
     def api_mail_archive(req: MailArchiveRequest):
-        """Archives selected emails after strict human confirmation (graph interrupt).
+        """feat-066: creates a hash-bound archive proposal instead of resuming.
 
-        Red Line Enforced: the confirm_archive node whitelists confirmed ids against
-        the pending set and re-checks the protected flag; protected mail can never
-        reach the archive node under any circumstances.
+        Execution happens ONLY through POST /api/proposals/{id}/decide → the
+        decide path resumes this graph thread with the decision; the confirm node
+        still whitelists ids against pending/non-protected (red line, depth 2) and
+        the mail_archive node writes the proposal's terminal status. The chat path
+        has no route to any of this.
         """
         if not req.thread_id:
             raise HTTPException(status_code=400, detail="thread_id is required")
@@ -435,23 +461,130 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         snapshot = compiled_graph.get_state(config)
         if not any(t.interrupts for t in snapshot.tasks):
             return {
-                "archived": [],
+                "proposal": None,
                 "blocked": list(req.confirmed_ids),
                 "message": "No pending confirmation on this triage session.",
             }
-        try:
-            result = compiled_graph.invoke(
-                Command(resume={"approved": req.confirmed_ids}), config
-            )
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"归档失败: {str(e)[:180]}")
-        archived = list(result.get("archived", []))
-        blocked = [mid for mid in req.confirmed_ids if mid not in archived]
-        return {
-            "archived": archived,
-            "blocked": blocked,
-            "message": f"Archived {len(archived)} message(s). Blocked {len(blocked)} protected item(s).",
+        values = snapshot.values or {}
+        pending = set(values.get("pending_archive", []))
+        triages = {t.email.msg_id: t for t in values.get("triages", [])}
+        valid: list[str] = []
+        for mid in req.confirmed_ids:
+            t = triages.get(mid)
+            # Same whitelist the confirm node enforces; kept here so the proposal
+            # payload only ever describes executable mail (hash binds to it).
+            if mid in pending and t is not None and not t.protected and t.archive_candidate:
+                valid.append(mid)
+        blocked = [mid for mid in req.confirmed_ids if mid not in valid]
+        if not valid:
+            return {
+                "proposal": None,
+                "blocked": blocked,
+                "message": "无可归档候选（受保护邮件永不归档，非候选邮件需先通过分拣）。",
+            }
+        payload = {
+            "thread_id": req.thread_id,
+            "confirmed_ids": valid,
+            "msgs": [
+                {
+                    "msg_id": mid,
+                    "subject": triages[mid].email.subject,
+                    "sender": triages[mid].email.sender,
+                    "category": triages[mid].category,
+                }
+                for mid in valid
+            ],
         }
+        proposal = proposals.propose("archive", payload, idem_key=f"archive:{req.thread_id}")
+        return {
+            "proposal": proposal,
+            "blocked": blocked,
+            "message": "已创建归档提案，等待批准（30 分钟内有效）。",
+        }
+
+    @app.get("/api/proposals")
+    def api_list_proposals(status: str | None = None):
+        return {"proposals": proposals.list(status=status)}
+
+    @app.post("/api/proposals")
+    def api_create_proposal(req: ProposalCreateRequest):
+        """Client-initiated destructive actions (delete_doc / reindex). Archive
+        proposals are created only by the mail flow (see api_mail_archive)."""
+        if req.kind == "archive":
+            raise HTTPException(status_code=400, detail="归档提案只能由邮件分拣流程创建")
+        if req.kind == "delete_doc":
+            doc_id = str(req.payload.get("doc_id", ""))
+            raw_target = _find_raw_target(doc_id)
+            if raw_target is None and doc_id not in store.documents():
+                raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+            payload = {"doc_id": doc_id, "name": raw_target.name if raw_target else None}
+            idem_key = f"delete_doc:{doc_id}"
+        elif req.kind == "reindex":
+            _require("embed")  # fail at propose time, not at decide time
+            payload = {"raw_files": len([f for f in wiki.raw_dir.iterdir() if f.is_file()])}
+            idem_key = "reindex"
+        else:
+            raise HTTPException(status_code=400, detail=f"未知的提案类型: {req.kind}")
+        proposal = proposals.propose(req.kind, payload, idem_key=idem_key)
+        return {"proposal": proposal}
+
+    @app.post("/api/proposals/{proposal_id}/decide")
+    def api_decide_proposal(proposal_id: str, req: ProposalDecideRequest):
+        """The ONLY approval path in the system. Hash-bound, expiring, single
+        claim; then executes by kind. Chat/agent endpoints cannot reach here."""
+        try:
+            p = proposals.decide(proposal_id, req.decision, req.content_hash)
+        except ProposalError as e:
+            raise HTTPException(status_code=e.status_code, detail=str(e))
+        if p["status"] != "executing":  # denied, or an idempotent replay of a terminal record
+            return {"proposal": p}
+        try:
+            if p["kind"] == "archive":
+                payload = p["payload"]
+                _resume_archive_thread(payload["thread_id"], proposal_id, payload["confirmed_ids"])
+                # The mail_archive node wrote the terminal status (its receipt).
+                final = proposals.get(proposal_id) or p
+                return {"proposal": final}
+            if p["kind"] == "delete_doc":
+                result = _execute_delete_doc(p["payload"]["doc_id"])
+            elif p["kind"] == "reindex":
+                result = _execute_reindex()
+            else:  # defensive: kinds are validated at propose time
+                raise ProposalInvalid(f"未知的提案类型: {p['kind']}")
+        except ProposalInvalid as e:
+            proposals.complete(proposal_id, "failed", error=str(e))
+            raise HTTPException(status_code=e.status_code, detail=str(e))
+        except Exception as e:
+            proposals.complete(proposal_id, "failed", error=str(e)[:160])
+            raise HTTPException(status_code=502, detail=f"提案执行失败: {str(e)[:160]}")
+        return {"proposal": proposals.complete(proposal_id, "succeeded", result=result)}
+
+    def _find_raw_target(doc_id: str) -> Path | None:
+        for f in wiki.raw_dir.iterdir():
+            if f.is_file() and doc_id_for_origin(str(f.resolve())) == doc_id:
+                return f
+        return None
+
+    def _resume_archive_thread(thread_id: str, proposal_id: str, confirmed_ids: list[str]) -> dict:
+        """Server-side only: resumes the parked triage thread with the decision.
+        Returns the graph's archived/blocked summary; the mail_archive node owns
+        the proposal's terminal status."""
+        config = {"configurable": {"thread_id": thread_id}}
+        snapshot = compiled_graph.get_state(config)
+        if not any(t.interrupts for t in snapshot.tasks):
+            return {"archived": [], "blocked": list(confirmed_ids)}
+        result = compiled_graph.invoke(
+            Command(
+                resume={
+                    "decision": "approved",
+                    "proposal_id": proposal_id,
+                    "approved": list(confirmed_ids),
+                }
+            ),
+            config,
+        )
+        archived = list(result.get("archived", []))
+        return {"archived": archived, "blocked": [m for m in confirmed_ids if m not in archived]}
 
     @app.get("/api/documents")
     def api_documents():
@@ -473,33 +606,25 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         ]
         return {"documents": documents, "vector_only": vector_only}
 
-    @app.delete("/api/documents/{doc_id}")
-    def api_delete_document(doc_id: str):
-        """Red line: deletion removes the doc's raw file AND all of its vectors."""
-        raw_target = None
-        for f in wiki.raw_dir.iterdir():
-            if f.is_file() and doc_id_for_origin(str(f.resolve())) == doc_id:
-                raw_target = f
-                break
+    def _execute_delete_doc(doc_id: str) -> dict:
+        """Red line: deletion removes the doc's raw file AND all of its vectors.
+        Runs only under an approved delete_doc proposal (feat-066)."""
+        raw_target = _find_raw_target(doc_id)
         if raw_target is None and doc_id not in store.documents():
             raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
-
         store.delete_document(doc_id)
         if doc_id in store.documents():  # paranoia guard on the red line
             raise HTTPException(status_code=500, detail="Orphan vectors remain after deletion")
         raw_name = raw_target.name if raw_target else None
         if raw_target is not None:
             raw_target.unlink()  # source came from raw_dir iteration, so path-safe
-        wiki.append_log(f"删除文档 {doc_id}：全部向量与 raw 文件（{raw_name or '无'}）已清除")
+        wiki.append_log(f"删除文档 {doc_id}：全部向量与 raw 文件（{raw_name or '无'}）已清除（经提案批准）")
         return {"deleted": doc_id, "raw_removed": raw_name}
 
-    @app.post("/api/rag/reindex")
-    def api_rag_reindex():
-        """Rebuilds the vector index from all files in data/raw.
-
-        Necessary when switching embedding models with differing dimensions or spaces.
-        """
-        _require("embed")
+    def _execute_reindex() -> dict:
+        """Rebuilds the vector index from all files in data/raw. Necessary when
+        switching embedding models with differing dimensions. Runs only under an
+        approved reindex proposal (feat-066)."""
         if hasattr(store, "reset_collection"):
             store.reset_collection()
         raw_files = [f for f in sorted(wiki.raw_dir.iterdir()) if f.is_file()]
@@ -520,7 +645,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                     "error": str(e)[:120],
                 })
         wiki.append_log(
-            f"重建向量索引：清空旧集合，重新摄入 {len([r for r in reindexed if 'chunks' in r])} 篇原始文档（共 {total_chunks} 个切片）"
+            f"重建向量索引：清空旧集合，重新摄入 {len([r for r in reindexed if 'chunks' in r])} 篇原始文档（共 {total_chunks} 个切片）（经提案批准）"
         )
         return {
             "status": "ok",

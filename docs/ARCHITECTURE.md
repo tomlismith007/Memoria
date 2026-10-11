@@ -38,7 +38,7 @@ Flow: Gmail API 拉邮件 → 两级分类：
 ### 模块 4：Web 服务与极简前端 (Web API & UI Dashboard)
 
 FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感界面：
-- **后端 API**：`/api/agent` (自由文本，由图内 router 决定分支), `/api/ask` (混合检索问答), `/api/wiki` (页面及反向链接), `/api/mail` (分拣与归档确认), `/api/ingest` (文件与文本双写), `/api/config/providers*` + `/api/config/models|test` (供应商/模型配置、模型列表拉取与连通性测试；旧的 flat `/api/config` 与 presets 面已于 feat-058 删除——前端零调用)。
+- **后端 API**：`/api/agent` (自由文本，由图内 router 决定分支), `/api/ask` (混合检索问答), `/api/wiki` (页面及反向链接), `/api/mail` (分拣；归档仅创建提案), `/api/ingest` (文件与文本双写), `/api/proposals` (feat-066 审批中心：归档/删除文档/重建索引三类破坏性动作的唯一执行通道，hash 绑定 + 30 分钟过期 + 单次消费，decide 端点与对话通道物理隔离), `/api/config/providers*` + `/api/config/models|test` (供应商/模型配置、模型列表拉取与连通性测试；旧的 flat `/api/config` 与 presets 面已于 feat-058 删除——前端零调用；旧的直连 `DELETE /api/documents/{id}` 与 `POST /api/rag/reindex` 已于 feat-066 并入提案制)。
   - `web/app.py` 负责路由与图调用；`web/config.py` + `web/config_routes.py` 是模型/供应商配置子系统，两者职责已分开。
 - **入口与路由的分工**：结构化端点（`/api/ask`、`/api/ingest`、`/api/mail`）的 URL 已表明意图，故在 invoke 时预设 `intent` 字段，router 节点识别到预设值即跳过 LLM 往返。`/api/agent` 是自由文本入口，**刻意不预设 intent**，由 router 节点调 LLM 决定分支——这是生产环境中唯一真正走通 `add_conditional_edges` 动态路由的路径，使图的路由能力持续被真实流量验证而非仅存在于测试中。
 - **前端系统**（React 19 + TypeScript + Tailwind CSS，设计规范详见 [docs/DESIGN.md](DESIGN.md)）：

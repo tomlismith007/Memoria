@@ -120,3 +120,56 @@ export interface TestResultResponse {
   embed_latency_ms?: number;
   embed_message?: string;
 }
+
+/** feat-066: a hash-bound approval record for destructive/external actions. */
+export type ProposalKind = "archive" | "delete_doc" | "reindex";
+
+export type ProposalStatus =
+  | "awaiting_review"
+  | "executing"
+  | "succeeded"
+  | "failed"
+  | "outcome_unknown"
+  | "denied"
+  | "cancelled"
+  | "expired";
+
+export interface ProposalMail {
+  msg_id: string;
+  subject: string;
+  sender: string;
+  category: string;
+}
+
+export interface Proposal {
+  id: string;
+  kind: ProposalKind;
+  payload: {
+    thread_id?: string;
+    confirmed_ids?: string[];
+    msgs?: ProposalMail[];
+    doc_id?: string;
+    name?: string | null;
+    raw_files?: number;
+  };
+  content_hash: string;
+  status: ProposalStatus;
+  created_at: string;
+  expires_at: string;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+}
+
+export interface ProposalListResponse {
+  proposals: Proposal[];
+}
+
+export interface MailArchiveResponse {
+  proposal: Proposal | null;
+  blocked: string[];
+  message: string;
+}
+
+export interface ProposalDecideResponse {
+  proposal: Proposal;
+}

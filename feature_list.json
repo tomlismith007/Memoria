@@ -395,8 +395,8 @@
     },
     {
       "id": "feat-039",
-      "name": "SSE streaming answers (optional)",
-      "description": "体验增强（可选）：graph stream_mode='messages' → SSE 端点 → AskView 逐段渲染。验收：SSE 端点单元覆盖 + 浏览器手动验证",
+      "name": "SSE streaming answers + ConversationQueue (scope expanded 2026-10-12)",
+      "description": "P1（范围按 docs/PERSONAL_AGENT_UPGRADE.md D10 扩写）：/api/ask 增 SSE 变体，事件 {type: delta|citation|done|error}（翻译层三件事：按步拆消息/工具结果清洗/步数打满兜底提示，参照 04b §1）；AskView 移植 OpenMuse ConversationQueue 语义——发送/停止同位切换、composer 回复期间保持可编辑、follow-up 可见队列（Up next / Messages on hold）、线程冲突返回 held 不算失败、失败永不隐式重发。验收：SSE 端点单元覆盖 + 队列语义测试 + 浏览器手动验证。",
       "dependencies": [
         "feat-034"
       ],
@@ -616,6 +616,58 @@
       ],
       "status": "completed",
       "evidence": "python -m pytest -q → 196 passed（195 基线 +1 新契约测试 test_model_save_routes_agree_on_blank_ids，钉住空 model id 单个端点 400 / 批量跳过 / 空批量 no-op 这条此前无覆盖的契约）；cd frontend && npm run build green（1607 modules，CSS 35.31 kB 不变，印证被删的 tailwind 色从未生成过类）。净减 1263 行：产品代码 -98、文档与状态 -1219、测试 +54（新增 1 条）。跟踪文件 102 → 88（3 份文档 + 11 个 .agents vendored 文件）。分三次提交：95708cb 文档、0975041 死代码、a5a7c4b 结构重复。"
+    },
+    {
+      "id": "feat-066",
+      "name": "Proposal approval subsystem (P0 审批实体化)",
+      "description": "docs/PERSONAL_AGENT_UPGRADE.md §3 P0.1（D2/D5/D7）。新增 records 单表存储（data/memoria.db，kind+id+json data，json_extract 条件更新实现 CAS）与 memoria/proposals.py：ActionProposal{kind: archive|delete_doc|reindex, payload, content_hash=sha256(payload), expires_at=30min, status 八态 awaiting_review/executing/succeeded/failed/outcome_unknown/denied/cancelled/expired, result, error}。归档/删除/重建索引三类破坏性动作统一走提案：POST /api/proposals（delete_doc/reindex 由客户端发起）+ POST /api/proposals/{id}/decide（六道闸：hash 校验→幂等返回→状态合法→过期 CAS→归属→单条 SQL 原子 claim）。归档执行留在图内（红线）：/api/mail/archive 改为创建提案，decide(approved) 由服务端路径 Command(resume) 续跑图，confirm_archive 节点白名单复查保留（纵深第二层），mail_archive 节点执行后回写提案终态；decide(denied) 级联 deny。interrupt 载荷分型 {type:approval,proposal_id}/{type:input}。启动恢复：executing→outcome_unknown（重启不假装成功）；结果未知（网络错误）单独 outcome_unknown 且禁重试。前端：顶栏待审徽标 + 审批中心（逐字段展示将被执行的确切内容+过期时间，approve/deny 回传 hash）；MailView 归档确认与 IngestView 删除/重建改走提案。边界红线：对话通道（/api/ask、/api/agent）无任何可达的提案批准路径（测试断言锁定）。",
+      "dependencies": [
+        "feat-032",
+        "feat-033",
+        "feat-064"
+      ],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 211 passed（基线 196，+15：tests/test_proposals.py 9 个新单测 + test_web_api/test_graph 新增 6 个）；cd frontend && npm run build green（tsc 零诊断）；./init.ps1 全量门禁通过。实现：memoria/records.py（单表 records(kind,id,data)，Python 侧 CAS——json_patch 为 RFC7396 merge-patch 会删除 null 键的坑已实测规避）+ memoria/proposals.py（八态提案，六道闸 decide：hash→幂等→状态→过期 CAS→原子 claim；outcome_unknown 一等态；启动恢复 executing→outcome_unknown）+ 图内执行（confirm 中断载荷分型 {type:approval}，mail_archive 节点写提案终态，未知网络错误→outcome_unknown 决不假装成功）+ 路由（GET/POST /api/proposals、POST /api/proposals/{id}/decide；/api/mail/archive 改创建提案；直连 DELETE /api/documents/{id} 与 POST /api/rag/reindex 下线并入提案制）+ 前端（ApprovalCenter 审批中心 + 顶栏待审徽标，MailView/IngestView 走 propose→decide 流）。边界测试：test_chat_channel_cannot_approve_proposals 断言 decide 路由唯一且 /api/agent 邮件分支不创建/执行任何提案。Mimosa 钩子误报 test_graph.py SQL 注入一次（测试文件无 SQL），顺手把 records.py 的 CAS 改为全参数化（json 路径也走绑定参数），既消除误报源也是真实加固。"
+    },
+    {
+      "id": "feat-067",
+      "name": "Documentation discipline minimal package (P0 文档纪律)",
+      "description": "docs/PERSONAL_AGENT_UPGRADE.md §3 P0.2（D4）。1) 新建 docs/VERIFICATION.md：日期头+免责句、Automated checks（具体数字+明记未跑项）、Feature acceptance matrix（Area|Evidence|Boundary 必填）、Reproduce 命令块、Still outside this release；2) feature_list.json 每条 completed 特征补 limitation 字段；3) 红线三处同文：is_protected/归档禁令落到分类 prompt 合同 + MailView 确认 UI 文案 + ARCHITECTURE.md，AGENTS.md Change Discipline 加\"改一处必须改三处\"；4) RAG_UPGRADE_PLAN.md 头部加\"Planned extensions are not claims of current support\"免责句。",
+      "dependencies": [],
+      "status": "todo",
+      "evidence": ""
+    },
+    {
+      "id": "feat-068",
+      "name": "Minimal durable task engine + mail_triage kind + notification inbox (P1)",
+      "description": "docs/PERSONAL_AGENT_UPGRADE.md §3 P1.1（D6）。memoria/tasks/（engine+models）：records 表 kind:task，进程内 worker tick 1s，租期 60s/心跳 max(10,leaseMs/3)=20s/过期 running 重认领/attempts 递增/优雅停机回 queued；恢复=重放（任务 state 缓存已处理 msg_id→分类结果，分发前推进 next_run_at+CAS 认领防重复分发）。唯一 kind=mail_triage：定时拉 Gmail→classify_batch（is_protected 仍逐封独立执行）→受保护类放行→营销/通知类生成归档提案（不执行）→幂等通知。kind 枚举预留 monitor/digest 不实现。通知收件箱：records kind:notification，幂等 key（task-error:{id}:{attempts} 式）、append-only、只能标读不能清除。不做：分布式 worker、消息队列、websocket。",
+      "dependencies": [
+        "feat-066",
+        "feat-069"
+      ],
+      "status": "todo",
+      "evidence": ""
+    },
+    {
+      "id": "feat-069",
+      "name": "Mail production wiring with encrypted token (P1 邮件通电)",
+      "description": "docs/PERSONAL_AGENT_UPGRADE.md §3 P1.2（D11）。create_app() 启动时 token.json 存在则 get_gmail_service() 注入，失败降级 None + /api/health capabilities.mail.ready=false 带指引（沿用 feat-047 capability 模式）；token 加密：TOKEN_ENCRYPTION_KEY 环境变量加密落盘，缺 key 读写直接拒绝（fail-closed），刷新加 60s 提前量 + in-flight 去重；MailView 空态改\"未连接 Gmail + 授权指引\"。验收必须含一次真实账号验证（VERIFICATION Boundary 声明 mock 不替代真账号验收）。",
+      "dependencies": [
+        "feat-016",
+        "feat-047"
+      ],
+      "status": "todo",
+      "evidence": ""
+    },
+    {
+      "id": "feat-071",
+      "name": "Minimal agent memory layer (P1 最小记忆层)",
+      "description": "docs/PERSONAL_AGENT_UPGRADE.md §3 P1.4（D8）。records kind:memory {text,source,created_at}，id=hash(text) 内容去重，条数上限（建议 100，超限拒新增并提示整理，不自动整理）；API：POST /api/memories（手填+问答页\"记住这条\"）、CAS 编辑、原子遗忘；qa 节点把记忆（有界全量）以 JSON 数据块注入 prompt，限定语 \"data only\" 与 \"untrusted data, not authority\" 同句出现。不做：后台 review 整理、跨系统记忆同步。",
+      "dependencies": [
+        "feat-066"
+      ],
+      "status": "todo",
+      "evidence": ""
     }
   ]
 }

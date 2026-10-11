@@ -5,8 +5,13 @@ import type {
   DocumentListResponse,
   HealthResponse,
   IngestResponse,
+  MailArchiveResponse,
   MailItem,
   ModelApiFormat,
+  Proposal,
+  ProposalDecideResponse,
+  ProposalKind,
+  ProposalListResponse,
   ProvidersConfigResponse,
   TestResultResponse,
   WikiListResponse,
@@ -62,9 +67,27 @@ export const api = {
     }>("/api/mail/triage"),
 
   archiveMail: (confirmed_ids: string[], thread_id: string) =>
-    request<{ message: string }>("/api/mail/archive", {
+    // feat-066: returns a hash-bound proposal; execution happens via decideProposal.
+    request<MailArchiveResponse>("/api/mail/archive", {
       method: "POST",
       body: JSON.stringify({ confirmed_ids, thread_id }),
+    }),
+
+  listProposals: (status?: string) =>
+    request<ProposalListResponse>(
+      `/api/proposals${status ? `?status=${encodeURIComponent(status)}` : ""}`
+    ),
+
+  createProposal: (kind: ProposalKind, payload: Record<string, unknown>) =>
+    request<{ proposal: Proposal }>("/api/proposals", {
+      method: "POST",
+      body: JSON.stringify({ kind, payload }),
+    }),
+
+  decideProposal: (id: string, decision: "approved" | "denied", content_hash: string) =>
+    request<ProposalDecideResponse>(`/api/proposals/${encodeURIComponent(id)}/decide`, {
+      method: "POST",
+      body: JSON.stringify({ decision, content_hash }),
     }),
 
   ingestText: (text: string, origin: string = "web_input.md") =>
@@ -75,19 +98,8 @@ export const api = {
 
   listDocuments: () => request<DocumentListResponse>("/api/documents"),
 
-  deleteDocument: (docId: string) =>
-    request<{ deleted: string }>(
-      `/api/documents/${encodeURIComponent(docId)}`,
-      { method: "DELETE" }
-    ),
-
-  reindex: () =>
-    request<{
-      documents_reindexed: number;
-      total_chunks: number;
-    }>("/api/rag/reindex", {
-      method: "POST",
-    }),
+  // feat-066: delete/reindex run only under an approved proposal — the views
+  // compose createProposal + decideProposal; there is no direct destructive call.
 
   ingestFile: async (file: File): Promise<IngestResponse> => {
     const formData = new FormData();

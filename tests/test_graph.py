@@ -198,10 +198,16 @@ def test_mail_route_pauses_for_human(tmp_path):
     snap = g.get_state(cfg)
     interrupts = [i for t in snap.tasks for i in (t.interrupts or [])]
     assert len(interrupts) == 1  # graph paused: no archive without a human
-    assert interrupts[0].value == {"pending_archive": ["m4"]}
+    assert interrupts[0].value == {"type": "approval", "pending_archive": ["m4"]}
     assert svc.archived == []
 
-    g.invoke(Command(resume={"approved": ["m4"]}), cfg)  # human clicks confirm
+    # feat-066 resume shape: decision + proposal id; only the decide path sends it.
+    g.invoke(
+        Command(
+            resume={"decision": "approved", "proposal_id": "p1", "approved": ["m4"]}
+        ),
+        cfg,
+    )
     final = g.get_state(cfg)
     assert final.values["confirmed_ids"] == ["m4"]
     assert final.values["archived"] == ["m4"]
@@ -217,9 +223,79 @@ def test_mail_route_reject_leaves_inbox(tmp_path):
     )
     cfg = {"configurable": {"thread_id": "t2"}}
     g.invoke({"text": "看看邮件"}, cfg)
-    g.invoke(Command(resume={"approved": []}), cfg)  # human rejects
+    g.invoke(
+        Command(resume={"decision": "denied", "proposal_id": "p1", "approved": []}),
+        cfg,
+    )  # human rejects
     final = g.get_state(cfg)
     assert final.values["archived"] == []
+    assert svc.archived == []
+
+
+def test_archive_node_writes_proposal_receipt(tmp_path):
+    """feat-066: the graph is the executor, the proposal is its receipt — the
+    mail_archive node flips the proposal to its terminal state."""
+    from memoria.proposals import ProposalService
+    from memoria.records import RecordStore
+
+    store, wiki = _kb(tmp_path)
+    svc = StubService()
+    proposals = ProposalService(RecordStore(tmp_path / "records.db"))
+    llm = ScriptedChat("邮件", "类别：营销\n摘要：促销广告。")
+    g = build_graph(
+        store, FakeEmbedder(), llm, wiki, mail_service=svc, proposals=proposals
+    ).compile(checkpointer=MemorySaver())
+    cfg = {"configurable": {"thread_id": "t3"}}
+    g.invoke({"text": "看看邮件"}, cfg)
+
+    p = proposals.propose("archive", {"thread_id": "t3", "confirmed_ids": ["m4"]})
+    # The decide route claims (awaiting_review → executing) BEFORE resuming; the
+    # node can only complete a claimed proposal (single-consumption contract).
+    claimed = proposals.decide(p["id"], "approved", p["content_hash"])
+    assert claimed["status"] == "executing"
+    g.invoke(
+        Command(
+            resume={"decision": "approved", "proposal_id": p["id"], "approved": ["m4"]}
+        ),
+        cfg,
+    )
+    done = proposals.get(p["id"])
+    assert done["status"] == "succeeded" and done["result"]["archived"] == ["m4"]
+    assert svc.archived == ["m4"]
+
+
+def test_archive_node_marks_unknown_result_not_failure(tmp_path):
+    """feat-066: a network-level error mid-archive must land the proposal on
+    outcome_unknown (result unknowable), never on succeeded/failed."""
+    from memoria.proposals import ProposalService
+    from memoria.records import RecordStore
+
+    store, wiki = _kb(tmp_path)
+
+    class TimeoutOnArchiveService(StubService):
+        """Fetch works (triage succeeds); the archive call dies at the wire."""
+
+        def modify(self, **kw):
+            raise TimeoutError("gmail connection died")
+
+    svc = TimeoutOnArchiveService()
+    proposals = ProposalService(RecordStore(tmp_path / "records.db"))
+    llm = ScriptedChat("邮件", "类别：营销\n摘要：促销广告。")
+    g = build_graph(
+        store, FakeEmbedder(), llm, wiki, mail_service=svc, proposals=proposals
+    ).compile(checkpointer=MemorySaver())
+    cfg = {"configurable": {"thread_id": "t4"}}
+    g.invoke({"text": "看看邮件"}, cfg)
+    p = proposals.propose("archive", {"thread_id": "t4", "confirmed_ids": ["m4"]})
+    proposals.decide(p["id"], "approved", p["content_hash"])  # claim, as the decide route does
+    g.invoke(
+        Command(
+            resume={"decision": "approved", "proposal_id": p["id"], "approved": ["m4"]}
+        ),
+        cfg,
+    )
+    done = proposals.get(p["id"])
+    assert done["status"] == "outcome_unknown"
     assert svc.archived == []
 
 

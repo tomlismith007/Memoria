@@ -72,13 +72,30 @@ export const MailView: React.FC = () => {
     if (selectedIds.length === 0) return;
     setArchiving(true);
     try {
+      // feat-066: the modal is the review surface — create the hash-bound
+      // proposal, then decide immediately. If decide fails the proposal stays
+      // awaiting_review in the approval center (or expires after 30 minutes).
       const res = await api.archiveMail(selectedIds, threadId);
-      setStatusMessage(res.message);
+      if (!res.proposal) {
+        setStatusMessage(res.message);
+      } else {
+        const decided = await api.decideProposal(
+          res.proposal.id,
+          "approved",
+          res.proposal.content_hash
+        );
+        const result = decided.proposal.result as { archived?: string[] } | null;
+        const archivedCount = result?.archived?.length ?? 0;
+        const blockedNote = res.blocked.length
+          ? `拦截 ${res.blocked.length} 封受保护/非候选邮件。`
+          : "";
+        setStatusMessage(`已批准归档 ${archivedCount} 封。${blockedNote}`);
+      }
       setModalOpen(false);
       setSelectedIds([]);
       await loadMails();
     } catch (err: any) {
-      alert(`归档操作失败: ${err.message}`);
+      alert(`归档提案执行失败: ${err.message}（提案保留在审批中心，可稍后重试或撤销）`);
     } finally {
       setArchiving(false);
     }

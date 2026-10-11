@@ -2,10 +2,17 @@
 
 ## Current State
 
-**Last Updated:** 2026-10-01
-**Active Feature:** none — feat-001..feat-065 completed; only feat-038 / feat-039 remain (both optional)
+**Last Updated:** 2026-10-12
+**Active Feature:** feat-066 completed (P0 审批实体化)；下一步 feat-067（文档纪律最小包）→ feat-069/068（邮件通电 + 任务引擎）
 
 ## Status
+
+### 2026-10-12 会话记录
+
+- 全仓库 ponytail-audit 复查 + hermes-agent（8 维度）/ OpenMuse（全表面）研究沉淀至 `docs/agent-architecture/`（commit f1e2825）。
+- 个人 agent 方向定案（grill-me 两轮，D1-D12 见 `docs/PERSONAL_AGENT_UPGRADE.md` §0）：**Memoria 本体升级为准个人 agent**；hermes 不做基座。
+- **feat-066 DONE**：提案审批子系统。records 单表 CAS + 八态提案（hash+30min 过期+单次消费）+ decide 独立端点；归档/删除/重建索引三类破坏性动作统一提案制；图内执行 + 节点回写终态；outcome_unknown 一等态 + 启动恢复；前端审批中心 + 徽标。211 tests + build green。证据见 feature_list.json。
+- 下一步：feat-067 文档纪律（VERIFICATION.md + limitation 字段 + 红线三处同文）。
 
 ### What's Done
 

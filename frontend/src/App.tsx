@@ -5,8 +5,9 @@ import { WikiView } from "./views/WikiView";
 import { MailView } from "./views/MailView";
 import { IngestView } from "./views/IngestView";
 
-import { Settings, TriangleAlert } from "lucide-react";
+import { Settings, ShieldCheck, TriangleAlert } from "lucide-react";
 import { SettingsModal } from "./components/ui/SettingsModal";
+import { ApprovalCenter } from "./components/ApprovalCenter";
 import { PillButton } from "./components/ui/PillButton";
 import { api } from "./api";
 import type { HealthResponse, ProvidersConfigResponse } from "./types";
@@ -30,6 +31,18 @@ export const App: React.FC = () => {
   // feat-049: warn about a missing embedding config up front, instead of letting
   // the first question fail with a raw socket-timeout 502.
   const [notReadyReason, setNotReadyReason] = useState("");
+  // feat-066: pending-approval badge + the approval center modal.
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [approvalOpen, setApprovalOpen] = useState(false);
+
+  const refreshApprovals = useCallback(async () => {
+    try {
+      const data = await api.listProposals("awaiting_review");
+      setPendingApprovals(data.proposals.length);
+    } catch {
+      setPendingApprovals(0);
+    }
+  }, []);
 
   const refreshHealth = useCallback(async () => {
     try {
@@ -66,12 +79,17 @@ export const App: React.FC = () => {
   }, []);
 
   // Refresh on mount and whenever the settings modal closes, so the ask
-  // page always reflects saved provider/model state.
+  // page always reflects saved provider/model state. Tab switches also
+  // refresh the approval badge — cheap polling for a single-user app.
   useEffect(() => {
     if (settingsOpen) return;
     refreshModelInfo();
     refreshHealth();
   }, [settingsOpen, refreshModelInfo, refreshHealth]);
+
+  useEffect(() => {
+    refreshApprovals();
+  }, [activeTab, refreshApprovals]);
 
   const handleSelectModel = useCallback(
     async (providerId: string, modelId: string) => {
@@ -122,6 +140,20 @@ export const App: React.FC = () => {
             </div>
             <button
               type="button"
+              onClick={() => setApprovalOpen(true)}
+              title="审批中心：破坏性动作的唯一执行通道"
+              aria-label={`审批中心，${pendingApprovals} 个待审提案`}
+              className="relative h-11 w-11 shrink-0 rounded-full p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/20 md:h-auto md:w-auto"
+            >
+              <ShieldCheck className="w-5 h-5 md:w-4 md:h-4" />
+              {pendingApprovals > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-semibold flex items-center justify-center">
+                  {pendingApprovals}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => setSettingsOpen(true)}
               title="模型与系统配置"
               className="h-11 w-11 shrink-0 rounded-full p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/20 md:h-auto md:w-auto"
@@ -133,6 +165,12 @@ export const App: React.FC = () => {
       </header>
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      <ApprovalCenter
+        isOpen={approvalOpen}
+        onClose={() => setApprovalOpen(false)}
+        onChanged={refreshApprovals}
+      />
 
       {/* Main Content Area */}
       <main className="flex-1 min-w-0 max-w-5xl w-full mx-auto px-4 md:px-8 py-4 flex flex-col">

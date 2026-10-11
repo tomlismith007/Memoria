@@ -93,24 +93,45 @@ def make_mail_triage(llm: ChatLLM, service=None):
 
 
 def confirm_archive(state: dict) -> dict:
-    """Human-confirm node: pauses the graph until a person approves."""
+    """Human-confirm node: pauses the graph until a person approves.
+
+    feat-066: the interrupt payload is typed ({"type": "approval", ...}) and the
+    resume must carry {"decision": "approved"|"denied", "proposal_id", "approved"}.
+    The only resume caller is POST /api/proposals/{id}/decide — never the chat
+    path (boundary: approval and conversation channels stay separated).
+    Belt and braces on the red line: only pending, non-protected mail passes,
+    regardless of what the resume claims.
+    """
     pending: list[str] = state.get("pending_archive", [])
     if not pending:
         return {"confirmed_ids": []}
-    decision = interrupt({"pending_archive": pending})
-    triages = {t.email.msg_id: t for t in state.get("triages", [])}
+    resume = interrupt({"type": "approval", "pending_archive": pending})
+    decision = (resume or {}).get("decision")
     approved = []
-    for mid in decision.get("approved", []):
-        t = triages.get(mid)
-        # Belt and braces on the red line: only pending, non-protected mail passes.
-        if mid in pending and t is not None and not t.protected:
-            approved.append(mid)
-    return {"confirmed_ids": approved}
+    if decision == "approved":
+        triages = {t.email.msg_id: t for t in state.get("triages", [])}
+        for mid in (resume or {}).get("approved", []):
+            t = triages.get(mid)
+            if mid in pending and t is not None and not t.protected:
+                approved.append(mid)
+    return {
+        "confirmed_ids": approved,
+        "approval_proposal_id": (resume or {}).get("proposal_id", ""),
+    }
 
 
-def make_mail_archive(service):
+# ponytail: these exception types mark "the result is unknowable" (network died
+# mid-call), distinct from a definitive refusal. requests/urllib errors subclass
+# OSError; googleapiclient HttpError means the server answered, so it stays a
+# definite failure. Upgrade path: treat 5xx HttpErrors as unknown too.
+_UNKNOWN_EXECUTION_ERRORS = (TimeoutError, ConnectionError, OSError)
+
+
+def make_mail_archive(service, proposals=None):
     def mail_archive(state: dict) -> dict:
         done: list[str] = []
+        unknown: list[str] = []
+        last_error = ""
         for mid in state.get("confirmed_ids", []):
             if service is None:
                 done.append(mid)  # offline mode: confirmation recorded, no Gmail call
@@ -118,8 +139,37 @@ def make_mail_archive(service):
             try:
                 archive(service, mid, confirmed=True)
                 done.append(mid)
-            except Exception:
-                pass  # Gmail refused this id; it stays out of `archived` and is never retried
+            except _UNKNOWN_EXECUTION_ERRORS as e:
+                # feat-066: result unknowable — never pretend success, never retry.
+                unknown.append(mid)
+                last_error = str(e)
+            except Exception as e:
+                # Gmail refused this id; it stays out of `archived` and is never retried.
+                last_error = str(e)
+        # The graph is the executor; the proposal is its receipt (feat-066).
+        # Always attempt completion: a deny-path resume arrives here with an
+        # empty list, but that proposal is `denied` (never claimed), so
+        # complete() is a no-op on it.
+        proposal_id = state.get("approval_proposal_id")
+        if proposals is not None and proposal_id:
+            if unknown:
+                proposals.complete(
+                    proposal_id,
+                    "outcome_unknown",
+                    result={"archived": done, "unknown": unknown},
+                    error=f"归档结果未知：{', '.join(unknown)}（{last_error[:120]}）",
+                )
+            elif last_error and not done:
+                proposals.complete(
+                    proposal_id, "failed", result={"archived": []}, error=last_error[:160]
+                )
+            else:
+                proposals.complete(
+                    proposal_id,
+                    "succeeded",
+                    result={"archived": done},
+                    error=last_error or None,
+                )
         return {"archived": done}
 
     return mail_archive

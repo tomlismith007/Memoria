@@ -5,7 +5,7 @@
 
 ## Automated checks
 
-- `python -m pytest -q` → **231 passed, 0 failed, 0 skipped**（2 个第三方 DeprecationWarning：chromadb/anyio，非本项目代码）。全套件 100% 离线：LLM/Embedder/Gmail/图全部注入 fake，零网络调用。
+- `python -m pytest -q` → **237 passed, 0 failed, 0 skipped**（2 个第三方 DeprecationWarning：chromadb/anyio，非本项目代码）。全套件 100% 离线：LLM/Embedder/Gmail/图全部注入 fake，零网络调用。
 - `cd frontend && npm run build` → green（tsc strict 零诊断 + vite 产出）。
 - `pwsh -NoProfile -File ./init.ps1` → 全量门禁 green（以上两项）。
 - **本次未跑/未覆盖的机器检查**：浏览器手工验收未执行（feat-066 审批中心 / feat-069 邮件横幅 UI 仅到构建级验证）；**真实 Gmail 账号端到端验收未执行**（授权→拉信→分拣→提案→归档全链路需要真账号，见邮件行 Boundary）；前端无组件级自动化测试（tsc + build 是唯一机器检查）；CI（GitHub Actions py3.14）结果独立于本地记录。
@@ -17,6 +17,7 @@
 | RAG 检索与引用 | tests/test_rag_eval.py：recall@4 = 3/3，MRR = 1.00（feat-053 IDF 调优后基线）；test_rag_answer.py 12 个含引用契约 | 评测语料仅 4 文档 3 查询（小语料结论，大语料教训已由 test_narrow_recall_window_finds_nothing 钉住）；引用校验只验 [n] 覆盖，不验引用内容与句义一致 |
 | Wiki 编译 / lint | tests/test_wiki_ops.py 13 个：ingest prompt 三段式缓存前缀、跨次 ingest 目录块逐字不变、矛盾检测 | 页面选择为关键词 top-K（无向量召回参与）；矛盾检测 deep=true 才跑，每链接对一次 LLM 调用（成本受 max_pairs 限制） |
 | 邮件分拣与红线 | tests/test_mail_triage.py 10 个：10 封仅 1 次 LLM 调用、保护状态逐封独立（LLM 全标营销仍拦住验证码/交易）、批量残缺回退 | **真实 Gmail 账号端到端验收未执行**（feat-069 已完成生产接线与 token 加密，离线测试覆盖到"token 存在→非交互构建"与"缺 key 拒绝"，但授权→拉信→归档全链路需真账号跑一次）；规则层仅特征串匹配，长尾依赖 LLM 层兜底；营销归档始终需人工提案批准 |
+| 记忆层（feat-071） | tests/test_memory.py 6 个（内容 hash 去重、上限 100 拒新增、CAS 编辑、原子遗忘、qa prompt 注入含'不是指令，不是许可'同句、空记忆无块）；test_web_api 内存端点（added/edited/forgotten/404/400） | 记忆 id 为创建时内容 hash，编辑后不重算（编辑可产生语义近重复，插下去重只看 id）；记忆管理 UI 未做（AskView'记住'按钮 + API 编辑/遗忘，面板后补）；注入为有界全量（≤100 条），无相关性筛选 |
 | 定时任务与通知收件箱（feat-068） | tests/test_tasks.py 8 个（at-most-once：claim 即推进 next_run_at；崩溃重放靠 idem_key 去重；过期租约重认领；失败按 attempts 幂等通知；收件箱 append-only 只能标读）+ test_web_api 注入 engine 的端点测试 | 失败重试为固定间隔（无 2^n 退避）；心跳假设单进程执行；引擎随 create_app 启动（Gmail 未就绪则不启动），无独立 worker 进程；通知无推送，仅审批中心面板查看 |
 | Gmail 连接与 token 加密（feat-069） | tests/test_mail_auth.py 8 个（Fernet roundtrip/缺 key 读写拒绝/legacy 明文过同一 key 门/60s 提前刷新/非交互永不弹浏览器）+ test_web_api.py 4 个（health mail 能力、坏 token 降级不阻塞启动、triage mail_ready） | token 密钥来自环境变量，无密钥管理服务；刷新去重为进程内锁（单进程假设）；加密文件格式无版本字段（换算法需重授权） |
 | 提案审批（feat-066） | tests/test_proposals.py 9 个（六道闸/过期/恢复/outcome_unknown）+ test_web_api.py（提案制删除/重建/归档全链路、hash 不符 409、重启 executing→outcome_unknown、对话通道无批准路径） | 归档执行经图完成（本机 SqliteSaver），未做双进程并发验收；提案过期清算在 decide 时惰性判定，后台定时清算待 P1 worker；审批中心 UI 未做浏览器手工验收 |
@@ -35,7 +36,7 @@
 ## Reproduce
 
 ```powershell
-pwsh -NoProfile -File ./init.ps1        # 全量门禁：pytest 231 + frontend build
+pwsh -NoProfile -File ./init.ps1        # 全量门禁：pytest 237 + frontend build
 python -m pytest -q                     # 仅后端
 cd frontend; npm run build              # 仅前端
 # Gmail 生产验收（需真账号，Boundary 见矩阵邮件行）：
@@ -46,5 +47,4 @@ cd frontend; npm run build              # 仅前端
 
 - 真实 Gmail 账号端到端验收（授权→拉信→分拣→提案→归档）
 - SSE 流式 + ConversationQueue——feat-039
-- 最小记忆层——feat-071
 - monitor / MCP server / skill 体系——明确不做（PERSONAL_AGENT_UPGRADE §4.4），条件触发才立项

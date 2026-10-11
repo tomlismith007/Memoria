@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowUp,
   BookmarkPlus,
+  Brain,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -413,6 +414,25 @@ export const AskView: React.FC<AskViewProps> = ({
     setArchivingId(null);
   };
 
+  // feat-071: session-only button state — the memory itself is server-side and
+  // content-deduped, so a repeat click just answers "未重复写入".
+  const [rememberedIds, setRememberedIds] = useState<Set<string>>(new Set());
+  const [rememberingId, setRememberingId] = useState<string | null>(null);
+
+  const handleRemember = async (msg: MessageItem) => {
+    if (!msg.result) return;
+    setRememberingId(msg.id);
+    try {
+      const res = await api.createMemory(msg.result.text, "User confirmed in AskView");
+      setRememberedIds((prev) => new Set(prev).add(msg.id));
+      if (!res.added) alert(res.message || "已存在相同内容的记忆");
+    } catch (err: any) {
+      alert(`记忆失败: ${err.message}`);
+    } finally {
+      setRememberingId(null);
+    }
+  };
+
   const handleArchive = async (msg: MessageItem) => {
     if (!msg.result) return;
     setArchivingId(msg.id);
@@ -563,7 +583,7 @@ export const AskView: React.FC<AskViewProps> = ({
                         ))}
                       </div>
 
-                      <div>
+                      <div className="flex flex-wrap items-center gap-2">
                         {msg.archivedPage ? (
                           <PillBadge variant="wiki" className="gap-1.5 py-1 px-3">
                             <CheckCircle2 className="w-3.5 h-3.5" />
@@ -580,6 +600,19 @@ export const AskView: React.FC<AskViewProps> = ({
                             {archivingId === msg.id ? "沉淀中..." : "沉淀为 Wiki 页面"}
                           </PillButton>
                         )}
+                        <PillButton
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRemember(msg)}
+                          disabled={rememberingId === msg.id}
+                          icon={<Brain className="w-3.5 h-3.5" />}
+                        >
+                          {rememberedIds.has(msg.id)
+                            ? "已记住"
+                            : rememberingId === msg.id
+                              ? "记录中..."
+                              : "记住这条"}
+                        </PillButton>
                       </div>
                     </div>
 

@@ -8,6 +8,8 @@ import type {
   MailArchiveResponse,
   MailTriageResponse,
   AppNotification,
+  AppMemory,
+  MemoryCreateResponse,
   NotificationListResponse,
   ModelApiFormat,
   Proposal,
@@ -86,6 +88,12 @@ export const api = {
     request<ProposalDecideResponse>(`/api/proposals/${encodeURIComponent(id)}/decide`, {
       method: "POST",
       body: JSON.stringify({ decision, content_hash }),
+    }),
+
+  createMemory: (text: string, source: string) =>
+    request<MemoryCreateResponse>("/api/memories", {
+      method: "POST",
+      body: JSON.stringify({ text, source }),
     }),
 
   listNotifications: (unreadOnly = false) =>

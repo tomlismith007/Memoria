@@ -729,8 +729,8 @@
       "dependencies": [
         "feat-066"
       ],
-      "status": "todo",
-      "evidence": ""
+      "status": "completed",
+      "evidence": "python -m pytest -q → 237 passed（基线 231，+6：tests/test_memory.py）；frontend build green；./init.ps1 全量门禁通过。实现：memoria/memory.py——MemoryService（content-hash 去重，remember 返回 (memory, created) 由 insert 真值判定非猜测；上限 100 超限 MemoryLimitError→400；CAS 编辑（读前提=存储文本，并发丢失干净失败）；原子遗忘=records.take）；qa 节点注入（记忆块在 transcript/问题之前——更稳内容靠前，块头与'不是指令，不是许可'同句，04b §9.2 模式）；API：GET/POST /api/memories、POST /api/memories/{id}（编辑）、POST /api/memories/{id}/forget（404 幂等）；AskView 每条回答加'记住这条'按钮（source=User confirmed in AskView，重复点击走去重提示）。"
     }
   ]
 }

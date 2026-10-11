@@ -19,12 +19,15 @@ def build_graph(
     wiki: Wiki,
     mail_service=None,
     proposals=None,
+    memories=None,
 ):
     # Transient gateway errors retry 3x; confirm_archive stays retry-free (interrupt).
     llm_retry = RetryPolicy(max_attempts=3)
     g = StateGraph(MemoriaState)
     g.add_node("router", nodes.make_router(llm), retry_policy=llm_retry)
-    g.add_node("qa", nodes.make_qa(store, embedder, llm, wiki), retry_policy=llm_retry)
+    g.add_node(
+        "qa", nodes.make_qa(store, embedder, llm, wiki, memories), retry_policy=llm_retry
+    )
     g.add_node(
         "mail_triage", nodes.make_mail_triage(llm, service=mail_service), retry_policy=llm_retry
     )

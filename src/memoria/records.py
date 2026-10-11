@@ -59,6 +59,20 @@ class RecordStore:
         ).fetchall()
         return [json.loads(r[0]) for r in rows]
 
+    def take(self, kind: str, rec_id: str) -> dict | None:
+        """Atomic remove-and-return (forget semantics)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT data FROM records WHERE kind = ? AND id = ?", (kind, rec_id)
+            ).fetchone()
+            if row is None:
+                return None
+            self._conn.execute(
+                "DELETE FROM records WHERE kind = ? AND id = ?", (kind, rec_id)
+            )
+            self._conn.commit()
+        return json.loads(row[0])
+
     def cas(self, kind: str, rec_id: str, expected: dict, patch: dict) -> bool:
         """Conditional shallow-merge update: succeeds only when every field in
         `expected` still equals the stored value — the caller's read premise.

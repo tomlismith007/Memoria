@@ -25,6 +25,7 @@ from memoria.graph import build_graph
 from memoria.llm import ChatLLM, OpenAICompatibleChat
 from memoria.mail import Email, fetch_messages
 from memoria.mail.auth import get_gmail_service
+from memoria.memory import MemoryLimitError, MemoryService, memory_id_for
 from memoria.proposals import (
     ProposalError,
     ProposalInvalid,
@@ -83,6 +84,15 @@ class ProposalCreateRequest(BaseModel):
 class ProposalDecideRequest(BaseModel):
     decision: str  # "approved" | "denied"
     content_hash: str  # must echo the hash shown at review time (anti-swap)
+
+
+class MemoryCreateRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    source: str = "User added"
+
+
+class MemoryEditRequest(BaseModel):
+    text: str = Field(..., min_length=1)
 
 
 class MailFactRequest(BaseModel):
@@ -168,6 +178,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     )
     record_store = overrides.get("records") or RecordStore(records_path)
     proposals = overrides.get("proposals") or ProposalService(record_store)
+    memories = overrides.get("memories") or MemoryService(record_store)
     # A restart during execution leaves the result unknowable: mark it, never fake it.
     proposals.recover_interrupted()
 
@@ -188,7 +199,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
 
     def build_compiled():
         return build_graph(
-            store, embedder, llm, wiki, mail_service, proposals=proposals
+            store, embedder, llm, wiki, mail_service, proposals=proposals, memories=memories
         ).compile(checkpointer=checkpointer)
 
     compiled_graph = build_compiled()
@@ -672,6 +683,44 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
         if n is None:
             raise HTTPException(status_code=404, detail="通知不存在或已读")
         return {"notification": n}
+
+    @app.get("/api/memories")
+    def api_list_memories():
+        """feat-071: bounded memory list, newest first."""
+        return {"memories": memories.list()}
+
+    @app.post("/api/memories")
+    def api_create_memory(req: MemoryCreateRequest):
+        """手填 + AskView「记住」；content-hash 去重，上限内才写。"""
+        text = req.text.strip()
+        try:
+            memory, created = memories.remember(text, req.source)
+        except MemoryLimitError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {
+            "memory": memory,
+            "added": created,
+            "message": "" if created else "已存在相同内容的记忆，未重复写入",
+        }
+
+    @app.post("/api/memories/{memory_id}")
+    def api_edit_memory(memory_id: str, req: MemoryEditRequest):
+        try:
+            memory = memories.edit(memory_id, req.text)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if memory is None:
+            raise HTTPException(status_code=404, detail=f"记忆 {memory_id} 不存在")
+        return {"memory": memory}
+
+    @app.post("/api/memories/{memory_id}/forget")
+    def api_forget_memory(memory_id: str):
+        memory = memories.forget(memory_id)
+        if memory is None:
+            raise HTTPException(status_code=404, detail=f"记忆 {memory_id} 不存在")
+        return {"forgotten": memory_id, "memory": memory}
 
     def _find_raw_target(doc_id: str) -> Path | None:
         for f in wiki.raw_dir.iterdir():

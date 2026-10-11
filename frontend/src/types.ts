@@ -186,6 +186,20 @@ export interface ProposalDecideResponse {
   proposal: Proposal;
 }
 
+/** feat-071: one bounded agent memory row. */
+export interface AppMemory {
+  id: string;
+  text: string;
+  source: string;
+  created_at: string;
+}
+
+export interface MemoryCreateResponse {
+  memory: AppMemory;
+  added: boolean;
+  message: string;
+}
+
 /** feat-068: append-only inbox entry — mark-read only, no delete. */
 export interface AppNotification {
   id: string;

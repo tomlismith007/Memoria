@@ -668,6 +668,11 @@ def test_structured_endpoints_still_skip_the_router(api_client):
 
 
 def test_frontend_static_serving(api_client):
+    from pathlib import Path
+
+    dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+    if not dist.exists():
+        pytest.skip("frontend/dist not built in this checkout (CI has no build output)")
     client, _, _ = api_client
     resp = client.get("/")
     assert resp.status_code == 200

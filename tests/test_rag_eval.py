@@ -142,20 +142,48 @@ def _large_corpus(tmp_path, n_filler=37):
     return store
 
 
-def test_narrow_recall_window_finds_nothing(tmp_path):
-    """feat-054's motivation, pinned so k cannot silently shrink again.
+class _ScriptedBuriedStore:
+    """Deterministic stand-in: the target chunk sits at vector rank 20 forever.
 
-    With the target buried 20 documents deep, k=8 does not retrieve it at all —
-    the answer would say nothing about 到期. This is why k is a recall stage,
-    not a rerank window.
+    The original premise (k=8 misses on the hash-embedder corpus) was an
+    artefact of chroma/numpy tie ordering — on linux it happened to reach the
+    target and the guard broke (CI 2026-10-12). This store pins the same lesson
+    on every platform: the keyword rerank can only rescue what the recall pool
+    lets through.
     """
-    store = _large_corpus(tmp_path)
-    embedder = FakeEmbedder()
-    narrow = retrieve("服务什么时候到期", store, embedder, k=8, top_n=4)
+
+    def __init__(self, total: int = 30, target_rank: int = 20):
+        self.total = total
+        self.target_rank = target_rank
+
+    def search(self, qvec, k: int) -> list[dict]:
+        filler = "第N份无关文档：会议纪要与日程安排说明。"
+        target = "服务 A 的订阅将于 2027 年 1 月 1 日到期。需要提前 30 天发起续费。"
+        hits = []
+        for rank in range(1, k + 1):
+            if rank == self.target_rank:
+                hits.append({"doc_id": "target", "chunk": 0, "start": 0, "text": target, "distance": 0.1})
+            else:
+                hits.append({"doc_id": f"filler{rank}", "chunk": 0, "start": 0, "text": filler, "distance": 0.9})
+        return hits
+
+
+def test_narrow_recall_window_finds_nothing():
+    """feat-054's motivation, pinned deterministically (see _ScriptedBuriedStore).
+
+    With the target buried at vector rank 20, k=8 never lets it into the
+    candidate pool — the answer would say nothing about 到期. This is why k is
+    a recall stage, not a rerank window.
+    """
+    narrow = retrieve("服务什么时候到期", _ScriptedBuriedStore(), FakeEmbedder(), k=8, top_n=4)
     assert not any("到期" in h["text"] for h in narrow), (
-        "k=8 now reaches the target; feat-054's premise no longer holds — "
+        "k=8 lets the rank-20 target through; the recall-stage premise broke — "
         "revisit the default"
     )
+    # and the default window rescues it: rank 20 enters the pool, the keyword
+    # rerank (only 服务/到期 hit, weighted by IDF) pulls it to the top.
+    default_hits = retrieve("服务什么时候到期", _ScriptedBuriedStore(), FakeEmbedder(), k=30, top_n=4)
+    assert any("到期" in h["text"] for h in default_hits)
 
 
 def test_default_recall_window_reaches_the_buried_target(tmp_path):

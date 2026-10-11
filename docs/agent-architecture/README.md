@@ -1,6 +1,6 @@
 # 开源 Agent 架构设计研究
 
-本目录沉淀了 6 个开源 coding/personal agent 的架构研究，每份文档覆盖：整体架构、agent 循环与编排、上下文与记忆、**记忆压缩机制**、缓存设计、工具调用机制、提示词与规则系统、权限与安全、扩展机制、设计规范清单、知识点与可迁移结论，并附证据索引（结论 → 源码文件）。
+本目录沉淀了 7 个开源 coding/personal agent 的架构研究，每份文档覆盖：整体架构、agent 循环与编排、上下文与记忆、**记忆压缩机制**、缓存设计、工具调用机制、提示词与规则系统、权限与安全、扩展机制、设计规范清单、知识点与可迁移结论，并附证据索引（结论 → 源码文件）。
 
 另有 [04b-openmuse-alpha-surfaces.md](04b-openmuse-alpha-surfaces.md)：对 OpenMuse（2026-10-11 main 1ac68f3）按 README 声明的 10 个表面逐个对照源码的深读沉淀 + 三个重点深读（持久任务引擎 / 审批与对话通道隔离 / 文档纪律）+ 横切模式与 Memoria 迁移清单；是 [04-openmuse.md](04-openmuse.md) 的表面级补充。
 
@@ -14,6 +14,7 @@
 | [04-openmuse.md](04-openmuse.md) | [CopilotKit/openmuse](https://github.com/CopilotKit/openmuse) | TS，94 文件 | 个人 agent；租约式持久任务 + 证据溯源 + 人机审批隔离 |
 | [05-codex.md](05-codex.md) | [openai/codex](https://github.com/openai/codex) | Rust，约 140 crate | Op/Event 协议 + 压缩统一生命周期 + 三平台沙箱 |
 | [06-deepseek-harness.md](06-deepseek-harness.md) | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | TS/Cordis，40+ 包 | "一切皆插件"；事件溯源会话 + 能力 seam |
+| [07-talorys.md](07-talorys.md) | [rociiu/talorys](https://github.com/rociiu/talorys) | TS，约 1.2 万行 | 单用户个人 agent（Cloudflare DO）；三层召回地板 + 提案审批 + 调度对账 + 预算守卫 |
 
 ## 横向对比
 
@@ -27,6 +28,7 @@
 | OpenMuse | AG-UI 事件流 + 委派给持久任务（maxSteps 6/16） | stop 暂停客户端队列 | 无（对话层串行；任务层靠 worker 租约） |
 | Codex | Op（带 oneshot 应答）→ Event；turn 内多 step | Interrupt / InterruptIfNoPendingInput / RecoverTurn / Suspend | 并行执行 + code-mode（V8 跑编排脚本） |
 | DeepSeek Harness | turn/step 代数 + waterfall/serial 事件 | 每个异步阶段取消"不提交 system 与 user" | isConcurrencySafe 仅字面 true 开启 |
+| Talorys | async generator 事件流（title/start/text/tool/done/error），单轮多 step | abort → 落库 cancelled（含"流静默结束"兜底）；SSE 断连即中止省额度 | 无（串行工具；签名级重复调用检测兜底循环） |
 
 ### 记忆压缩（重点对比）
 
@@ -38,6 +40,7 @@
 | OpenMuse | 无（依赖 CopilotKit Intelligence） | — | — | 用"存引用现取值"回避上下文膨胀 |
 | Codex | scope（Total / BodyAfterPrefix 前缀后新增）+ 全窗口百分比硬顶；turn 结束顺路压缩 | 纯换窗（token 预算压缩，不摘要） | handoff 摘要（面向"下一个 LLM"）；另有远程摘要 | 压缩兼容哈希变化自动重压；提醒每窗一次 |
 | DeepSeek Harness | token meter（独立服务）判定压力；溢出错误即触发 | tool-result-pruner：头+middle pruned+尾；原图永远在日志 | compaction-basic：一次额外模型请求，只留摘要文本 | 图片永久省略并注明只读路径；声明缓存复用边界 |
+| Talorys | 溢出 ≥ 8 条才摘要（避免每轮 AI 调用）；窗口预算 = maxContext − system − 600 | 滑窗裁剪最旧优先（保首条 user；user 内容截 16k 字符） | 运行摘要增量合并（≤150 词 + summary_upto 水位不重发）；失败仅跳过 | 历史里带审批结局注记；消息库即摘要源（无独立压缩事件） |
 
 ### 缓存设计
 
@@ -60,6 +63,7 @@
 | OpenMuse | zod + execute 三元组 | AG-UI 工具事件 | 审批不走对话通道；exit receipts |
 | Codex | tool_spec/tool_definition + 动态发现 | tool_search 按需取 schema | apply-patch 独立可执行；code-mode JS 编排 |
 | DeepSeek Harness | ToolDefinition + 强制 ToolOutputDefinition | **白名单 3 字段**，其余永不泄漏 | canonical 输出 + 纯 render 投影 |
+| Talorys | defineTool：zod schema + permission + maxCallsPerTurn + UI label | name/description/parameters | 三级权限（read/write/destructive）+ destructive prepare/commit 提案审批（原子认领、TTL 30min）+ 内容签名重复检测 + 调度模式强制 read-only |
 
 ## 共同模式（六家都做的）
 
@@ -85,8 +89,17 @@
 7. MCP 三超时与工具异常全捕获（Mini-Agent）；
 8. token 预算压缩的"前缀后新增"口径（Codex）→ 系统 prompt 较大的场景。
 
+Talorys 补充（07，面向记忆/调度/预算三块）：
+
+1. 三层召回地板（absolute/relative/backstop）+ 按模型默认值表，数字须用自家 embedding 模型实测 → 检索核心与记忆层阈值；
+2. 向量即派生数据纪律包（同请求删向量 + 孤儿清理 + content_hash 增量 + 不进备份）→ "删文档必须删向量"红线的工程化模板；
+3. pullInNewer 新版本拉入 + `(saved …)` 前缀 + newer-wins 一行注 → wiki 知识复利的"旧版本不单独出现"；
+4. 调度 onStart 对账（三闸防重复 + 24h 补跑窗口）→ mail_triage 定时分拣的漏跑补偿；
+5. 限额双层（settings 可调 + 硬天花板）+ 六计数器 + provider 实测回落本地估算 → 个人部署成本防线；
+6. destructive prepare/commit 提案审批 + 审批结局注记回灌历史 → feat-066 提案制增量。
+
 ## 研究方法说明
 
 - 全部仓库已浅克隆至 `C:\Users\tom\AppData\Local\Temp\agentresearch\`（约 700MB，可随时删除），文档结论基于源码与官方文档精读，非 README 转述；
-- 克隆时间：2026-10-03；各仓库当日 HEAD 状态；
+- 克隆时间：2026-10-03（01–06）；talorys 为 2026-10-12（07，main `2cc547c`，v0.1.4）；各仓库当日 HEAD 状态；
 - 每篇文档的"证据索引"表给出结论 → 源码路径映射，便于复核。

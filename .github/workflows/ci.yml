@@ -12,5 +12,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - run: pip install pytest
+          cache: pip
+      # Tests import the real stack (langgraph/chromadb/fastapi/...), so CI must
+      # install the project — a bare `pip install pytest` has failed collection
+      # since feat-002 ever landed on CI.
+      - run: pip install -e .[dev]
       - run: python -m pytest -q

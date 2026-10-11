@@ -7,6 +7,8 @@ import type {
   IngestResponse,
   MailArchiveResponse,
   MailTriageResponse,
+  AppNotification,
+  NotificationListResponse,
   ModelApiFormat,
   Proposal,
   ProposalDecideResponse,
@@ -85,6 +87,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ decision, content_hash }),
     }),
+
+  listNotifications: (unreadOnly = false) =>
+    request<NotificationListResponse>(
+      `/api/notifications${unreadOnly ? "?unread=true" : ""}`
+    ),
+
+  markNotificationRead: (id: string) =>
+    request<{ notification: AppNotification }>(
+      `/api/notifications/${encodeURIComponent(id)}/read`,
+      { method: "POST" }
+    ),
 
   ingestText: (text: string, origin: string = "web_input.md") =>
     request<IngestResponse>("/api/ingest", {

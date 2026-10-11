@@ -1,7 +1,14 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, FileWarning, RefreshCw, ShieldCheck, X } from "lucide-react";
+import {
+  Bell,
+  CheckCircle2,
+  FileWarning,
+  RefreshCw,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import { api } from "../api";
-import type { Proposal } from "../types";
+import type { AppNotification, Proposal } from "../types";
 import { PillBadge } from "./ui/PillBadge";
 import { PillButton } from "./ui/PillButton";
 
@@ -80,14 +87,19 @@ export const ApprovalCenter: React.FC<ApprovalCenterProps> = ({
   onChanged,
 }) => {
   const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.listProposals();
-      setProposals(data.proposals);
+      const [proposalData, notificationData] = await Promise.all([
+        api.listProposals(),
+        api.listNotifications(true),
+      ]);
+      setProposals(proposalData.proposals);
+      setNotifications(notificationData.notifications);
     } catch {
       // listing is best-effort; keep whatever we had
     } finally {
@@ -111,6 +123,15 @@ export const ApprovalCenter: React.FC<ApprovalCenterProps> = ({
       alert(`提案处理失败: ${err.message}`);
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const markRead = async (notification: AppNotification) => {
+    try {
+      await api.markNotificationRead(notification.id);
+      await load();
+    } catch (err: any) {
+      alert(`标记已读失败: ${err.message}`);
     }
   };
 
@@ -147,7 +168,35 @@ export const ApprovalCenter: React.FC<ApprovalCenterProps> = ({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto space-y-3 pr-0.5">
-          {proposals.length === 0 && !loading && (
+          {notifications.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-medium text-zinc-400">
+                <Bell className="w-3 h-3" /> 运行动态（定时任务）
+              </div>
+              {notifications.map((n) => (
+                <div
+                  key={n.id}
+                  className="rounded-xl border border-zinc-200/80 bg-blue-50/50 px-3 py-2 text-xs space-y-1"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-zinc-900">{n.title}</span>
+                    <button
+                      onClick={() => markRead(n)}
+                      className="text-[11px] text-zinc-400 hover:text-zinc-700 shrink-0"
+                    >
+                      标为已读
+                    </button>
+                  </div>
+                  <p className="text-zinc-600 break-words">{n.body}</p>
+                  <span className="text-[10px] text-zinc-400 font-mono">
+                    {new Date(n.created_at).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {proposals.length === 0 && notifications.length === 0 && !loading && (
             <div className="text-center text-xs text-zinc-400 py-8">
               暂无提案记录
             </div>

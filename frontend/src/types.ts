@@ -185,3 +185,18 @@ export interface MailArchiveResponse {
 export interface ProposalDecideResponse {
   proposal: Proposal;
 }
+
+/** feat-068: append-only inbox entry — mark-read only, no delete. */
+export interface AppNotification {
+  id: string;
+  key: string;
+  title: string;
+  body: string;
+  link: string | null;
+  read: boolean;
+  created_at: string;
+}
+
+export interface NotificationListResponse {
+  notifications: AppNotification[];
+}

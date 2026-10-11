@@ -6,6 +6,7 @@ Supports dependency injection for 100% offline, deterministic testing.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sqlite3
 import uuid
@@ -22,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from memoria.graph import build_graph
 from memoria.llm import ChatLLM, OpenAICompatibleChat
-from memoria.mail import Email
+from memoria.mail import Email, fetch_messages
 from memoria.mail.auth import get_gmail_service
 from memoria.proposals import (
     ProposalError,
@@ -38,6 +39,7 @@ from memoria.rag import (
 )
 from memoria.records import RecordStore
 from memoria.sync import archive_qa, archive_fact
+from memoria.tasks import TaskEngine, notify
 from memoria.web.config import (
     MAIL_NOT_CONNECTED_HINT,
     Settings,
@@ -164,7 +166,8 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     records_path = overrides.get("records_path") or os.environ.get(
         "MEMORIA_RECORDS", "./data/memoria.db"
     )
-    proposals = overrides.get("proposals") or ProposalService(RecordStore(records_path))
+    record_store = overrides.get("records") or RecordStore(records_path)
+    proposals = overrides.get("proposals") or ProposalService(record_store)
     # A restart during execution leaves the result unknowable: mark it, never fake it.
     proposals.recover_interrupted()
 
@@ -260,6 +263,60 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                 model=embed_model,
             )
         compiled_graph = build_compiled()
+
+    # feat-068: minimal durable task engine. Only starts when Gmail is actually
+    # ready (a not-connected run would just spam failure notifications); env
+    # kill switch MEMORIA_TASKS=0. Tests inject `task_engine` explicitly.
+    task_engine = overrides.get("task_engine")
+    if task_engine is None and mail_status["ready"] and os.environ.get("MEMORIA_TASKS", "1") != "0":
+        interval = int(os.environ.get("MEMORIA_MAIL_TRIAGE_INTERVAL", "1800"))
+
+        def mail_triage_handler(task: dict) -> dict:
+            # Reads the CURRENT compiled graph (activate_settings may rebuild it).
+            thread_id = uuid.uuid4().hex
+            emails = fetch_messages(mail_service)
+            result = compiled_graph.invoke(
+                {"intent": "邮件", "emails": emails},
+                {"configurable": {"thread_id": thread_id}},
+            )
+            candidates = [t for t in result.get("triages", []) if t.archive_candidate]
+            if not candidates:
+                return {"pending": 0}
+            pending_ids = [t.email.msg_id for t in candidates]
+            digest = hashlib.sha256(",".join(sorted(pending_ids)).encode("utf-8")).hexdigest()[:16]
+            payload = {
+                "thread_id": thread_id,
+                "confirmed_ids": pending_ids,
+                "msgs": [
+                    {
+                        "msg_id": t.email.msg_id,
+                        "subject": t.email.subject,
+                        "sender": t.email.sender,
+                        "category": t.category,
+                    }
+                    for t in candidates
+                ],
+            }
+            # Idempotent replay: the same mail set maps to the same idem key, so a
+            # re-claimed task (crash mid-run) never duplicates a proposal.
+            proposal = proposals.propose(
+                "archive", payload, idem_key=f"archive:auto:{digest}"
+            )
+            notify(
+                record_store,
+                f"proposal-ready:{digest}",
+                "邮件归档提案待审",
+                f"{len(candidates)} 封营销邮件等待批准（30 分钟内有效）。",
+                link=proposal["id"],
+            )
+            return {"pending": len(candidates), "proposal_id": proposal["id"]}
+
+        task_engine = TaskEngine(record_store, {"mail_triage": mail_triage_handler})
+        task_engine.ensure_task("mail_triage", interval_seconds=interval)
+        task_engine.start()
+        # add_event_handler was removed from newer FastAPI; the router's
+        # on_shutdown list is the supported equivalent.
+        app.router.on_shutdown.append(task_engine.stop)
 
     register_config_routes(app, activate_settings=activate_settings)
 
@@ -594,6 +651,27 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             proposals.complete(proposal_id, "failed", error=str(e)[:160])
             raise HTTPException(status_code=502, detail=f"提案执行失败: {str(e)[:160]}")
         return {"proposal": proposals.complete(proposal_id, "succeeded", result=result)}
+
+    @app.get("/api/tasks")
+    def api_tasks():
+        """feat-068: scheduled task status (kind, next run, attempts, last error)."""
+        return {"tasks": task_engine.list_tasks() if task_engine else []}
+
+    @app.get("/api/notifications")
+    def api_notifications(unread: bool = False):
+        """feat-068: append-only notification inbox — mark-read only, no delete."""
+        return {
+            "notifications": task_engine.list_notifications(unread_only=unread) if task_engine else []
+        }
+
+    @app.post("/api/notifications/{notification_id}/read")
+    def api_notification_read(notification_id: str):
+        if task_engine is None:
+            raise HTTPException(status_code=404, detail="通知收件箱未启用")
+        n = task_engine.mark_notification_read(notification_id)
+        if n is None:
+            raise HTTPException(status_code=404, detail="通知不存在或已读")
+        return {"notification": n}
 
     def _find_raw_target(doc_id: str) -> Path | None:
         for f in wiki.raw_dir.iterdir():

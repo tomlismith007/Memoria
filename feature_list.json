@@ -706,8 +706,9 @@
         "feat-066",
         "feat-069"
       ],
-      "status": "todo",
-      "evidence": ""
+      "status": "completed",
+      "evidence": "python -m pytest -q → 231 passed（基线 223，+8：tests/test_tasks.py）；frontend build green；./init.ps1 全量门禁通过。实现：memoria/tasks.py——TaskEngine（records kind:task，每 kind 单例任务；at-most-once：claim 与 next_run_at 推进同一条 CAS，崩溃最多损失一个 slot 不双触发；过期租约可重认领；心跳 lease/3 续租；失败 attempts+1 + 幂等通知 key task-error:{id}:{attempts}；恢复=重放——handler 幂等，重跑靠提案 idem_key 去重）；mail_triage handler 经图执行（invoke intent=邮件→interrupt 停在人工确认），同批邮件集合 hash 为 idem_key，提案 30 分钟待审 + 通知；通知收件箱 append-only 只能标读；API：GET /api/tasks、GET /api/notifications、POST /api/notifications/{id}/read；前端 ApprovalCenter 加'运行动态'区。引擎仅在 Gmail ready 且 MEMORIA_TASKS≠0 时启动（缺邮件连接不空转刷错）。kind 枚举仅 mail_triage，monitor/digest 留位未实现（D6）。",
+      "limitation": "失败重试为固定间隔（无 2^n 退避，OpenMuse 配方未全搬）；心跳假设单进程执行（与 SqliteSaver 同假设）；引擎随 create_app 启动，无独立 worker 进程；通知无推送（仅审批中心面板查看）"
     },
     {
       "id": "feat-069",

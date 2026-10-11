@@ -7,6 +7,7 @@ Supports dependency injection for 100% offline, deterministic testing.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sqlite3
 import uuid
@@ -15,6 +16,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -55,6 +57,11 @@ from memoria.wiki import Wiki, extract_links, lint as wiki_lint
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1)
     conversation_id: str = ""  # empty -> new conversation thread (its id is returned)
+
+
+class AskStreamRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    conversation_id: str = ""
 
 
 class AgentRequest(BaseModel):
@@ -404,6 +411,54 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                 for c in result.get("answer_citations", [])
             ],
         }
+
+    @app.post("/api/ask/stream")
+    def api_ask_stream(req: AskStreamRequest):
+        """feat-039: SSE variant of /api/ask.
+
+        Event contract: start -> delta -> citations -> done | error.
+        The qa LLM call is a single blocking request (net.py reads full bodies;
+        true token streaming needs a streaming-capable safe_request — a separate
+        batch), so `delta` currently carries the whole answer once ready. The
+        contract is stable: when token streaming lands, delta just fires more.
+        """
+        _require("llm")
+        _require("embed")
+        conversation_id = req.conversation_id or uuid.uuid4().hex
+        config = {"configurable": {"thread_id": conversation_id}}
+
+        def event_stream():
+            def sse(payload: dict) -> str:
+                return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+            yield sse({"type": "start", "conversation_id": conversation_id})
+            try:
+                result = compiled_graph.invoke(
+                    {"text": req.question, "intent": "问答"}, config
+                )
+            except Exception as e:
+                yield sse({"type": "error", "message": f"LLM 接口调用失败: {str(e)[:180]}"})
+                return
+            yield sse({"type": "delta", "text": result["answer_text"]})
+            yield sse(
+                {
+                    "type": "citations",
+                    "source": result.get("answer_source", "rag+wiki"),
+                    "wiki_pages": result.get("answer_wiki_pages", []),
+                    "citations_verified": result.get("answer_verified", False),
+                    "citations": [
+                        {"ref": c.ref, "doc_id": c.doc_id, "chunk": c.chunk, "start": c.start}
+                        for c in result.get("answer_citations", [])
+                    ],
+                }
+            )
+            yield sse({"type": "done"})
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     @app.post("/api/agent")
     def api_agent(req: AgentRequest):

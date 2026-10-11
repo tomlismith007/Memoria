@@ -437,8 +437,8 @@
       "dependencies": [
         "feat-034"
       ],
-      "status": "todo",
-      "evidence": ""
+      "status": "completed",
+      "evidence": "python -m pytest -q → 239 passed（基线 237，+2：test_ask_stream_events 事件序契约 + test_ask_stream_error_event）；frontend build green；./init.ps1 全量门禁通过。实现：后端 POST /api/ask/stream（StreamingResponse text/event-stream，事件契约 start→delta→citations→done|error，SSE 变体与 /api/ask 同图同线程——conversation_id 即 LangGraph thread）；前端 api.askStream（fetch ReadableStream + SSE 解析，signal 可中止）+ AskView ConversationQueue 语义（refs 为真值的 52 行式状态机：running 中 composer 保持可编辑、Enter 入队、Up next 条带移出按钮、队列自动推进、停止与失败都暂停队列且永不隐式重发、发送队列消息恢复、新提交解锁、发送/停止同位切换）；浏览器验收（离线脚本化 LLM 服务器，存档 gui-test-screenshots/feat-039/）：全链路人工验证通过并发现/修复 Enter 提交失效 bug（隐式提交在 React 重渲染窗口被吞——AskInput 显式 onKeyDown 修复，二次修复补 running 入队分支，复测通过）。"
     },
     {
       "id": "feat-040",

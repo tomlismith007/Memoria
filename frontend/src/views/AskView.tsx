@@ -12,6 +12,8 @@ import {
   Plus,
   Search,
   Settings2,
+  Square,
+  X,
 } from "lucide-react";
 import { api } from "../api";
 import type { AskResponse, Citation, CustomProvider } from "../types";
@@ -285,6 +287,8 @@ const ModelPickerBadge: React.FC<ModelPickerBadgeProps> = ({
 };
 
 interface AskInputProps {
+  running?: boolean;
+  onStop?: () => void;
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
@@ -294,7 +298,15 @@ interface AskInputProps {
 
 // Capsule ask input shared by the initial hero screen and the floating bottom
 // bar; the two differ only in size, shadow and placeholder text.
-const AskInput: React.FC<AskInputProps> = ({ value, onChange, onSubmit, placeholder, size }) => {
+const AskInput: React.FC<AskInputProps> = ({
+  value,
+  onChange,
+  onSubmit,
+  placeholder,
+  size,
+  running = false,
+  onStop,
+}) => {
   const large = size === "lg";
   return (
     <form
@@ -313,24 +325,47 @@ const AskInput: React.FC<AskInputProps> = ({ value, onChange, onSubmit, placehol
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          // 显式处理 Enter：隐式提交在本 form 结构下不可靠（按钮 disabled 态
+          // 或浏览器差异会吞掉提交）。running 时 Enter 入队（composer 保持可编辑）。
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            // handleAsk 分流：running 时入队，空闲时立即运行——两种情况都要调。
+            onSubmit();
+          }
+        }}
         placeholder={placeholder}
         className="w-full min-w-0 bg-transparent border-none outline-none text-sm text-zinc-900 placeholder:text-zinc-400"
         autoFocus
       />
-      <button
-        type="submit"
-        disabled={!value.trim()}
-        title="发送"
-        className={`${
-          large ? "w-9 h-9" : "w-8 h-8"
-        } rounded-full flex items-center justify-center shrink-0 transition-all duration-150 select-none cursor-pointer ${
-          value.trim()
-            ? "bg-[#09090b] text-white shadow-sm hover:bg-black active:scale-95 border border-zinc-900/80"
-            : "bg-zinc-100 text-zinc-300 cursor-not-allowed"
-        }`}
-      >
-        <ArrowUp className="w-4 h-4 stroke-[2.4]" />
-      </button>
+      {/* feat-039: send/stop in the same position; Enter during a run enqueues. */}
+      {running && onStop ? (
+        <button
+          type="button"
+          onClick={onStop}
+          title="停止"
+          className={`${
+            large ? "w-9 h-9" : "w-8 h-8"
+          } rounded-full flex items-center justify-center shrink-0 bg-[#09090b] text-white shadow-sm hover:bg-black active:scale-95 cursor-pointer`}
+        >
+          <Square className="w-3.5 h-3.5 fill-current" />
+        </button>
+      ) : (
+        <button
+          type="submit"
+          disabled={!value.trim()}
+          title="发送"
+          className={`${
+            large ? "w-9 h-9" : "w-8 h-8"
+          } rounded-full flex items-center justify-center shrink-0 transition-all duration-150 select-none cursor-pointer ${
+            value.trim()
+              ? "bg-[#09090b] text-white shadow-sm hover:bg-black active:scale-95 border border-zinc-900/80"
+              : "bg-zinc-100 text-zinc-300 cursor-not-allowed"
+          }`}
+        >
+          <ArrowUp className="w-4 h-4 stroke-[2.4]" />
+        </button>
+      )}
     </form>
   );
 };
@@ -350,6 +385,21 @@ export const AskView: React.FC<AskViewProps> = ({
   const [sessionId, setSessionId] = useState<string>(session.sessionId);
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // feat-039 ConversationQueue: refs are the source of truth (flush happens in
+  // async callbacks); the state mirrors only drive rendering.
+  const queueRef = useRef<{ id: string; text: string }[]>([]);
+  const pausedRef = useRef(false);
+  const runningRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const [queueItems, setQueueItems] = useState<{ id: string; text: string }[]>([]);
+  const [queuePaused, setQueuePaused] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const syncQueueUi = () => {
+    setQueueItems([...queueRef.current]);
+    setQueuePaused(pausedRef.current);
+    setBusy(runningRef.current);
+  };
 
   const hasStarted = messages.length > 0;
 
@@ -363,51 +413,102 @@ export const AskView: React.FC<AskViewProps> = ({
     }
   }, [messages]);
 
-  const handleAsk = async (queryText?: string) => {
+  const flushNext = () => {
+    if (runningRef.current || pausedRef.current) return;
+    const next = queueRef.current.shift();
+    syncQueueUi();
+    if (next) void runOne(next.text);
+  };
+
+  const runOne = async (q: string) => {
+    runningRef.current = true;
+    syncQueueUi();
+    const msgId = Date.now().toString();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setMessages((prev) => [...prev, { id: msgId, question: q, loading: true }]);
+    const patchMsg = (patch: Partial<MessageItem>) =>
+      setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, ...patch } : m)));
+    let answerText = "";
+    let finalResult: AskResponse | null = null;
+    try {
+      await api.askStream(q, sessionId, {
+        signal: controller.signal,
+        onDelta: (text) => {
+          answerText = text;
+          patchMsg({ result: { text, citations: [], source: "rag+wiki", wiki_pages: [] } });
+        },
+        onCitations: (payload) => {
+          finalResult = {
+            text: answerText,
+            citations: payload.citations,
+            source: payload.source,
+            wiki_pages: payload.wiki_pages,
+            citations_verified: payload.citations_verified,
+          };
+        },
+      });
+      const res =
+        finalResult ??
+        ({ text: answerText, citations: [], source: "rag+wiki", wiki_pages: [] } as AskResponse);
+      patchMsg({
+        loading: false,
+        result: res,
+        activeCitation: res.citations.length > 0 ? res.citations[0] : null,
+      });
+    } catch (err: any) {
+      // feat-039: stop AND failure both pause the queue; nothing is resent.
+      const stopped = err?.name === "AbortError";
+      patchMsg({
+        loading: false,
+        error: stopped ? "已停止（本次未生成回答）。" : err.message || "请求失败，请检查模型连接",
+      });
+      pausedRef.current = true;
+    } finally {
+      runningRef.current = false;
+      abortRef.current = null;
+      syncQueueUi();
+      flushNext();
+    }
+  };
+
+  const handleAsk = (queryText?: string) => {
     const q = (queryText || input).trim();
     if (!q) return;
-
-    const msgId = Date.now().toString();
-    const newMsg: MessageItem = {
-      id: msgId,
-      question: q,
-      loading: true,
-    };
-
-    setMessages((prev) => [...prev, newMsg]);
     setInput("");
-
-    try {
-      const res = await api.ask(q, sessionId); // conversation_id = graph thread: model sees prior turns
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === msgId
-            ? {
-                ...m,
-                loading: false,
-                result: res,
-                activeCitation: res.citations.length > 0 ? res.citations[0] : null,
-              }
-            : m
-        )
-      );
-    } catch (err: any) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === msgId
-            ? {
-                ...m,
-                loading: false,
-                error: err.message || "请求失败，请检查模型连接",
-              }
-            : m
-        )
-      );
+    if (runningRef.current) {
+      // composer stays available mid-run — follow-ups line up in the queue.
+      queueRef.current.push({ id: `q${Date.now().toString()}`, text: q });
+      syncQueueUi();
+      return;
     }
+    // A fresh submission unlocks a paused queue (when nothing is queued behind).
+    if (queueRef.current.length === 0) pausedRef.current = false;
+    void runOne(q);
+  };
+
+  const handleStop = () => {
+    abortRef.current?.abort(); // runOne marks the message and pauses the queue
+    pausedRef.current = true;
+    syncQueueUi();
+  };
+
+  const resumeQueue = () => {
+    pausedRef.current = false;
+    syncQueueUi();
+    flushNext();
+  };
+
+  const removeQueued = (id: string) => {
+    queueRef.current = queueRef.current.filter((qi) => qi.id !== id);
+    syncQueueUi();
   };
 
   const handleNewSession = () => {
     if (!window.confirm("清空当前本地问答历史？已沉淀的 Wiki 页面不会被删除。")) return;
+    queueRef.current = [];
+    pausedRef.current = false;
+    syncQueueUi();
     setMessages([]);
     setInput("");
     setSessionId(newSessionId()); // fresh conversation => fresh graph memory
@@ -486,6 +587,8 @@ export const AskView: React.FC<AskViewProps> = ({
             value={input}
             onChange={setInput}
             onSubmit={() => handleAsk()}
+            running={busy}
+            onStop={handleStop}
             placeholder="提出问题，如：服务续费时间是什么时候？"
             size="lg"
           />
@@ -688,10 +791,42 @@ export const AskView: React.FC<AskViewProps> = ({
                   />
                 </div>
               </div>
+              {(queueItems.length > 0 || queuePaused) && (
+                <div className="flex flex-wrap items-center gap-2 px-3 pb-1.5 text-[11px] text-zinc-500">
+                  <span className="font-medium shrink-0">
+                    {queuePaused ? "Messages on hold" : "Up next"}
+                  </span>
+                  {queueItems.map((qi) => (
+                    <span
+                      key={qi.id}
+                      className="inline-flex max-w-[220px] items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5"
+                    >
+                      <span className="truncate">{qi.text}</span>
+                      <button
+                        onClick={() => removeQueued(qi.id)}
+                        className="text-zinc-400 hover:text-zinc-700 shrink-0"
+                        title="移出队列"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {queuePaused && (
+                    <button
+                      onClick={resumeQueue}
+                      className="text-zinc-700 underline underline-offset-2 shrink-0"
+                    >
+                      发送队列消息
+                    </button>
+                  )}
+                </div>
+              )}
               <AskInput
                 value={input}
                 onChange={setInput}
                 onSubmit={() => handleAsk()}
+                running={busy}
+                onStop={handleStop}
                 placeholder="继续提问..."
                 size="sm"
               />

@@ -194,6 +194,14 @@ export interface AppMemory {
   created_at: string;
 }
 
+/** feat-039: SSE citations event payload. */
+export interface AskStreamCitations {
+  source: AskResponse["source"];
+  wiki_pages: string[];
+  citations_verified: boolean;
+  citations: Citation[];
+}
+
 export interface MemoryCreateResponse {
   memory: AppMemory;
   added: boolean;

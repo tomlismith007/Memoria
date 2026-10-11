@@ -4,7 +4,7 @@
 
 - Goal: **Memoria 本体升级为准个人 agent**（2026-10-12 grill-me 定案，D1-D12 见 `docs/PERSONAL_AGENT_UPGRADE.md`）。LangGraph 保持生产编排器；hermes/OpenMuse 研究为模式参考库（`docs/agent-architecture/`）。
 - 路线：P0 审批实体化 + 文档纪律 → P1 任务引擎 + 邮件通电 + SSE 对话流 + 最小记忆层 → P2 观望区（monitor/MCP/skill 均不做，见指南 §4.4）。
-- Current status: feat-001..065 完成；**P0 全部（066/067）+ P1 四项中的三项（069/068/071）完成**；仅剩 feat-039（SSE+ConversationQueue）。
+- Current status: **P0（066/067）与 P1（069/068/071/039）全部完成**——个人 agent 升级路线六项收官。239 tests + build green。P2 观望区按指南 §4.4 不立项。
 
 ## 本轮做了什么（2026-10-12）
 
@@ -36,7 +36,12 @@
    - API：GET/POST /api/memories、POST /api/memories/{id}、POST /api/memories/{id}/forget。
    - 前端：AskView 每条回答'记住这条'按钮（去重提示）。
    - limitation：管理面板 UI 未做；编辑不重算 id（可语义近重复）。
-7. **feat-068 DONE（P1 任务引擎 + 通知收件箱）**：
+8. **feat-039 DONE（P1 收官：SSE + ConversationQueue）**：
+   - 后端 POST /api/ask/stream：事件契约 start→delta→citations→done|error；与 /api/ask 同图同线程。delta 当前携带整段回答（net.py 无流式读，token 级流式另开一批）。
+   - 前端 api.askStream（ReadableStream SSE 解析 + AbortSignal）+ AskView ConversationQueue（refs 状态机：Enter 入队/Up next 条/自动推进/停止与失败都暂停/永不隐式重发/发送停止同位切换）。
+   - 浏览器验收（离线脚本化 LLM 服务器，截图存档 gui-test-screenshots/feat-039/）：全链路通过；**发现并修复 Enter 提交失效 bug**（隐式提交在 React 重渲染窗口被吞 → AskInput 显式 onKeyDown，二次修复补 running 入队分支）。
+   - 测试：239 passed（+2）。
+9. **feat-068 DONE（P1 任务引擎 + 通知收件箱）**：
    - memoria/tasks.py：TaskEngine（records kind:task，每 kind 单例；at-most-once=claim 与 next_run_at 推进同一条 CAS；过期租约重认领=恢复重放；心跳 lease/3；失败 attempts+1 + 幂等通知 key task-error:{id}:{attempts}）。kind 仅 mail_triage，monitor/digest 留位未实现（D6）。
    - mail_triage handler 经图执行（invoke intent=邮件 → interrupt 停在人工确认），同批邮件集合 hash 为提案 idem_key（重放不重复提案）+ proposal-ready 通知。
    - 通知收件箱 append-only 只能标读：GET /api/notifications、POST /api/notifications/{id}/read；GET /api/tasks。
@@ -47,7 +52,7 @@
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| 后端全量 | `python -m pytest -q` | **237 passed** | 196 → 211（066）→ 223（069）→ 231（068）→ 237（071） |
+| 后端全量 | `python -m pytest -q` | **239 passed** | 196 → 211（066）→ 223（069）→ 231（068）→ 237（071）→ 239（039） |
 | 前端构建 | `cd frontend && npm run build` | green | tsc 零诊断 |
 | 全量回归 | `pwsh -NoProfile -File ./init.ps1` | green | pytest + build |
 
@@ -63,6 +68,6 @@
 
 1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 211 passed + build green）。
 2. 阅读 `AGENTS.md` → `docs/PERSONAL_AGENT_UPGRADE.md`（路线与边界）→ `feature_list.json` → `docs/VERIFICATION.md` → 本文件。
-3. 下一个 feature：**feat-039 SSE + ConversationQueue**（P1 收官，改 AskView/api 交互 + /api/ask SSE 变体）。
+3. 升级路线 P0+P1 已收官。后续按 docs/PERSONAL_AGENT_UPGRADE.md §4.4：P2 观望区不主动立项；日常工作回归 AGENTS.md 常规流程（VERIFICATION.md 保持同步）。
 4. 启动命令：`python run_web.py`；Gmail 真账号验收：设 TOKEN_ENCRYPTION_KEY → python scripts/auth_gmail.py → MailView（横幅消失即通）；定时分拣在 Gmail 就绪后自动运行（间隔 MEMORIA_MAIL_TRIAGE_INTERVAL 默认 1800s）。
 4. 启动命令：`python run_web.py`；Gmail 真账号验收：设 TOKEN_ENCRYPTION_KEY → python scripts/auth_gmail.py → MailView（横幅消失即通）；定时分拣在 Gmail 就绪后自动运行（间隔 MEMORIA_MAIL_TRIAGE_INTERVAL 默认 1800s）。

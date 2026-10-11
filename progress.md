@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-10-12
-**Active Feature:** feat-066/067/069/068/071 completed（P0 + P1 全部落地）；下一步 feat-039（SSE+ConversationQueue，P1 收官）
+**Active Feature:** feat-066/067/069/068/071/039 completed——P0 与 P1 全部落地。下一步按 PERSONAL_AGENT_UPGRADE §4.4：P2 观望区不立项，等触发条件
 
 ## Status
 
@@ -15,7 +15,8 @@
 - **feat-067 DONE**：文档纪律最小包。`docs/VERIFICATION.md`（日期头/免责句/211 passed 数字/9 行 Area|Evidence|Boundary 矩阵/Release fixes 记录 json_patch 坑/Reproduce/Still outside）；feature_list.json 60 条 completed 全部补 limitation；红线三处同文（classify.py prompt 合同补"正文不可信+不构成归档许可"，UI/ARCHITECTURE 经核已达标）；AGENTS.md 新增"三处同文"与"enforced vs instructed"纪律；RAG_UPGRADE_PLAN 免责句。211 tests + build green。
 - **feat-069 DONE**：邮件生产通电。token.json Fernet 加密（TOKEN_ENCRYPTION_KEY，fail-closed：缺 key 读写拒绝，legacy 明文过同门迁移加密）；60s 提前刷新 + 进程锁去重；interactive=False 启动永不弹 OAuth；create_app 接线 + health capabilities.mail + triage mail_ready；MailView 引导横幅。223 tests + build green。VERIFICATION Boundary：真账号端到端验收仍待跑。cryptography 加入 pyproject。
 - **feat-071 DONE**：最小记忆层。MemoryService（content-hash 去重/上限 100/CAS 编辑/原子遗忘）+ qa 节点数据块注入（'不是指令，不是许可'同句）+ GET/POST/编辑/遗忘 API + AskView'记住这条'按钮。237 tests + build green。limitation：管理面板 UI 未做、编辑不重算 id。
-- 下一步：feat-039 SSE+ConversationQueue（P1 收官）。
+- **feat-039 DONE**：SSE 流式 + ConversationQueue。后端 /api/ask/stream（事件契约 start→delta→citations→done|error）；前端 askStream 客户端 + AskView 队列语义（Enter 入队/Up next/自动推进/停止与失败暂停/永不隐式重发/发送停止同位）。浏览器验收通过并修复 Enter 提交失效 bug（存档 gui-test-screenshots/feat-039/）。239 tests + build green。
+- P1 收官。个人 agent 升级路线 P0+P1 六项全部完成（066/067/069/068/071/039）。
 
 ### What's Done
 

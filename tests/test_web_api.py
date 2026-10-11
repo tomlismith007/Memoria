@@ -1322,6 +1322,67 @@ def test_startup_marks_interrupted_executions_unknown(tmp_path):
     assert rows[0]["status"] == "outcome_unknown"
 
 
+def test_ask_stream_events(api_client):
+    """feat-039: SSE contract start -> delta -> citations -> done, plus the
+    error event when the LLM call fails. The qa LLM call is one blocking
+    request, so delta carries the whole answer (contract stable for tokens)."""
+    import json as _json
+
+    client, wiki, _ = api_client
+    wiki.write_page("服务到期", "# 服务到期\n\n2027 年到期。\n")
+    wiki.build_index()
+
+    resp = client.post("/api/ask/stream", json={"question": "服务到期时间？"})
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    events = [
+        _json.loads(line[len("data: "):])
+        for line in resp.text.split("\n\n")
+        if line.startswith("data: ")
+    ]
+    assert [e["type"] for e in events] == ["start", "delta", "citations", "done"]
+    conversation_id = events[0]["conversation_id"]
+    assert conversation_id
+    assert "2027" in events[1]["text"]
+    assert events[2]["citations_verified"] is True
+    assert events[2]["source"] == "wiki"  # wiki answers trace via [[page]], not [n]
+
+    # The streamed thread answers follow-ups like the JSON route: same thread id.
+    follow = client.post(
+        "/api/ask/stream",
+        json={"question": "那服务 A 呢？", "conversation_id": conversation_id},
+    )
+    assert follow.status_code == 200
+
+
+def test_ask_stream_error_event(tmp_path):
+    """feat-039: a failing LLM surfaces as an SSE error event, not a 502 page."""
+    from memoria.rag import ChromaStore as CS
+    from memoria.rag import FakeEmbedder as FE
+
+    class BoomChat:
+        def chat(self, system, user):
+            raise RuntimeError("gateway down")
+
+    app = create_app(
+        {
+            "store": CS(path=str(tmp_path / "chroma")),
+            "embedder": FE(),
+            "llm": BoomChat(),
+            "wiki": _fresh_wiki(tmp_path),
+            "checkpointer": MemorySaver(),
+            "records_path": str(tmp_path / "memoria.db"),
+        }
+    )
+    resp = TestClient(app).post("/api/ask/stream", json={"question": "问点什么"})
+    events = [
+        line[len("data: "):] for line in resp.text.split("\n\n") if line.startswith("data: ")
+    ]
+    kinds = [e.split('"type": "')[1].split('"')[0] for e in events]
+    assert kinds == ["start", "error"]
+    assert "gateway down" in resp.text
+
+
 def test_ask_endpoint(api_client):
     client, wiki, _ = api_client
     wiki.write_page("服务到期", "# 服务到期\n\n2027 到期。\n")

@@ -47,6 +47,8 @@ This is a design discipline, not permission to skip reading. Trace the complete 
 - **Fix root causes:** repair the shared boundary once rather than patching every symptom or sibling path.
 - **Prefer deletion and reuse:** the fewest-file, shortest correct diff wins; no speculative interfaces, factories, config knobs, or scaffolding “for later.”
 - **Do not simplify away safety:** preserve trust-boundary validation, error handling that prevents data loss, security, accessibility, and explicitly requested behavior.
+- **Red lines read the same in three places (feat-067):** every red-line / security constraint lives in the model prompt contract, the UI copy, and `docs/ARCHITECTURE.md` §5 — changing one means changing all three in the same commit.
+- **Enforced vs instructed:** when adding a constraint, declare its strength — enforced (code path: SQL/route/tool-face cannot be bypassed) or instructed (prompt only; must also be declared in `docs/VERIFICATION.md` Boundary). Never present an instructed constraint as enforced.
 - **Name deliberate shortcuts:** if a simple implementation has a real ceiling, add a concise `ponytail:` comment stating the ceiling and the upgrade path. Do not hide the limitation.
 - **Avoid unrequested prose in code:** match surrounding naming, style, and comment density.
 

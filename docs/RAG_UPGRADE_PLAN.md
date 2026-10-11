@@ -2,6 +2,7 @@
 
 > 制定：2026-09-28，基于 Context7 查得的 Chroma / LangChain 当前文档 + 代码实测探针
 > 起点：145 passed；检索核心 `rag/retrieve.py` 49 行手写，保持「检索核心自己写」红线
+> **Planned extensions are not claims of current support**：本文含已完成项与计划项；哪些已落地以 `feature_list.json` 的 evidence 为准（feat-050..054 已完成），未立项条目只是计划，不是当前能力。
 
 ---
 

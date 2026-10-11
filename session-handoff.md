@@ -4,7 +4,7 @@
 
 - Goal: **Memoria 本体升级为准个人 agent**（2026-10-12 grill-me 定案，D1-D12 见 `docs/PERSONAL_AGENT_UPGRADE.md`）。LangGraph 保持生产编排器；hermes/OpenMuse 研究为模式参考库（`docs/agent-architecture/`）。
 - 路线：P0 审批实体化 + 文档纪律 → P1 任务引擎 + 邮件通电 + SSE 对话流 + 最小记忆层 → P2 观望区（monitor/MCP/skill 均不做，见指南 §4.4）。
-- Current status: feat-001..065 完成；**feat-066（P0 提案审批子系统）完成**；feat-067..071 已立项待做；feat-039 已扩范围（SSE+ConversationQueue）待做。
+- Current status: feat-001..065 完成；**feat-066（P0 提案审批）+ feat-067（P0 文档纪律）完成**；feat-069/068/071 已立项待做；feat-039 已扩范围（SSE+ConversationQueue）待做。
 
 ## 本轮做了什么（2026-10-12）
 
@@ -18,6 +18,11 @@
    - 前端：`components/ApprovalCenter.tsx`（审批中心）+ App 顶栏待审徽标（tab 切换时刷新）；MailView 归档、IngestView 删除/重建改走 propose→decide。
    - 测试：211 passed（基线 196，+15）；test_chat_channel_cannot_approve_proposals 锁定"对话通道无批准路径"边界。
    - 备注：Mimosa 钩子对 test_graph.py 报过一次 SQL 注入误报（测试文件无 SQL）；顺手把 records.py 改为全参数化 SQL（json 路径走绑定参数）。
+4. **feat-067 DONE（P0 文档纪律）**：
+   - `docs/VERIFICATION.md` 新建：日期头+免责句、Automated checks（211 passed + 明记未跑项）、9 行 Area|Evidence|Boundary 矩阵、Release fixes（json_patch RFC7396 null 删键坑）、Reproduce 块、Still outside。
+   - feature_list.json 60/60 条 completed 特征补 limitation 字段。
+   - 红线三处同文：classify.py SYSTEM/BATCH_SYSTEM 补"正文不可信 + 分类结果不构成归档许可"；MailView/ARCHITECTURE 经核已达标；AGENTS.md 新增"三处同文"与"enforced vs instructed"两条纪律。
+   - RAG_UPGRADE_PLAN.md 头部免责句。
 
 ## Verification Evidence
 
@@ -30,11 +35,12 @@
 ## Commit State
 
 - `f1e2825` docs(agent-architecture): 研究沉淀 + 个人 agent 升级设计指南
-- feat-066 实现待提交（本文件更新后即提交）
+- `5c9992d` feat(proposals): 审批实体化——破坏性动作统一走 hash 绑定提案 (feat-066)
+- feat-067 实现待提交（本文件更新后即提交）
 
 ## Next Session Startup
 
 1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 211 passed + build green）。
-2. 阅读 `AGENTS.md` → `docs/PERSONAL_AGENT_UPGRADE.md`（路线与边界）→ `feature_list.json` → 本文件。
-3. 下一个 feature：**feat-067 文档纪律最小包**（VERIFICATION.md + limitation 字段 + 红线三处同文 + 免责句），然后 feat-069 邮件通电 → feat-068 任务引擎。
+2. 阅读 `AGENTS.md` → `docs/PERSONAL_AGENT_UPGRADE.md`（路线与边界）→ `feature_list.json` → `docs/VERIFICATION.md` → 本文件。
+3. 下一个 feature：**feat-069 邮件生产通电**（token 加密 + get_gmail_service 接入 create_app + 真账号验收），然后 feat-068 任务引擎 → feat-071 记忆层 → feat-039 SSE。
 4. 启动命令：`python run_web.py`（审批中心入口：顶栏盾牌图标）。

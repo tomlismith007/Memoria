@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-10-12
-**Active Feature:** feat-066 completed (P0 审批实体化)；下一步 feat-067（文档纪律最小包）→ feat-069/068（邮件通电 + 任务引擎）
+**Active Feature:** feat-066/067 completed（P0 全部落地）；下一步 feat-069（邮件通电）→ feat-068（任务引擎）
 
 ## Status
 
@@ -11,8 +11,9 @@
 
 - 全仓库 ponytail-audit 复查 + hermes-agent（8 维度）/ OpenMuse（全表面）研究沉淀至 `docs/agent-architecture/`（commit f1e2825）。
 - 个人 agent 方向定案（grill-me 两轮，D1-D12 见 `docs/PERSONAL_AGENT_UPGRADE.md` §0）：**Memoria 本体升级为准个人 agent**；hermes 不做基座。
-- **feat-066 DONE**：提案审批子系统。records 单表 CAS + 八态提案（hash+30min 过期+单次消费）+ decide 独立端点；归档/删除/重建索引三类破坏性动作统一提案制；图内执行 + 节点回写终态；outcome_unknown 一等态 + 启动恢复；前端审批中心 + 徽标。211 tests + build green。证据见 feature_list.json。
-- 下一步：feat-067 文档纪律（VERIFICATION.md + limitation 字段 + 红线三处同文）。
+- **feat-066 DONE**：提案审批子系统。records 单表 CAS + 八态提案（hash+30min 过期+单次消费）+ decide 独立端点；归档/删除/重建索引三类破坏性动作统一提案制；图内执行 + 节点回写终态；outcome_unknown 一等态 + 启动恢复；前端审批中心 + 徽标。211 tests + build green。证据见 feature_list.json。（commit 5c9992d）
+- **feat-067 DONE**：文档纪律最小包。`docs/VERIFICATION.md`（日期头/免责句/211 passed 数字/9 行 Area|Evidence|Boundary 矩阵/Release fixes 记录 json_patch 坑/Reproduce/Still outside）；feature_list.json 60 条 completed 全部补 limitation；红线三处同文（classify.py prompt 合同补"正文不可信+不构成归档许可"，UI/ARCHITECTURE 经核已达标）；AGENTS.md 新增"三处同文"与"enforced vs instructed"纪律；RAG_UPGRADE_PLAN 免责句。211 tests + build green。
+- 下一步：feat-069 邮件生产通电 → feat-068 任务引擎。
 
 ### What's Done
 

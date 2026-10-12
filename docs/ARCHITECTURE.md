@@ -77,7 +77,7 @@ FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感
 | 前端工程 | Vite + React 19 + TypeScript 5.7 + Tailwind v3 | 秒级构建、类型安全；圆角卡片 (`rounded-3xl`) 与胶囊按键 (`rounded-full`) 设计系统。**无状态管理库、无 markdown 库、无组件库**——`useState` + 手写 `MarkdownRenderer.tsx` + 7 个自建 UI 基础组件；运行时依赖仅 `react` / `react-dom` / `lucide-react` |
 | 邮件接入 | Gmail API + OAuth（本地离线/交互授权生成 token.json） | 最小权限（只读 + 归档写权限）；凭据只放本地密钥文件，永不入库 |
 | 文档解析 | pypdf（PDF）/ Markdown 直接读 / 网页抽取 | 够用优先；重型解析（OCR、复杂表格）需求出现再换 |
-| 测试 | pytest（276 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 18 秒跑完 |
+| 测试 | pytest（277 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 18 秒跑完 |
 | Python 环境 | >= 3.11 | 本机 3.14，CI 亦用 3.14；标准库优先，离线单元测试 100% 模拟隔离 |
 
 ## 5. 关键约束（红线 — 永不违反）
@@ -218,6 +218,11 @@ feat-073 起该预算与 wiki 页、记忆块共用同一个模块（`memoria/co
    调用（成本回归，且没有任何正确性测试会发现）。已有摘要改为并入下一次摘要，增量合并。
 2. **压缩失败必须降级为丢弃，绝不冒泡**。摘要调用抛错或返回空时，保留已付费的旧摘要、
    丢弃其余，回答照常产出。压缩是优化，不得让用户拿不到答案。
+
+**摘要输入自身也要有上限** —— 被淘汰的前缀是无界的，所以 `MAX_SUMMARY_INPUT_CHARS = 12_000`
+对送进摘要调用的 transcript 再裁一次（复用 `trim_page` 的 head+tail 形状）。不加这道上限时，
+长会话会把整段历史发给模型，恰在 compaction 最需要工作时因 context window 溢出而硬失败。
+实测：12 轮 ×6000 字历史下，摘要 prompt 从 48,173 字符降到 12,018（约 32k → 8k token）。
 
 **计量（feat-073）** —— `llm.CountingLLM` 实现同一个 `ChatLLM` Protocol，在 `build_graph`
 单一入口包一层，9 个调用点零改动（`isinstance` 守卫防止 `activate_settings` 重建时叠加包装

@@ -18,7 +18,7 @@ from memoria.context import (
     trim_page,
 )
 from memoria.graph import build_graph
-from memoria.graph.nodes import SUMMARY_MIN_TOKENS, SUMMARY_QUESTION, _compact
+from memoria.graph.nodes import SUMMARY_QUESTION, _compact
 from memoria.llm import CountingLLM, counters, reset_counters
 from memoria.memory import MemoryService
 from memoria.rag import ChromaStore, FakeEmbedder
@@ -206,6 +206,30 @@ def test_compact_gate_ignores_the_prior_summary_so_it_does_not_repeat():
     assert llm.calls == []  # no second summarisation call
     assert counters().get("summary_calls", 0) == 0
     assert kept[0]["answer"] == prior_summary["answer"]  # the paid summary survives
+
+
+def test_compact_caps_the_summarisation_prompt():
+    """The dropped prefix is unbounded, so its prompt needs its own ceiling —
+    otherwise a long thread fails the summarisation call on the context window
+    exactly when compaction is most needed."""
+    from memoria.graph.nodes import MAX_SUMMARY_INPUT_CHARS
+
+    reset_counters()
+    llm = ScriptedChat("摘要")
+    history = [_turn(i, 40_000) for i in range(12)]  # a very long thread
+    _compact(history, llm)
+    sent = llm.calls[0][1]
+    assert len(sent) <= MAX_SUMMARY_INPUT_CHARS + 100  # marker is the only overshoot
+    assert "中间省略" in sent  # the model knows the middle is missing
+
+    # Head+tail keeps the two ends that matter: the earliest goals (q0's question is
+    # in the head) and the content nearest the live conversation (the sent text ends
+    # where the untrimmed transcript ended). Intermediate turns are what gets cut.
+    kept, dropped = fit_history(history)
+    full = "\n\n".join(f"用户：{t['question']}\n助手：{t['answer']}" for t in dropped)
+    assert sent.startswith("用户：q0")
+    assert sent.endswith(full[-500:])
+    assert len(dropped) == 11 and kept[-1]["question"] == "q11"
 
 
 def test_compact_merges_the_prior_summary_when_it_does_summarise():

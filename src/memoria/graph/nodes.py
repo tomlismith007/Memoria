@@ -6,7 +6,7 @@ import json
 
 from langgraph.types import interrupt
 
-from memoria.context import estimate_tokens, fit_history, trim_memories
+from memoria.context import estimate_tokens, fit_history, trim_memories, trim_page
 from memoria.graph.state import INTENTS
 from memoria.llm import ChatLLM
 from memoria.mail import Email, archive, classify_batch, fetch_messages, request_archive
@@ -33,6 +33,12 @@ SUMMARY_SYSTEM = (
 SUMMARY_MIN_TOKENS = 512
 MAX_SUMMARY_CHARS = 2_000
 SUMMARY_QUESTION = "（此前对话摘要）"
+# The dropped prefix is itself unbounded, so the summarisation prompt needs its own
+# ceiling — otherwise a long-lived thread sends a huge transcript and the call fails
+# on the model's context window, which would turn compaction into a hard failure
+# right when it is most needed. Head+tail (the module's trim_page shape) keeps the
+# early goals/constraints and the turns adjacent to the live conversation.
+MAX_SUMMARY_INPUT_CHARS = 12_000
 
 
 def _compact(history: list, llm: ChatLLM) -> list:
@@ -62,8 +68,9 @@ def _compact(history: list, llm: ChatLLM) -> list:
         return prior + kept
 
     # Fold the prior summary in as well, so nothing is lost across compactions.
-    transcript = "\n\n".join(
-        f"用户：{t['question']}\n助手：{t['answer']}" for t in prior + fresh
+    transcript = trim_page(
+        "\n\n".join(f"用户：{t['question']}\n助手：{t['answer']}" for t in prior + fresh),
+        MAX_SUMMARY_INPUT_CHARS,
     )
     try:
         summary = llm.chat(SUMMARY_SYSTEM, transcript).strip()

@@ -4,7 +4,7 @@
 
 - Goal: **Memoria 本体升级为准个人 agent**（2026-10-12 grill-me 定案，D1-D12 见 `docs/PERSONAL_AGENT_UPGRADE.md`）。LangGraph 保持生产编排器；hermes/OpenMuse/talorys 研究为模式参考库（`docs/agent-architecture/`）。
 - 路线：P0 审批实体化 + 文档纪律 → P1 任务引擎 + 邮件通电 + SSE 对话流 + 最小记忆层 → P2 观望区（monitor/MCP/skill 均不做，见指南 §4.4）→ **第二轮：上下文内核强化（§7，已完成）**。
-- Current status: **P0（066/067）与 P1（069/068/071/039）全部完成**，**第二轮上下文内核（073/074/075）完成**。276 tests + build green（238 → 276，第二轮 +38：test_prompts 13 + test_context_budget 24 + test_web_api/test_cli 各 +1 减去既有测试迁移）。P2 观望区按指南 §4.4 不立项；第二轮明确不做项见指南 §7.3。
+- Current status: **P0（066/067）与 P1（069/068/071/039）全部完成**，**第二轮上下文内核（073/074/075）完成**。277 tests + build green（238 → 277，第二轮 +39：test_prompts 13 + test_context_budget 25 + test_web_api/test_cli 各 +1）。P2 观望区按指南 §4.4 不立项；第二轮明确不做项见指南 §7.3。
 
 ## 本轮做了什么（2026-10-12）
 
@@ -67,13 +67,14 @@
     - `est_` 前缀刻意保留：这是 1.5 char/token 估算值，不是 provider 实测用量。
 13. **feat-074 DONE（两级压缩）**：第一级零成本裁注入块；第二级仅当**新**淘汰内容 > `SUMMARY_MIN_TOKENS=512` 时花一次调用折叠成摘要伪回合 `{"question": "（此前对话摘要）", "summary": true}` 并**写回 `state.history`**（有界的是 checkpoint 状态本身，不只是 prompt）。两条硬约束：①**闸门只数新淘汰的内容**——把已有摘要计入会让它自己够到 512，从而每轮都买一次摘要调用（成本回归，且没有任何正确性测试会发现）；已有摘要改为并入下一次摘要做增量合并。②**压缩失败必须降级为丢弃、绝不冒泡**——抛错或空返回时保留已付费的旧摘要、丢弃其余，回答照常产出。
     - 选伪回合而非新增 state 字段：只保留"一个列表、一条裁剪规则、一个注入位"，代价是与真回合同形靠 `summary` 标记区分。
-14. **结果**：238 → **276 tests**（+38），零新依赖，**图拓扑未变**（仍单遍 DAG），前端未动。机制与两条硬约束记入 `docs/ARCHITECTURE.md §7.7`；§7.3 中"超预算即丢最旧"的旧表述已同 commit 修订。
+14. **E2E 冒烟发现并修复一处自身缺陷**：用真实图 + 12 轮 x6000 字历史跑通压缩后，摘要 prompt 达 **48,173 字符**（约 32k token）——被淘汰前缀本身无界，长会话会在 compaction 最需要工作时因 context window 溢出硬失败。加 `MAX_SUMMARY_INPUT_CHARS = 12_000`（复用 `trim_page` 的 head+tail）后降至 **12,018 字符**（约 32k -> 8k token），新增 `test_compact_caps_the_summarisation_prompt` 钉住。这是只跑单测不会发现的一类问题。
+15. **结果**：238 -> **277 tests**（+39），零新依赖，**图拓扑未变**（仍单遍 DAG），前端未动。机制与两条硬约束记入 `docs/ARCHITECTURE.md §7.7`；§7.3 中"超预算即丢最旧"的旧表述已同 commit 修订。
 
 ## Verification Evidence
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| 后端全量 | `python -m pytest -q` | **276 passed** | 196 → 211（066）→ 223（069）→ 231（068）→ 237（071）→ 239（039）→ 238（审计删 1 重复）→ 276（第二轮 +38） |
+| 后端全量 | `python -m pytest -q` | **277 passed** | 196 → 211（066）→ 223（069）→ 231（068）→ 237（071）→ 239（039）→ 238（审计删 1 重复）→ 277（第二轮 +39） |
 | 前端构建 | `cd frontend && npm run build` | green | tsc strict 零诊断（第二轮未动前端） |
 | 全量回归 | `pwsh -NoProfile -File ./init.ps1` | green | pytest + build |
 | 死导入扫描 | AST 扫描 src/tests/scripts 全部 .py | 0 命中 | 唯一例外是 `__init__.py` 的 re-export（有意） |
@@ -82,7 +83,7 @@
 | 压缩零开销 | `test_compact_under_budget_makes_no_extra_llm_call` | 通过 | 未超预算时 `counters()` 全空——防成本回归的关键断言 |
 | 压缩闸门防重付 | `test_compact_gate_ignores_the_prior_summary_so_it_does_not_repeat` | 通过 | 旧摘要单独超 512 也不触发新调用 |
 | 压缩失败降级 | `test_compact_falls_back_*`（抛错/空白） | 2/2 通过 | 降级为丢弃，`kept == history[-4:]`，回答仍产出 |
-| 测试数变化核对 | `pytest --collect-only` | 238 → 276 | +13 test_prompts、+24 test_context_budget、test_web_api +1（SSE usage）、test_cli +1（stderr usage）；test_graph 的预算测试改为 `fit_history` 契约 |
+| 测试数变化核对 | `pytest --collect-only` | 238 → 277 | +13 test_prompts、+25 test_context_budget、test_web_api +1（SSE usage）、test_cli +1（stderr usage）；test_graph 的预算测试改为 `fit_history` 契约 |
 
 ## Commit State
 
@@ -101,7 +102,7 @@
 
 ## Next Session Startup
 
-1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 276 passed + build green）。
+1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 277 passed + build green）。
 2. 阅读 `AGENTS.md` → `docs/PERSONAL_AGENT_UPGRADE.md`（路线与边界，§7 为第二轮）→ `feature_list.json` → `docs/VERIFICATION.md` → 本文件。
 3. 升级路线 P0+P1 与第二轮上下文内核均已收官。后续按 `PERSONAL_AGENT_UPGRADE.md` §4.4（P2 观望区）与 §7.3（第二轮明确不做项）：**均不主动立项，等触发条件**；日常工作回归 AGENTS.md 常规流程（VERIFICATION.md 保持同步）。
 4. 启动命令：`python run_web.py`；Gmail 真账号验收：设 TOKEN_ENCRYPTION_KEY → python scripts/auth_gmail.py → MailView（横幅消失即通）；定时分拣在 Gmail 就绪后自动运行（间隔 MEMORIA_MAIL_TRIAGE_INTERVAL 默认 1800s）。

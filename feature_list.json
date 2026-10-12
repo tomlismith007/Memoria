@@ -760,8 +760,8 @@
         "feat-073"
       ],
       "status": "completed",
-      "evidence": "python -m pytest -q → 276 passed（251 → 276，+25 含 feat-073/075）。tests/test_context_budget.py 压缩段：未超预算时零额外 LLM 调用且 counters() 全空（防回归的关键断言）、闸门以下只丢弃不摘要（counters.tokens_dropped>0 且 summary_calls==0）、超闸门摘要一次并置 summary 标记（summary_calls==1）、**已有摘要不计入闸门**（prior_summary 单独超 512 但新内容极小 → 仍不调用，验证防重复付费）、合并时旧摘要文本进入新摘要调用（增量合并生效）、摘要抛异常/返回空白均降级为丢弃且 kept==history[-4:]、输入 history 不被就地修改、图级写回验证（seeded 约 16k token 历史 → out['history'] 含 summary 且存储态 <3000 token，末轮问句不被压缩）、无压缩路径下答案照常（'2027' in answer 且 summary_calls==0）、摘要伪回合渲染为（此前对话）上下文而非（本次问题）。",
-      "limitation": "**未做真模型压缩质量对比**：测试断言的是机制（触发/闸门/降级/有界），不是摘要的信息保真度——真实 provider 下的要点保留率无数据，已如实记入 VERIFICATION Boundary；512 token 闸门与 2000 字符摘要上限为初始取值，未按实测调优；压缩在 qa 节点内同步执行，超预算那一轮会增加一次串行 LLM 往返（延迟上升，但只在超预算时发生）；摘要质量依赖 SUMMARY_SYSTEM 的措辞，该 prompt 本身无质量测试"
+      "evidence": "python -m pytest -q → 276 passed（251 → 276，+25 含 feat-073/075）。tests/test_context_budget.py 压缩段：未超预算时零额外 LLM 调用且 counters() 全空（防回归的关键断言）、闸门以下只丢弃不摘要（counters.tokens_dropped>0 且 summary_calls==0）、超闸门摘要一次并置 summary 标记（summary_calls==1）、**已有摘要不计入闸门**（prior_summary 单独超 512 但新内容极小 → 仍不调用，验证防重复付费）、合并时旧摘要文本进入新摘要调用（增量合并生效）、摘要抛异常/返回空白均降级为丢弃且 kept==history[-4:]、输入 history 不被就地修改、图级写回验证（seeded 约 16k token 历史 → out['history'] 含 summary 且存储态 <3000 token，末轮问句不被压缩）、无压缩路径下答案照常（'2027' in answer 且 summary_calls==0）、摘要伪回合渲染为（此前对话）上下文而非（本次问题）。**E2E 冒烟发现并修复一处自身缺陷**：被淘汰前缀无界，摘要 prompt 实测达 48,173 字符（约 32k token）——长会话会在 compaction 最需要工作时因 context window 溢出而硬失败；加 MAX_SUMMARY_INPUT_CHARS=12_000（复用 trim_page head+tail）后降至 12,018 字符，并有 test_compact_caps_the_summarisation_prompt 钉住。",
+      "limitation": "**未做真模型压缩质量对比**：测试断言的是机制（触发/闸门/降级/有界），不是摘要的信息保真度——真实 provider 下的要点保留率无数据，已如实记入 VERIFICATION Boundary；512 token 闸门与 2000 字符摘要上限为初始取值，未按实测调优；摘要输入上限 12k 字符同样未按真实 provider 的窗口调优；压缩在 qa 节点内同步执行，超预算那一轮会增加一次串行 LLM 往返（延迟上升，但只在超预算时发生）；摘要质量依赖 SUMMARY_SYSTEM 的措辞，该 prompt 本身无质量测试"
     },
     {
       "id": "feat-075",

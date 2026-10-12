@@ -2,7 +2,7 @@
 
 ## Current State
 
-**Last Updated:** 2026-10-12
+**Last Updated:** 2026-10-13
 **Active Feature:** feat-066/067/069/068/071/039（P0+P1）、feat-073/074/075（第二轮上下文内核）、feat-076（测试隔离）全部完成。下一步：真账号 Gmail 验收待用户执行；P2 观望区与第二轮明确不做项均不主动立项
 
 ## Status
@@ -94,7 +94,7 @@
 
 ### What's In Progress
 
-- [ ] 无；feat-001..feat-075 全部已完成（feat-038 可选未排期，feat-046 wont-fix）。
+- [ ] 无；feat-001..feat-076 全部已完成（feat-038 可选未排期，feat-046 wont-fix）。
 
 ### What's Next
 
@@ -105,7 +105,7 @@
 
 ## Blockers / Risks
 
-- [ ] No `bash` on this Windows machine — `./init.sh` cannot run here; use `./init.ps1`. Risk: agent following AGENTS.md blindly runs init.sh and fails. Mitigation: AGENTS.md documents both.
+- ~~No `bash` on this Windows machine~~ **已过期（2026-10-13 核实）**：本机存在 Git Bash（`/usr/bin/bash`，GNU bash 5.3.15），`bash ./init.sh` 实测可完整跑通。MSYS 的 cygpath 有时异常，所以 MSVC 编译器会以 Windows 风格报错；优先用 `./init.ps1` 只是因为它是原生路径，不是因为 bash 不可用。
 - [ ] feat-019 残余边界：CORS 不是认证；`data/settings.json` 仍以本地明文保存 Key；邮件候选集合仅适用于单用户单 worker。
 - [ ] feat-018 边界：localStorage 恢复的是前端时间线，不会自动作为模型上下文；未完成请求在刷新后不恢复。
 - [ ] feat-024 残余边界：Provider/Model 状态与异步流程集中在 `useProviderConfig.ts`（908 行，79 个返回键）；本次精简只删了 6 个无引用键，尚未拆分。

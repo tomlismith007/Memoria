@@ -82,7 +82,7 @@
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| 后端全量 | `python -m pytest -q` | **279 passed** | 196 → 211（066）→ 223（069）→ 231（068）→ 237（071）→ 239（039）→ 238（审计删 1 重复）→ 279（+39 内核 / +2 测试隔离） |
+| 后端全量 | `python -m pytest -q` | **280 passed** | 196 → 211（066）→ 223（069）→ 231（068）→ 237（071）→ 239（039）→ 238（审计删 1 重复）→ 277（内核轮）→ 279（+2 测试隔离）→ 280（摘要 prompt 纳入 prompt 面清单） |
 | 前端构建 | `cd frontend && npm run build` | green | tsc strict 零诊断（第二轮未动前端） |
 | 全量回归 | `pwsh -NoProfile -File ./init.ps1` | green | pytest + build |
 | 死导入扫描 | AST 扫描 src/tests/scripts 全部 .py | 0 命中 | 唯一例外是 `__init__.py` 的 re-export（有意） |
@@ -91,7 +91,7 @@
 | 压缩零开销 | `test_compact_under_budget_makes_no_extra_llm_call` | 通过 | 未超预算时 `counters()` 全空——防成本回归的关键断言 |
 | 压缩闸门防重付 | `test_compact_gate_ignores_the_prior_summary_so_it_does_not_repeat` | 通过 | 旧摘要单独超 512 也不触发新调用 |
 | 压缩失败降级 | `test_compact_falls_back_*`（抛错/空白） | 2/2 通过 | 降级为丢弃，`kept == history[-4:]`，回答仍产出 |
-| 测试数变化核对 | `pytest --collect-only` | 238 → 277 | +13 test_prompts、+25 test_context_budget、test_web_api +1（SSE usage）、test_cli +1（stderr usage）；test_graph 的预算测试改为 `fit_history` 契约 |
+| 测试数变化核对 | `pytest --collect-only` | 238 → 280 | 新增文件：test_prompts.py 14、test_context_budget.py 25、test_app_isolation.py 2；test_cli.py 7→8（+1 stderr usage）；test_web_api.py 65→72 中 SSE usage 断言是加在既有 `test_ask_stream_events` 里（函数数不变，非新增测试）；test_graph.py 的预算测试改为 `fit_history` 契约 |
 
 ## Commit State
 
@@ -106,13 +106,15 @@
 - `e696f6f` fix(ci): 修复 linux 环境暴露的两个环境脆弱测试
 - `ed9c03f` docs(research): 新增 talorys/openmuse 分维度深读，07-talorys 并入子目录
 - `99ae993` refactor: 全仓库 ponytail 审计整改 (feat-072)
-- **第二轮上下文内核**：待提交（feat-073/074/075 三项改动在同一批文件里交织，无法拆成三个可独立通过的 commit，故合并为一个枚举 commit）
-- **浏览器验收轮次**：待提交（feat-076 测试隔离 + 320px 响应式修复 + 验收文档/截图）
+- `1f8c20f` feat(context): 第二轮内核强化——统一预算 + 两级压缩 + 计量 + prompt 面收敛（feat-073/074/075 三项交织在同一批文件，合并为一个枚举 commit）
+- `8df15d5` fix(context): 摘要输入加上限——E2E 冒烟暴露的无界前缀（feat-074 补强）
+- `03c96df` fix(web): 测试隔离——导入期不再构建真实应用 (feat-076)（含 320px 响应式修复与浏览器验收文档）
+- 工作区干净，无待提交改动。
 
 ## Next Session Startup
 
-1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 279 passed + build green）。
+1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 280 passed + build green）。
 2. 阅读 `AGENTS.md` → `docs/PERSONAL_AGENT_UPGRADE.md`（路线与边界，§7 为第二轮）→ `feature_list.json` → `docs/VERIFICATION.md` → 本文件。
 3. 升级路线 P0+P1 与第二轮上下文内核均已收官。后续按 `PERSONAL_AGENT_UPGRADE.md` §4.4（P2 观望区）与 §7.3（第二轮明确不做项）：**均不主动立项，等触发条件**；日常工作回归 AGENTS.md 常规流程（VERIFICATION.md 保持同步）。
-4. 启动命令：`python run_web.py`；Gmail 真账号验收：设 TOKEN_ENCRYPTION_KEY → python scripts/auth_gmail.py → MailView（横幅消失即通）；定时分拣在 Gmail 就绪后自动运行（间隔 MEMORIA_MAIL_TRIAGE_INTERVAL 默认 1800s）。
-5. 第二轮遗留的已知边界（改动前先读）：计量为估算值非 provider 实测；计数器重启即失；记忆写入仍无单条长度校验；压缩质量未做真模型对比。详见 `docs/VERIFICATION.md` 对应行的 Boundary 列。
+4. 启动命令：`python run_web.py`（已改用 uvicorn factory，feat-076）；Gmail 真账号验收：设 TOKEN_ENCRYPTION_KEY → python scripts/auth_gmail.py → MailView（横幅消失即通）；定时分拣在 Gmail 就绪后自动运行（间隔 MEMORIA_MAIL_TRIAGE_INTERVAL 默认 1800s）。
+5. 第二轮与验收轮次遗留的已知边界（改动前先读）：计量为估算值非 provider 实测；计数器重启即失；记忆写入仍无单条长度校验；压缩质量未做真模型对比；仍无真机移动端验收。详见 `docs/VERIFICATION.md` 对应行的 Boundary 列。

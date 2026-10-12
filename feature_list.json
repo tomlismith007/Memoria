@@ -433,7 +433,7 @@
     {
       "id": "feat-039",
       "name": "SSE streaming answers + ConversationQueue (scope expanded 2026-10-12)",
-      "description": "P1（范围按 docs/PERSONAL_AGENT_UPGRADE.md D10 扩写）：/api/ask 增 SSE 变体，事件 {type: delta|citation|done|error}（翻译层三件事：按步拆消息/工具结果清洗/步数打满兜底提示，参照 04b §1）；AskView 移植 OpenMuse ConversationQueue 语义——发送/停止同位切换、composer 回复期间保持可编辑、follow-up 可见队列（Up next / Messages on hold）、线程冲突返回 held 不算失败、失败永不隐式重发。验收：SSE 端点单元覆盖 + 队列语义测试 + 浏览器手动验证。",
+      "description": "SSE 流式回答 + ConversationQueue 对话队列。**编号说明：feat-070 已并入本条目，不另立号**——原计划把 SSE+队列作为独立 feature，后决定扩写本条目的范围（docs/PERSONAL_AGENT_UPGRADE.md §6 记录该决定），因此 feature_list.json 中 039 之后直接跳到 071，缺号 070 是刻意为之，不是遗漏。",
       "dependencies": [
         "feat-034"
       ],
@@ -588,6 +588,39 @@
       "status": "completed",
       "evidence": "retrieve.py 与 answer.py 的 k 默认值 8 → 30，retrieve() docstring 记录了实测依据。延迟实测（20 次平均，本地 Chroma 查询不含 embedding 网络往返）：k=8 → 2.35ms，k=15 → 3.34ms，k=30 → 5.89ms，相对秒级 LLM 往返可忽略。新增 2 个回归测试锁住该失败模式：test_narrow_recall_window_finds_nothing（断言 k=8 确实召不到，防止默认值被静默改回）与 test_default_recall_window_reaches_the_buried_target。",
       "limitation": "k=30 与 top_n=4 为实测权衡值，无自适应"
+    },
+    {
+      "id": "feat-055",
+      "name": "Same-name providers distinguishable, activation follows label, model switch without fetch",
+      "description": "dd1686a fix(settings)：同名供应商可区分（标签/徽标区分不同 base_url 的同名条目）、激活态跟随标签而非仅按名称、模型可免获取直接切换（不强制先拉取 /models）。条目由 commit message 反向重建——该 feature 从未写入本 tracker，属编号跳号的历史遗漏。",
+      "dependencies": [
+        "feat-024"
+      ],
+      "status": "completed",
+      "evidence": "commit dd1686a（frontend/src/components/settings/ProviderDetailForm.tsx +20/-、ProviderSidebar.tsx +31/-、SettingsModal.tsx +11/-）。无独立测试记录，也未在 feature_list.json 留痕——这是它被漏登的原因。",
+      "limitation": "条目由 commit message 反推重建，无原始验收证据；前端仅到构建级验证；当时测试数未记录"
+    },
+    {
+      "id": "feat-056",
+      "name": "Model fetch falls back to saved credentials and surfaces real errors",
+      "description": "8bf4c5c fix(config)：获取模型失败时回退到已保存凭据（而非报空列表），并把真实错误暴露给用户。条目由 commit message 反向重建（commit 自身带 feat-056 字样，但从未写入本 tracker）。",
+      "dependencies": [
+        "feat-024"
+      ],
+      "status": "completed",
+      "evidence": "commit 8bf4c5c（commit message 明确标注 feat-056）。无独立测试记录。",
+      "limitation": "条目由 commit message 反推重建，无原始验收证据；当时测试数未记录"
+    },
+    {
+      "id": "feat-057",
+      "name": "Model-add feedback; the section no longer looks broken",
+      "description": "b4babdf fix(settings)：模型添加操作缺少反馈，区块静默无响应看起来像坏了；补反馈。条目由 commit message 反向重建（commit 自身带 feat-057 字样，但从未写入本 tracker）。",
+      "dependencies": [
+        "feat-024"
+      ],
+      "status": "completed",
+      "evidence": "commit b4babdf（commit message 明确标注 feat-057）。无独立测试记录。",
+      "limitation": "条目由 commit message 反推重建，无原始验收证据；当时测试数未记录"
     },
     {
       "id": "feat-058",

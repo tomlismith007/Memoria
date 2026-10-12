@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from memoria.graph.nodes import ROUTER_SYSTEM
+from memoria.graph.nodes import ROUTER_SYSTEM, SUMMARY_SYSTEM
 from memoria.mail.classify import BATCH_SYSTEM, SYSTEM as MAIL_SYSTEM
 from memoria.rag.answer import SYSTEM as RAG_SYSTEM
 from memoria.sync import GATE_SYSTEM
@@ -27,9 +27,13 @@ from memoria.wiki.ops import ANSWER_SYSTEM, INGEST_SYSTEM, LINT_SYSTEM, SELECT_S
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 
-# (label, prompt) — the complete LLM system-prompt face: 9 call sites, 9 constants.
+# (label, prompt) — the complete LLM system-prompt face: 10 call sites, 10 constants.
+# feat-074 added SUMMARY_SYSTEM (the compaction call); it is not one of the four
+# feat-075 extracted, but it belongs in this inventory or the "complete face" claim
+# is false.
 PROMPTS = [
     ("graph.nodes.ROUTER_SYSTEM", ROUTER_SYSTEM),
+    ("graph.nodes.SUMMARY_SYSTEM", SUMMARY_SYSTEM),
     ("sync.GATE_SYSTEM", GATE_SYSTEM),
     ("mail.classify.SYSTEM", MAIL_SYSTEM),
     ("mail.classify.BATCH_SYSTEM", BATCH_SYSTEM),
@@ -41,10 +45,10 @@ PROMPTS = [
 ]
 
 
-def test_prompt_face_is_exactly_nine_constants():
-    """A tenth prompt, or a dropped one, must be a conscious update to this list."""
-    assert len(PROMPTS) == 9
-    assert len({value for _, value in PROMPTS}) == 9  # no accidental duplicates
+def test_prompt_face_is_exactly_ten_constants():
+    """A new prompt, or a dropped one, must be a conscious update to this list."""
+    assert len(PROMPTS) == 10
+    assert len({value for _, value in PROMPTS}) == 10  # no accidental duplicates
 
 
 @pytest.mark.parametrize("label,prompt", PROMPTS)

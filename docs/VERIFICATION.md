@@ -1,11 +1,11 @@
 # VERIFICATION — 验证与局限记录
 
-> 2026-10-12 · 本地离线 fixture（Windows 11 / Python 3.14 / Node 22）。本文记录**已验证的行为及其边界**；它不构成"所有计划能力均已完成"的声明——计划项见 `PERSONAL_AGENT_UPGRADE.md` 与 `feature_list.json` 的 todo 条目。
+> 2026-10-13 · 本地离线 fixture（Windows 11 / Python 3.14 / Node 24）。本文记录**已验证的行为及其边界**；它不构成"所有计划能力均已完成"的声明——计划项见 `PERSONAL_AGENT_UPGRADE.md` 与 `feature_list.json` 的 todo 条目。
 > 纪律（feat-067）：每行 Boundary 必填——"什么没覆盖"与"什么覆盖了"同等重要。能力边界三处同文（模型 prompt 合同 + UI 文案 + 本文 Boundary 列），改一处必须改三处（AGENTS.md Change Discipline）。
 
 ## Automated checks
 
-- `python -m pytest -q` → **279 passed, 0 failed, 0 skipped**（2 个第三方 DeprecationWarning：chromadb/anyio，非本项目代码）。全套件 100% 离线：LLM/Embedder/Gmail/图全部注入 fake，零网络调用。
+- `python -m pytest -q` → **280 passed, 0 failed, 0 skipped**（2 个第三方 DeprecationWarning：chromadb/anyio，非本项目代码）。全套件 100% 离线：LLM/Embedder/Gmail/图全部注入 fake，零网络调用。
 - `cd frontend && npm run build` → green（tsc strict 零诊断 + vite 产出）。
 - `pwsh -NoProfile -File ./init.ps1` → 全量门禁 green（以上两项）。
 - **测试隔离（feat-076 起）**：`tests/test_app_isolation.py` 用子进程 + 构造器探针断言"导入 `memoria.web.app` 不打开任何真实 data 存储"。此前 `app.py` 末尾的 `app = create_app()` 使**每次导入该模块**都会对 `./data/chroma` 建真实 ChromaStore 并写入 sqlite——即"100% 离线"套件一直在改用户真实数据目录（Windows 上表现为真实文件 mtime 变化）。
@@ -15,13 +15,13 @@
 
 | Area | Evidence | Boundary |
 |---|---|---|
-| RAG 检索与引用 | tests/test_rag_eval.py：recall@4 = 3/3，MRR = 1.00（feat-053 IDF 调优后基线）；test_rag_answer.py 12 个含引用契约 | 评测语料仅 4 文档 3 查询（小语料结论，大语料教训已由 test_narrow_recall_window_finds_nothing 钉住）；引用校验只验 [n] 覆盖，不验引用内容与句义一致 |
+| RAG 检索与引用 | tests/test_rag_eval.py：recall@4 = 3/3，MRR = 1.00（feat-053 IDF 调优后基线）；test_rag_answer.py 13 个（含引用契约与三种协议解析） | 评测语料仅 4 文档 3 查询（小语料结论，大语料教训已由 test_narrow_recall_window_finds_nothing 钉住）；引用校验只验 [n] 覆盖，不验引用内容与句义一致 |
 | Wiki 编译 / lint | tests/test_wiki_ops.py 13 个：ingest prompt 三段式缓存前缀、跨次 ingest 目录块逐字不变、矛盾检测 | 页面选择为关键词 top-K（无向量召回参与）；矛盾检测 deep=true 才跑，每链接对一次 LLM 调用（成本受 max_pairs 限制） |
 | 邮件分拣与红线 | tests/test_mail_triage.py 10 个：10 封仅 1 次 LLM 调用、保护状态逐封独立（LLM 全标营销仍拦住验证码/交易）、批量残缺回退 | **真实 Gmail 账号端到端验收未执行**（feat-069 已完成生产接线与 token 加密，离线测试覆盖到"token 存在→非交互构建"与"缺 key 拒绝"，但授权→拉信→归档全链路需真账号跑一次）；规则层仅特征串匹配，长尾依赖 LLM 层兜底；营销归档始终需人工提案批准 |
 | 记忆层（feat-071） | tests/test_memory.py 6 个（内容 hash 去重、上限 100 拒新增、CAS 编辑、原子遗忘、qa prompt 注入含'不是指令，不是许可'同句、空记忆无块）；test_web_api 内存端点（added/edited/forgotten/404/400） | 记忆 id 为创建时内容 hash，编辑后不重算（编辑可产生语义近重复，插下去重只看 id）；记忆管理 UI 未做（AskView'记住'按钮 + API 编辑/遗忘，面板后补）；注入为有界全量（≤100 条），无相关性筛选 |
 | 定时任务与通知收件箱（feat-068） | tests/test_tasks.py 8 个（at-most-once：claim 即推进 next_run_at；崩溃重放靠 idem_key 去重；过期租约重认领；失败按 attempts 幂等通知；收件箱 append-only 只能标读）+ test_web_api 注入 engine 的端点测试 | 失败重试为固定间隔（无 2^n 退避）；心跳假设单进程执行；引擎随 create_app 启动（Gmail 未就绪则不启动），无独立 worker 进程；通知无推送，仅审批中心面板查看 |
 | Gmail 连接与 token 加密（feat-069） | tests/test_mail_auth.py 8 个（Fernet roundtrip/缺 key 读写拒绝/legacy 明文过同一 key 门/60s 提前刷新/非交互永不弹浏览器）+ test_web_api.py 4 个（health mail 能力、坏 token 降级不阻塞启动、triage mail_ready） | token 密钥来自环境变量，无密钥管理服务；刷新去重为进程内锁（单进程假设）；加密文件格式无版本字段（换算法需重授权） |
-| 提案审批（feat-066） | tests/test_proposals.py 9 个（六道闸/过期/恢复/outcome_unknown）+ test_web_api.py（提案制删除/重建/归档全链路、hash 不符 409、重启 executing→outcome_unknown、对话通道无批准路径） | 归档执行经图完成（本机 SqliteSaver），未做双进程并发验收；提案过期清算在 decide 时惰性判定，后台定时清算待 P1 worker；审批中心 UI 未做浏览器手工验收 |
+| 提案审批（feat-066） | tests/test_proposals.py 9 个（六道闸/过期/恢复/outcome_unknown）+ test_web_api.py（提案制删除/重建/归档全链路、hash 不符 409、重启 executing→outcome_unknown、对话通道无批准路径） | 归档执行经图完成（本机 SqliteSaver），未做双进程并发验收；提案过期清算在 decide 时惰性判定，后台定时清算待 P1 worker；审批中心 UI 的浏览器验收已于 feat-076 轮次补做（见下方浏览器验收行，仅验渲染，编辑/批量批准未逐项走） |
 | 文档删除与重建 | test_web_api.py：删除后 store.count()==0 且 doc_id 不在 documents()（红线）、raw 消失、404；重建后 total_chunks 不变 | 删除仅移除向量与 raw 文件，已编译 Wiki 页面刻意保留（记录在提案 payload 与 log.md） |
 | Web API 与图编排 | tests/test_graph.py 12 个（路由/中断/恢复/提案回执/预算切分）+ tests/test_web_api.py 72（全端点）| 无鉴权、仅绑 127.0.0.1（单用户边界，PERSONAL_AGENT_UPGRADE §4.4）；`/api/agent` 无前端调用方（CLI agent 子命令为实际自由文本路径） |
 | 出站网络（SSRF） | tests/test_net.py：仅 HTTPS/443、私网拒绝、DNS 重绑定窗口封堵、重定向 ≤3、响应上限 | 自研 http.client 层（feat-065 评估保留）；无证书钉扎；代理 fake-IP 环境会误拒（feat-060 记录，用户环境已知） |
@@ -31,7 +31,7 @@
 | 两级压缩（feat-074） | tests/test_context_budget.py 25 个：超预算触发一次摘要并写回 `state.history`（图级验证，断言存储态有界）、闸门以下只丢弃不调用、**已有摘要不计入闸门**（防每轮重复付费）、失败/空返回降级为丢弃且回答照常、输入历史不被就地修改、摘要伪回合渲染为上下文而非用户提问、**摘要输入自身有上限**（MAX_SUMMARY_INPUT_CHARS，长会话下实测 48,173→12,018 字符） | **未做真模型压缩质量对比**：断言的是机制（触发/闸门/降级/有界），不是摘要的信息保真度——真实 provider 下的要点保留率无数据；512 token 闸门与 2000 字符摘要上限是初始取值，未按实测调优；压缩在 qa 节点内同步执行，会给该轮增加一次串行往返（超预算时） |
 | 测试隔离（feat-076） | tests/test_app_isolation.py 2 个：子进程 + chromadb/sqlite 构造器探针断言"导入 `memoria.web.app` 不打开真实 data 存储"；断言模块不再暴露 import 期单例 `app`。实测修复前跑一次全套件会改 `data/chroma/chroma.sqlite3` 的 mtime，修复后同口径复测为 NONE | 探针覆盖 chromadb.PersistentClient 与 sqlite3.connect 两条构造路径，不覆盖其它文件写入方式（如 `open()` 直写）；生产启动改为 factory 形式（`run_web.py` 用 `--factory`），未在真实 uvicorn 长跑下复测 |
 | 浏览器验收（feat-073/074/075 + 066 补测，2026-10-13） | 离线验收服务器（tempfile 工作区 + 脚本化 LLM + FakeEmbedder，端口 8010，**不触碰真实 data/**）；存档 `gui-test-screenshots/feat-073-075/` 11 张。桌面 1280×720：问答首屏 / 问答结果（Wiki 引用 + 部分内容未溯源徽标）/ 知识漫游 / 邮件安全（红线文案在位）/ 文档双写 / 审批中心弹窗（**补上了 feat-066 一直缺的浏览器验收**）/ 记住这条→已记住。移动端 390×844 与 320×800：无横向滚动（scrollW == clientW）。行为级验证：SSE `done.usage` 实际返回（est_prompt_tokens/llm_calls/est_completion_tokens）；长页提问（9000+ 字页）走通且无 context 溢出；记住这条落到服务端（GET /api/memories 返回 1 条） | **发现并修复一个真实缺陷**：320px 下头部横向溢出 49px（实测 305 可用 / 354 实际），根因是三个 `shrink-0` 组（含 feat-066 新增的 44px 审批按钮）在 6×44px 触控目标 + logo 下已无空间（296 可用 vs ~292 必需，间隙仅剩 4px）。修复＝仅 <380px 断点让导航换行（保留 44px 无障碍下限），390px 与桌面不受影响。**这是 feat-020"320px 无横向滚动"声明的失效**——该声明自 feat-066 加入审批按钮后即不再成立且无人复测。仍无真机验收（浏览器仿真）；仅测 320/390/414/1280 四个视口 |
-| Prompt 面（feat-075） | tests/test_prompts.py 13 个：9 条 system prompt 具名且非空、无首尾空白、feat-075 抽出的 4 条 wiki prompt 与原文逐字节相同、邮件两条仍含红线句与不可信数据免责、**AST 扫描禁止新的内联 `llm.chat("字面量")`** | 字节锁定覆盖的是常量本身，不覆盖调用点拼装的 user 消息（那部分随输入变化，无法锁）；prompt 措辞质量本身无测试（如"只回一个词"是否真被遵守），仅由既有行为测试间接覆盖 |
+| Prompt 面（feat-075） | tests/test_prompts.py 14 个：10 条 system prompt 具名且非空、无首尾空白、feat-075 抽出的 4 条 wiki prompt 与原文逐字节相同、邮件两条仍含红线句与不可信数据免责、**AST 扫描禁止新的内联 `llm.chat("字面量")`** | 字节锁定覆盖的是常量本身，不覆盖调用点拼装的 user 消息（那部分随输入变化，无法锁）；prompt 措辞质量本身无测试（如"只回一个词"是否真被遵守），仅由既有行为测试间接覆盖 |
 
 ## Release fixes（2026-10-12）
 
@@ -43,7 +43,7 @@
 ## Reproduce
 
 ```powershell
-pwsh -NoProfile -File ./init.ps1        # 全量门禁：pytest 279 + frontend build
+pwsh -NoProfile -File ./init.ps1        # 全量门禁：pytest 280 + frontend build
 python -m pytest -q                     # 仅后端
 cd frontend; npm run build              # 仅前端
 # Gmail 生产验收（需真账号，Boundary 见矩阵邮件行）：

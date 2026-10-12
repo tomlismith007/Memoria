@@ -77,7 +77,7 @@ FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感
 | 前端工程 | Vite + React 19 + TypeScript 5.7 + Tailwind v3 | 秒级构建、类型安全；圆角卡片 (`rounded-3xl`) 与胶囊按键 (`rounded-full`) 设计系统。**无状态管理库、无 markdown 库、无组件库**——`useState` + 手写 `MarkdownRenderer.tsx` + 7 个自建 UI 基础组件；运行时依赖仅 `react` / `react-dom` / `lucide-react` |
 | 邮件接入 | Gmail API + OAuth（本地离线/交互授权生成 token.json） | 最小权限（只读 + 归档写权限）；凭据只放本地密钥文件，永不入库 |
 | 文档解析 | pypdf（PDF）/ Markdown 直接读 / 网页抽取 | 够用优先；重型解析（OCR、复杂表格）需求出现再换 |
-| 测试 | pytest（279 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 18 秒跑完 |
+| 测试 | pytest（280 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 25-30 秒跑完（实测两次 27.5s / 27.9s） |
 | Python 环境 | >= 3.11 | 本机 3.14，CI 亦用 3.14；标准库优先，离线单元测试 100% 模拟隔离 |
 
 ## 5. 关键约束（红线 — 永不违反）
@@ -106,7 +106,7 @@ FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感
 
 ## 7. 横切关注点：LLM 上下文与调用成本
 
-与 `net.py` 同理，这条约束跨越所有模块，因此单列。9 个 `llm.chat()` 调用点分布在 RAG、Wiki、邮件、编排四条路径上，任何一处违反都会推高全局成本。
+与 `net.py` 同理，这条约束跨越所有模块，因此单列。10 个 `llm.chat()` 调用点分布在 RAG、Wiki、邮件、编排四条路径上（feat-074 的摘要调用是第 10 个），任何一处违反都会推高全局成本。
 
 ### 7.1 Prompt 必须「稳定前缀优先」布局
 
@@ -225,7 +225,7 @@ feat-073 起该预算与 wiki 页、记忆块共用同一个模块（`memoria/co
 实测：12 轮 ×6000 字历史下，摘要 prompt 从 48,173 字符降到 12,018（约 32k → 8k token）。
 
 **计量（feat-073）** —— `llm.CountingLLM` 实现同一个 `ChatLLM` Protocol，在 `build_graph`
-单一入口包一层，9 个调用点零改动（`isinstance` 守卫防止 `activate_settings` 重建时叠加包装
+单一入口包一层，全部调用点零改动（`isinstance` 守卫防止 `activate_settings` 重建时叠加包装
 导致重复计数）。计数项：`llm_calls`、`est_prompt_tokens`、`est_completion_tokens`、
 `summary_calls`、`tokens_dropped`、`tokens_summarized`。暴露面三处：SSE `done` 事件的
 `usage` 字段（按本轮**增量**，模块计数是进程累计值）、CLI `ask`/`agent` 的 stderr 一行、
@@ -234,7 +234,7 @@ feat-073 起该预算与 wiki 页、记忆块共用同一个模块（`memoria/co
 `est_` 前缀是刻意的：这些是 1.5 char/token 估算值，**不是** provider 实测用量
 （`llm.py` 不解析 usage 块）。SSE 与 CLI 都按估算值如实标注。
 
-**prompt 面（feat-075）** —— 9 个 system prompt 全部具名为模块常量，`tests/test_prompts.py`
+**prompt 面（feat-075）** —— system prompt 全部具名为模块常量（当前 10 条，feat-074 的摘要 prompt 是第 10 条），`tests/test_prompts.py`
 用 AST 扫描禁止新的内联 `llm.chat("字面量", ...)`，并字节锁定 feat-075 抽出的 4 条 wiki
 prompt（内联时代没有任何东西钉住它们）。邮件两条额外断言红线句仍在——那是 instructed
 约束的载体，删掉它就等于模型从没被告知这条规则。

@@ -1,10 +1,14 @@
 # 开源 Agent 架构设计研究
 
-本目录沉淀了 7 个开源 coding/personal agent 的架构研究，每份文档覆盖：整体架构、agent 循环与编排、上下文与记忆、**记忆压缩机制**、缓存设计、工具调用机制、提示词与规则系统、权限与安全、扩展机制、设计规范清单、知识点与可迁移结论，并附证据索引（结论 → 源码文件）。
+本目录沉淀了 6 个开源 coding/personal agent 的架构研究，每份文档覆盖：整体架构、agent 循环与编排、上下文与记忆、**记忆压缩机制**、缓存设计、工具调用机制、提示词与规则系统、权限与安全、扩展机制、设计规范清单、知识点与可迁移结论，并附证据索引（结论 → 源码文件）。
 
 另有 [04b-openmuse-alpha-surfaces.md](04b-openmuse-alpha-surfaces.md)：对 OpenMuse（2026-10-11 main 1ac68f3）按 README 声明的 10 个表面逐个对照源码的深读沉淀 + 三个重点深读（持久任务引擎 / 审批与对话通道隔离 / 文档纪律）+ 横切模式与 Memoria 迁移清单；是 [04-openmuse.md](04-openmuse.md) 的表面级补充。
 
 另有 [hermes/](hermes/00-overview.md) 子目录：对 **NousResearch/hermes-agent**（自我进化个人 agent 运行时）按 8 个维度（主循环/记忆/自改进/Gateway/工具/人格/调度/安全）的深读研究，每维度一份文档。
+
+另有 [talorys/](talorys/00-overview.md) 子目录：对 **rociiu/talorys**（部署在用户自己 Cloudflare 账号里的单用户个人 agent，v0.1.4，main `2cc547c`）按 8 个维度（主循环/记忆/语义召回/工具审批/调度/Provider 预算/安全/数据平台）的深读研究，每维度一份文档，共 9 篇。与 Memoria 产品形态最同构的一份研究。
+
+另有 [openmuse/](openmuse/00-overview.md) 子目录：对 **CopilotKit/OpenMuse**（个人 agent，main `1ac68f3`）按 8 个维度（对话循环与客户端队列/持久任务引擎/审批与对话通道隔离/浏览器与 computer/外部集成/安全边界/数据平台/次表面与文档纪律）的深读研究，每维度一份文档，共 9 篇。是 [04-openmuse.md](04-openmuse.md) 与 [04b-openmuse-alpha-surfaces.md](04b-openmuse-alpha-surfaces.md) 的**分维度标准化重组 + 增量深挖**：04b 已深读的主题只做引用 + 新证据，04b 未覆盖的主题（vault 凭据加密、限流 pre-auth、SSRF egress 校验、OpenBot 契约、幂等键、TaskWorker 内部实现）有独立完整覆盖。
 
 | 文档 | 仓库 | 语言/规模 | 一句话定位 |
 |---|---|---|---|
@@ -14,7 +18,14 @@
 | [04-openmuse.md](04-openmuse.md) | [CopilotKit/openmuse](https://github.com/CopilotKit/openmuse) | TS，94 文件 | 个人 agent；租约式持久任务 + 证据溯源 + 人机审批隔离 |
 | [05-codex.md](05-codex.md) | [openai/codex](https://github.com/openai/codex) | Rust，约 140 crate | Op/Event 协议 + 压缩统一生命周期 + 三平台沙箱 |
 | [06-deepseek-harness.md](06-deepseek-harness.md) | [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness) | TS/Cordis，40+ 包 | "一切皆插件"；事件溯源会话 + 能力 seam |
-| [07-talorys.md](07-talorys.md) | [rociiu/talorys](https://github.com/rociiu/talorys) | TS，约 1.2 万行 | 单用户个人 agent（Cloudflare DO）；三层召回地板 + 提案审批 + 调度对账 + 预算守卫 |
+
+子目录深读研究（非单文件）：
+
+| 目录 | 仓库 | 语言/规模 | 一句话定位 |
+|---|---|---|---|
+| [hermes/](hermes/00-overview.md) | [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) | Python 3.14 + Node | 自我进化个人 agent 运行时；策展记忆 + 后台 review + at-most-once 调度 |
+| [talorys/](talorys/00-overview.md) | [rociiu/talorys](https://github.com/rociiu/talorys) | TS，约 1.2 万行 | 单用户个人 agent（Cloudflare DO）；三层召回地板 + 提案审批 + 调度对账 + 预算守卫 |
+| [openmuse/](openmuse/00-overview.md) | [CopilotKit/OpenMuse](https://github.com/CopilotKit/OpenMuse) | TS，约 2 万行 | 个人 agent；单表 jsonb + CAS 贯穿一切；审批与对话通道 8 层隔离；唯一完整 SSRF 校验实现 |
 
 ## 横向对比
 
@@ -28,7 +39,6 @@
 | OpenMuse | AG-UI 事件流 + 委派给持久任务（maxSteps 6/16） | stop 暂停客户端队列 | 无（对话层串行；任务层靠 worker 租约） |
 | Codex | Op（带 oneshot 应答）→ Event；turn 内多 step | Interrupt / InterruptIfNoPendingInput / RecoverTurn / Suspend | 并行执行 + code-mode（V8 跑编排脚本） |
 | DeepSeek Harness | turn/step 代数 + waterfall/serial 事件 | 每个异步阶段取消"不提交 system 与 user" | isConcurrencySafe 仅字面 true 开启 |
-| Talorys | async generator 事件流（title/start/text/tool/done/error），单轮多 step | abort → 落库 cancelled（含"流静默结束"兜底）；SSE 断连即中止省额度 | 无（串行工具；签名级重复调用检测兜底循环） |
 
 ### 记忆压缩（重点对比）
 
@@ -40,7 +50,6 @@
 | OpenMuse | 无（依赖 CopilotKit Intelligence） | — | — | 用"存引用现取值"回避上下文膨胀 |
 | Codex | scope（Total / BodyAfterPrefix 前缀后新增）+ 全窗口百分比硬顶；turn 结束顺路压缩 | 纯换窗（token 预算压缩，不摘要） | handoff 摘要（面向"下一个 LLM"）；另有远程摘要 | 压缩兼容哈希变化自动重压；提醒每窗一次 |
 | DeepSeek Harness | token meter（独立服务）判定压力；溢出错误即触发 | tool-result-pruner：头+middle pruned+尾；原图永远在日志 | compaction-basic：一次额外模型请求，只留摘要文本 | 图片永久省略并注明只读路径；声明缓存复用边界 |
-| Talorys | 溢出 ≥ 8 条才摘要（避免每轮 AI 调用）；窗口预算 = maxContext − system − 600 | 滑窗裁剪最旧优先（保首条 user；user 内容截 16k 字符） | 运行摘要增量合并（≤150 词 + summary_upto 水位不重发）；失败仅跳过 | 历史里带审批结局注记；消息库即摘要源（无独立压缩事件） |
 
 ### 缓存设计
 
@@ -63,7 +72,6 @@
 | OpenMuse | zod + execute 三元组 | AG-UI 工具事件 | 审批不走对话通道；exit receipts |
 | Codex | tool_spec/tool_definition + 动态发现 | tool_search 按需取 schema | apply-patch 独立可执行；code-mode JS 编排 |
 | DeepSeek Harness | ToolDefinition + 强制 ToolOutputDefinition | **白名单 3 字段**，其余永不泄漏 | canonical 输出 + 纯 render 投影 |
-| Talorys | defineTool：zod schema + permission + maxCallsPerTurn + UI label | name/description/parameters | 三级权限（read/write/destructive）+ destructive prepare/commit 提案审批（原子认领、TTL 30min）+ 内容签名重复检测 + 调度模式强制 read-only |
 
 ## 共同模式（六家都做的）
 
@@ -89,7 +97,7 @@
 7. MCP 三超时与工具异常全捕获（Mini-Agent）；
 8. token 预算压缩的"前缀后新增"口径（Codex）→ 系统 prompt 较大的场景。
 
-Talorys 补充（07，面向记忆/调度/预算三块）：
+Talorys 补充（详见 [talorys/00-overview.md](talorys/00-overview.md) §4，面向记忆/调度/预算三块）：
 
 1. 三层召回地板（absolute/relative/backstop）+ 按模型默认值表，数字须用自家 embedding 模型实测 → 检索核心与记忆层阈值；
 2. 向量即派生数据纪律包（同请求删向量 + 孤儿清理 + content_hash 增量 + 不进备份）→ "删文档必须删向量"红线的工程化模板；
@@ -98,8 +106,20 @@ Talorys 补充（07，面向记忆/调度/预算三块）：
 5. 限额双层（settings 可调 + 硬天花板）+ 六计数器 + provider 实测回落本地估算 → 个人部署成本防线；
 6. destructive prepare/commit 提案审批 + 审批结局注记回灌历史 → feat-066 提案制增量。
 
+OpenMuse 补充（详见 [openmuse/00-overview.md](openmuse/00-overview.md) §4，面向审批强制力/任务引擎/安全三块）：
+
+1. 审批与对话通道隔离的 8 层结构 + "no tool to approve them" → 把"归档必须人工确认"从 instructed 升级为 enforced；
+2. jsonb CAS 原语（`data @> expected` + `data || patch` + RETURNING）+ `insertIfAbsent` 三段式 → feat-068 并发控制；
+3. 租约 + 心跳（间隔=租期/3，CAS 失败即 abort）+ 过期重认领 → 任务引擎崩溃自愈；
+4. 幂等键 → sha256 派生 id（tasks/monitors/actions/files 四处复用）→ 邮件分拣重复投递防护；
+5. `outcome_unknown` 语义 + "不确定就不许重试"拦截 → 外部写操作（SMTP/IMAP）的对账纪律；
+6. hash 绑内容（`sha256(input+connection+target+targetVersion)`）→ 审批防 TOCTOU；
+7. egress 校验规范（仅 http/https、校验 host、拒绝 localhost/环回/私有/保留）+ "代理只连已验证 IP"→ 未来的 URL 抓取功能；
+8. 限流 pre-auth 且 key 不取自调用方凭据 + maxEntries 溢出 fail-closed → 对外端点的滥用防护。
+
 ## 研究方法说明
 
 - 全部仓库已浅克隆至 `C:\Users\tom\AppData\Local\Temp\agentresearch\`（约 700MB，可随时删除），文档结论基于源码与官方文档精读，非 README 转述；
-- 克隆时间：2026-10-03（01–06）；talorys 为 2026-10-12（07，main `2cc547c`，v0.1.4）；各仓库当日 HEAD 状态；
+- 克隆时间：2026-10-03（01–06）；talorys 为 2026-10-12（`talorys/`，main `2cc547c`，v0.1.4）；openmuse 为 2026-10-12（`openmuse/`，main `1ac68f3`，开工前 `git ls-remote` 探测上游未变，复用 2026-10-11 tarball，无 `.git` 目录）；各仓库当日 HEAD 状态；
+- openmuse 子目录的精读范围：`apps/server/src` 全部 35 文件、`apps/worker/src` 全部 8 文件、`packages/{domain,backends,integrations}/src` 全部、`docs/*.md` 全部、`ROADMAP.md`、`SECURITY.md`；`apps/mobile/src` 按需抽查（chat.tsx / conversation-queue.ts / conversation-run.ts / date-time.ts），涉及前端的结论标注"抽查"；
 - 每篇文档的"证据索引"表给出结论 → 源码路径映射，便于复核。

@@ -40,7 +40,9 @@ def main():
         except Exception:
             pass
 
-    uvicorn.run("memoria.web.app:app", host=args.host, port=args.port, reload=False)
+    # Factory form: the app is built here, not at import time (feat-076), so importing
+    # the module (e.g. from tests) never opens the real ./data stores.
+    uvicorn.run("memoria.web.app:create_app", host=args.host, port=args.port, reload=False, factory=True)
 
 
 if __name__ == "__main__":

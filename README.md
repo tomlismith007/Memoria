@@ -152,7 +152,7 @@ python -m memoria agent "帮我看看最近的邮件"   # 自由文本，由图�
 ```
 
 手动执行单项检验：
-- **后端单元测试**（277 项测试，含 RAG 向量原子删除、LangGraph 中断恢复与 router 动态路由、Wiki 断链体检、模型配置就绪度判定、Web API 代理与公网 HTTPS/443 配置安全等）：
+- **后端单元测试**（279 项测试，含 RAG 向量原子删除、LangGraph 中断恢复与 router 动态路由、Wiki 断链体检、模型配置就绪度判定、Web API 代理与公网 HTTPS/443 配置安全等）：
   ```bash
   python -m pytest -q
   ```
@@ -187,7 +187,7 @@ Memoria/
 │   │   ├── views/           # 页面视图 (AskView, WikiView, MailView, IngestView)
 │   │   └── api.ts           # 前端 API 封装 (含 SSE 流式客户端)
 │   └── tailwind.config.js   # 骨白、黑曜石黑与高阶圆角主题配置
-├── tests/                   # 离线自动化测试套件 (277 passed，含 conftest.py 共享测试替身)
+├── tests/                   # 离线自动化测试套件 (279 passed，含 conftest.py 共享测试替身)
 ├── scripts/                 # 工具脚本 (auth_gmail.py)
 ├── docs/                    # 架构、设计、验证与升级路线文档
 │   └── agent-architecture/  # 开源 agent 架构研究沉淀 (hermes/ talorys/ openmuse/ 等)

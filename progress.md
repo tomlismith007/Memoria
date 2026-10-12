@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-10-12
-**Active Feature:** feat-066/067/069/068/071/039（P0+P1）与 feat-073/074/075（第二轮上下文内核）全部完成。下一步：真账号 Gmail 验收待用户执行；P2 观望区与第二轮明确不做项均不主动立项
+**Active Feature:** feat-066/067/069/068/071/039（P0+P1）、feat-073/074/075（第二轮上下文内核）、feat-076（测试隔离）全部完成。下一步：真账号 Gmail 验收待用户执行；P2 观望区与第二轮明确不做项均不主动立项
 
 ## Status
 
@@ -88,6 +88,9 @@
 - [x] feat-030: 按用户参考图将模型设置收敛为极简双栏；压缩标题/说明、去除重复徽章与重复入口、合并模型区、简化模板选择器和模型行；保留 Provider/Model 全部状态与 API 流程；`SettingsModal.tsx` 1,642→1,571 行；`init.ps1` 101 passed + frontend build green，1280px/390px 浏览器验收通过
 - [x] feat-031: 删除对话/向量手填输入框；设置页新增对话模型与向量模型页签；后端新增 `active_embed_provider_id`，向量 Provider 保存/激活/删除与对话 Provider 完全隔离；embedding-only 连通性测试支持；全量 103 passed + frontend build green，1280px/390px 浏览器验收通过
 - [x] feat-065: 全仓库 ponytail-audit 整改，分三批独立提交。删 3 份结论已被反转的计划文档（1088 行）、裁剪 progress.md 的 Evidence 段（-1219 行文档与状态）、`.agents/` 取消跟踪；删后端 4 处写死没人读 + 前端 6 个零引用 hook 键 / 10 个零引用 tailwind 色 / 15+ 个未读响应字段；模型保存的单条与批量路由合并到 `_apply_model_saves`（config_routes.py 547→514）。净减 1263 行，跟踪文件 102→88。196 passed + frontend build green
+
+- **feat-076 DONE（测试隔离，浏览器验收过程中发现）**：`web/app.py` 末尾的 `app = create_app()` 使**导入期**即构建真实应用，于是每个 `from memoria.web.app import create_app` 的测试都会对 `./data/chroma` 建真实 ChromaStore 并写其 sqlite——宣称"100% 离线"的套件一直在改用户真实数据目录（Windows 上表现为真实 mtime 变化，已复现）。修复：删模块级单例，生产走 factory（`run_web.py` → `factory=True`）；新增 `tests/test_app_isolation.py`（子进程 + 构造器探针）钉住。**已验证真实数据未受损**（chroma 0 向量、records 0 行，仅文件被写打开）。
+- **浏览器验收（feat-073/074/075 + feat-066 补测）**：离线验收服务器（tempfile 工作区，不碰真实 data/）跑桌面 1280×720 全页面 + 移动端 390/320，存档 `gui-test-screenshots/feat-073-075/` 11 张。行为级验证：SSE `done.usage` 实际返回、长页（9000+ 字）提问无 context 溢出、记住这条落库、**审批中心弹窗首次浏览器验收**。**发现并修复 320px 头部横向溢出 49px**：根因是 6×44px 触控目标 + logo 在 296px 可用宽度下已无空间（需 ~292px，间隙仅 4px），feat-066 加入 44px 审批按钮后 feat-020 的"320px 无横向滚动"声明即失效且无人复测；修复＝仅 <380px 让导航换行，保留 44px 无障碍下限，390px 与桌面不受影响。
 
 ### What's In Progress
 

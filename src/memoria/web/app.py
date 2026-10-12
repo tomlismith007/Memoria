@@ -930,4 +930,9 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+# Production entrypoint: `uvicorn memoria.web.app:create_app --factory` (run_web.py).
+#
+# feat-076: deliberately NOT built at import time. A module-level `app = create_app()`
+# meant that merely importing this module — which every web test does — constructed a
+# real ChromaStore against ./data/chroma and opened the live sqlite files, so running
+# the offline suite wrote to the user's real data directory. Tests must not touch it.

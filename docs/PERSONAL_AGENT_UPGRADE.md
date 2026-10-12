@@ -218,7 +218,7 @@ LangGraph（生产编排器，红线不变）
 | feat-073 | 统一上下文预算（`context.py`）+ 计量（`CountingLLM`） | 无 | completed |
 | feat-074 | 两级压缩（闸门 512 token，摘要写回 state.history） | feat-073 | completed |
 
-三项合计 **+39 tests**（238 → 277），无新增依赖，图拓扑未变（仍为单遍 DAG）。机制细节与两条硬约束（闸门只数新淘汰内容、压缩失败必须降级）记在 `docs/ARCHITECTURE.md §7.7`。
+三项合计 **+39 tests**（238 → 277）；浏览器验收轮次另 +2（feat-076 测试隔离），当前基线 **279**，无新增依赖，图拓扑未变（仍为单遍 DAG）。机制细节与两条硬约束（闸门只数新淘汰内容、压缩失败必须降级）记在 `docs/ARCHITECTURE.md §7.7`。
 
 ### 7.3 本轮明确不做（复核研究文档后的取舍）
 

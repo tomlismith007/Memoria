@@ -77,7 +77,7 @@ FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感
 | 前端工程 | Vite + React 19 + TypeScript 5.7 + Tailwind v3 | 秒级构建、类型安全；圆角卡片 (`rounded-3xl`) 与胶囊按键 (`rounded-full`) 设计系统。**无状态管理库、无 markdown 库、无组件库**——`useState` + 手写 `MarkdownRenderer.tsx` + 7 个自建 UI 基础组件；运行时依赖仅 `react` / `react-dom` / `lucide-react` |
 | 邮件接入 | Gmail API + OAuth（本地离线/交互授权生成 token.json） | 最小权限（只读 + 归档写权限）；凭据只放本地密钥文件，永不入库 |
 | 文档解析 | pypdf（PDF）/ Markdown 直接读 / 网页抽取 | 够用优先；重型解析（OCR、复杂表格）需求出现再换 |
-| 测试 | pytest（277 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 18 秒跑完 |
+| 测试 | pytest（279 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 18 秒跑完 |
 | Python 环境 | >= 3.11 | 本机 3.14，CI 亦用 3.14；标准库优先，离线单元测试 100% 模拟隔离 |
 
 ## 5. 关键约束（红线 — 永不违反）

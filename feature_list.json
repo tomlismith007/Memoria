@@ -224,7 +224,7 @@
       ],
       "status": "completed",
       "evidence": "init.ps1 green: 73 pytest tests passed; frontend npm run build passed; browser verification at 390x844 and 320x800 found no page-level horizontal overflow across Ask/Wiki/Mail/Ingest/Settings; desktop text navigation preserved at 1280x720",
-      "limitation": "仅浏览器仿真验收（390/320/1280），无真机"
+      "limitation": "仅浏览器仿真验收（390/320/1280），无真机。**声明已在 feat-076 轮次被证伪并修正**：原 evidence 声称 320px 无横向滚动，但 feat-066 加入 44px 审批按钮后头部在 320px 下溢出 49px，该声明自那时起即不成立且无人复测；feat-076 轮次改为 <380px 断点导航换行后，320x800 复测 overflow=0。教训：响应式声明是当时为真的快照，任何改动头部控件的 feature 都应重跑窄屏复测。"
     },
     {
       "id": "feat-021",
@@ -771,6 +771,15 @@
       "status": "completed",
       "evidence": "python -m pytest -q → 276 passed；tests/test_prompts.py 13 个：9 条 system prompt 全部具名且非空、无首尾空白、9 条互不重复、feat-075 抽出的 4 条 wiki prompt 与原文**逐字节相同**（golden 表锁定，内联时代无任何东西钉住它们）、邮件两条仍含'验证码/交易'+'永不自动归档'+'不可信数据'（instructed 红线的载体，删掉等于模型从没被告知）、AST 扫描 src/ 全 .py 断言零内联 prompt 字面量。",
       "limitation": "字节锁定只覆盖常量本身，不覆盖调用点拼装的 user 消息（随输入变化无法锁）；prompt 措辞质量无测试（如'只回一个词'是否真被遵守），仅由既有行为测试间接覆盖；本轮是纯重构，未改任何 prompt 文本，因此对模型行为零影响（这是刻意约束：改文本会打掉 provider 前缀缓存）"
+    },
+    {
+      "id": "feat-076",
+      "name": "Test isolation: no import-time app construction (data-safety)",
+      "description": "浏览器验收过程中发现的数据安全问题：src/memoria/web/app.py 末尾有 `app = create_app()`，在**导入期**就构建真实应用。任何 `from memoria.web.app import create_app` 的测试（test_web_api/test_memory/test_tasks）因此都会对 `./data/chroma` 构造真实 ChromaStore 并写入其 sqlite，即宣称'100% 离线'的测试套件一直在改用户真实数据目录（Windows 上表现为真实文件 mtime 变化，可复现）。修复：删除模块级单例，生产改走 factory（run_web.py 用 uvicorn 的 factory=True）。新增 tests/test_app_isolation.py：子进程 + chromadb.PersistentClient/sqlite3.connect 构造器探针，断言导入该模块不打开任何真实 data 存储；并断言模块不再暴露 `app` 属性。",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 279 passed（277 → 279，+2 tests/test_app_isolation.py）；frontend build green。复现与验证均为实测文件 mtime：修复前每跑一次全套件 `data/chroma/chroma.sqlite3` 的 mtime 变化；修复后同口径（跑前快照 → 跑 pytest → 跑后对比）返回 NONE。根因由 chromadb.PersistentClient 探针 + traceback 定位到 `app.py:148 create_app → rag/store.py:13 __init__`，调用链上溯至 `tests/test_memory.py:13 → app.py:933 <module>`。",
+      "limitation": "探针只覆盖 chromadb.PersistentClient 与 sqlite3.connect 两条构造路径，其它写入方式（open() 直写、子进程）不在覆盖内；factory 形式的生产启动未在真实 uvicorn 长跑下复测（仅断言 run_web.py 传了 factory=True 且 create_app 可调用）；真实 data/ 的既有 mtime 变化已发生但数据未受损（chroma 为空集合的写入打开，无文档被删改）"
     }
   ]
 }

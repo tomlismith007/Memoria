@@ -5,10 +5,11 @@
 
 ## Automated checks
 
-- `python -m pytest -q` → **277 passed, 0 failed, 0 skipped**（2 个第三方 DeprecationWarning：chromadb/anyio，非本项目代码）。全套件 100% 离线：LLM/Embedder/Gmail/图全部注入 fake，零网络调用。
+- `python -m pytest -q` → **279 passed, 0 failed, 0 skipped**（2 个第三方 DeprecationWarning：chromadb/anyio，非本项目代码）。全套件 100% 离线：LLM/Embedder/Gmail/图全部注入 fake，零网络调用。
 - `cd frontend && npm run build` → green（tsc strict 零诊断 + vite 产出）。
 - `pwsh -NoProfile -File ./init.ps1` → 全量门禁 green（以上两项）。
-- **本次未跑/未覆盖的机器检查**：浏览器手工验收未执行（feat-066 审批中心 / feat-069 邮件横幅 UI 仅到构建级验证）；**真实 Gmail 账号端到端验收未执行**（授权→拉信→分拣→提案→归档全链路需要真账号，见邮件行 Boundary）；前端无组件级自动化测试（tsc + build 是唯一机器检查）；CI（GitHub Actions py3.14）结果独立于本地记录。
+- **测试隔离（feat-076 起）**：`tests/test_app_isolation.py` 用子进程 + 构造器探针断言"导入 `memoria.web.app` 不打开任何真实 data 存储"。此前 `app.py` 末尾的 `app = create_app()` 使**每次导入该模块**都会对 `./data/chroma` 建真实 ChromaStore 并写入 sqlite——即"100% 离线"套件一直在改用户真实数据目录（Windows 上表现为真实文件 mtime 变化）。
+- **本次未跑/未覆盖的机器检查**：**真实 Gmail 账号端到端验收未执行**（授权→拉信→分拣→提案→归档全链路需要真账号，见邮件行 Boundary）；前端无组件级自动化测试（tsc + build 是唯一机器检查）；CI（GitHub Actions py3.14）结果独立于本地记录。
 
 ## Feature acceptance matrix
 
@@ -25,9 +26,11 @@
 | Web API 与图编排 | tests/test_graph.py 12 个（路由/中断/恢复/提案回执/预算切分）+ tests/test_web_api.py 72（全端点）| 无鉴权、仅绑 127.0.0.1（单用户边界，PERSONAL_AGENT_UPGRADE §4.4）；`/api/agent` 无前端调用方（CLI agent 子命令为实际自由文本路径） |
 | 出站网络（SSRF） | tests/test_net.py：仅 HTTPS/443、私网拒绝、DNS 重绑定窗口封堵、重定向 ≤3、响应上限 | 自研 http.client 层（feat-065 评估保留）；无证书钉扎；代理 fake-IP 环境会误拒（feat-060 记录，用户环境已知） |
 | 配置与连通性 | tests/test_web_api.py 配置段（脱敏、跨类型拒绝、批量保存、自愈解析） | 连通性测试只发最小请求，不校验模型实际回答质量 |
-| 对话流与队列（feat-039） | tests/test_web_api.py 2 个（SSE 事件序契约 start→delta→citations→done、error 事件）；**浏览器验收存档 gui-test-screenshots/feat-039/**：发送→停止方块切换、busy 中 Enter 入队（Up next 条+移出队列）、队列自动推进（A 完成 B 出队）、停止→已停止文案+Messages on hold+发送队列消息恢复、记住这条→已记住（服务端 /api/memories 确认）、审批中心弹窗渲染 | **delta 当前携带整段回答**（qa 为单次阻塞 LLM 调用，net.py 无流式读——token 级流式需扩展 safe_request，另开一批）；客户端 stop 为放弃请求（服务端图继续跑完，结果不落本地）；浏览器验收为桌面 1280×720，移动端视口未重测；发现并修复 Enter 提交失效 bug（见 Release fixes） |
-| 上下文预算与计量（feat-073） | tests/test_context_budget.py 24 个：三处裁剪的边界值（恰好等于上限不裁剪、超出留可见省略标记）、`fit_history` 无损有序切分、单轮超预算不返回空历史、CountingLLM 计量与透传、`build_graph` 不重复包装、SSE `done.usage` 为本轮增量、CLI stderr 单行；tests/test_wiki_ops.py 原有 prompt 布局断言仍全绿（裁剪未打乱稳定前缀） | **估算非实测**：`est_*` 计数由 1.5 char/token 字符换算得出，`llm.py` 不解析 provider usage 块，因此计费口径与真实账单有偏差；计数器为进程内、重启即失，无按 thread 的分解；`top_n=4` 的 RAG 片段与 system prompt 未纳入预算（前者本身有界 ≈2.1k token，后者是缓存前缀不可裁）；记忆写入仍无单条长度校验（仅注入侧裁剪），长记忆会占满块并挤掉其余条目 |
+| 对话流与队列（feat-039） | tests/test_web_api.py 2 个（SSE 事件序契约 start→delta→citations→done、error 事件）；**浏览器验收存档 gui-test-screenshots/feat-039/ 与 feat-073-075/**：发送→停止方块切换、busy 中 Enter 入队（Up next 条+移出队列）、队列自动推进（A 完成 B 出队）、停止→已停止文案+Messages on hold+发送队列消息恢复、记住这条→已记住（服务端 /api/memories 确认）、审批中心弹窗渲染 | **delta 当前携带整段回答**（qa 为单次阻塞 LLM 调用，net.py 无流式读——token 级流式需扩展 safe_request，另开一批）；客户端 stop 为放弃请求（服务端图继续跑完，结果不落本地）；浏览器验收为桌面 1280×720；移动端视口已于 feat-073-075 批次补测（390×844 / 320×800，见内核行）；发现并修复 Enter 提交失效 bug（见 Release fixes） |
+| 上下文预算与计量（feat-073） | tests/test_context_budget.py 25 个：三处裁剪的边界值（恰好等于上限不裁剪、超出留可见省略标记）、`fit_history` 无损有序切分、单轮超预算不返回空历史、CountingLLM 计量与透传、`build_graph` 不重复包装、SSE `done.usage` 为本轮增量、CLI stderr 单行；tests/test_wiki_ops.py 原有 prompt 布局断言仍全绿（裁剪未打乱稳定前缀） | **估算非实测**：`est_*` 计数由 1.5 char/token 字符换算得出，`llm.py` 不解析 provider usage 块，因此计费口径与真实账单有偏差；计数器为进程内、重启即失，无按 thread 的分解；`top_n=4` 的 RAG 片段与 system prompt 未纳入预算（前者本身有界 ≈2.1k token，后者是缓存前缀不可裁）；记忆写入仍无单条长度校验（仅注入侧裁剪），长记忆会占满块并挤掉其余条目 |
 | 两级压缩（feat-074） | tests/test_context_budget.py 25 个：超预算触发一次摘要并写回 `state.history`（图级验证，断言存储态有界）、闸门以下只丢弃不调用、**已有摘要不计入闸门**（防每轮重复付费）、失败/空返回降级为丢弃且回答照常、输入历史不被就地修改、摘要伪回合渲染为上下文而非用户提问、**摘要输入自身有上限**（MAX_SUMMARY_INPUT_CHARS，长会话下实测 48,173→12,018 字符） | **未做真模型压缩质量对比**：断言的是机制（触发/闸门/降级/有界），不是摘要的信息保真度——真实 provider 下的要点保留率无数据；512 token 闸门与 2000 字符摘要上限是初始取值，未按实测调优；压缩在 qa 节点内同步执行，会给该轮增加一次串行往返（超预算时） |
+| 测试隔离（feat-076） | tests/test_app_isolation.py 2 个：子进程 + chromadb/sqlite 构造器探针断言"导入 `memoria.web.app` 不打开真实 data 存储"；断言模块不再暴露 import 期单例 `app`。实测修复前跑一次全套件会改 `data/chroma/chroma.sqlite3` 的 mtime，修复后同口径复测为 NONE | 探针覆盖 chromadb.PersistentClient 与 sqlite3.connect 两条构造路径，不覆盖其它文件写入方式（如 `open()` 直写）；生产启动改为 factory 形式（`run_web.py` 用 `--factory`），未在真实 uvicorn 长跑下复测 |
+| 浏览器验收（feat-073/074/075 + 066 补测，2026-10-13） | 离线验收服务器（tempfile 工作区 + 脚本化 LLM + FakeEmbedder，端口 8010，**不触碰真实 data/**）；存档 `gui-test-screenshots/feat-073-075/` 11 张。桌面 1280×720：问答首屏 / 问答结果（Wiki 引用 + 部分内容未溯源徽标）/ 知识漫游 / 邮件安全（红线文案在位）/ 文档双写 / 审批中心弹窗（**补上了 feat-066 一直缺的浏览器验收**）/ 记住这条→已记住。移动端 390×844 与 320×800：无横向滚动（scrollW == clientW）。行为级验证：SSE `done.usage` 实际返回（est_prompt_tokens/llm_calls/est_completion_tokens）；长页提问（9000+ 字页）走通且无 context 溢出；记住这条落到服务端（GET /api/memories 返回 1 条） | **发现并修复一个真实缺陷**：320px 下头部横向溢出 49px（实测 305 可用 / 354 实际），根因是三个 `shrink-0` 组（含 feat-066 新增的 44px 审批按钮）在 6×44px 触控目标 + logo 下已无空间（296 可用 vs ~292 必需，间隙仅剩 4px）。修复＝仅 <380px 断点让导航换行（保留 44px 无障碍下限），390px 与桌面不受影响。**这是 feat-020"320px 无横向滚动"声明的失效**——该声明自 feat-066 加入审批按钮后即不再成立且无人复测。仍无真机验收（浏览器仿真）；仅测 320/390/414/1280 四个视口 |
 | Prompt 面（feat-075） | tests/test_prompts.py 13 个：9 条 system prompt 具名且非空、无首尾空白、feat-075 抽出的 4 条 wiki prompt 与原文逐字节相同、邮件两条仍含红线句与不可信数据免责、**AST 扫描禁止新的内联 `llm.chat("字面量")`** | 字节锁定覆盖的是常量本身，不覆盖调用点拼装的 user 消息（那部分随输入变化，无法锁）；prompt 措辞质量本身无测试（如"只回一个词"是否真被遵守），仅由既有行为测试间接覆盖 |
 
 ## Release fixes（2026-10-12）
@@ -40,7 +43,7 @@
 ## Reproduce
 
 ```powershell
-pwsh -NoProfile -File ./init.ps1        # 全量门禁：pytest 277 + frontend build
+pwsh -NoProfile -File ./init.ps1        # 全量门禁：pytest 279 + frontend build
 python -m pytest -q                     # 仅后端
 cd frontend; npm run build              # 仅前端
 # Gmail 生产验收（需真账号，Boundary 见矩阵邮件行）：
@@ -51,3 +54,5 @@ cd frontend; npm run build              # 仅前端
 
 - 真实 Gmail 账号端到端验收（授权→拉信→分拣→提案→归档）
 - monitor / MCP server / skill 体系——明确不做（PERSONAL_AGENT_UPGRADE §4.4），条件触发才立项
+- 真机（iOS/Android）移动端验收——历次均为浏览器仿真（feat-020 与本次皆是）
+- 审批中心 / 记忆面板的完整交互路径（本次仅验渲染与"记住这条"落库；编辑、遗忘、批量批准未在浏览器里逐项走）

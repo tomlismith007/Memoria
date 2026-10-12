@@ -116,7 +116,10 @@ const App: React.FC = () => {
     <div className="min-h-screen min-w-0 flex flex-col bg-canvas text-ink-primary font-sans antialiased selection:bg-zinc-200">
       {/* Top Floating Capsule Nav Header */}
       <header className="sticky top-0 z-40 py-3 sm:py-4 px-3 sm:px-4 bg-canvas/80 backdrop-blur-md">
-        <div className="max-w-5xl mx-auto min-w-0 flex items-center justify-between gap-2">
+        {/* max-[380px]: below 380px the six 44px touch targets (4 nav + 2 actions)
+            plus the logo cannot fit one row, so the nav wraps to its own line.
+            Shrinking the targets instead would break the 44px accessibility floor. */}
+        <div className="max-w-5xl mx-auto min-w-0 flex items-center justify-between gap-1 sm:gap-2 max-[380px]:flex-wrap">
           <div className="flex shrink-0 items-center gap-2">
             <div className="w-7 h-7 rounded-full bg-zinc-900 text-white flex items-center justify-center font-bold text-xs shadow-sm">
               M
@@ -128,7 +131,7 @@ const App: React.FC = () => {
 
           <SegmentedNav activeTab={activeTab} onChange={setActiveTab} />
 
-          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-3 max-[380px]:ml-auto">
             {/* feat-049: the badge must not claim "ready" while a capability is
                 missing — the banner below would otherwise contradict it. */}
             <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-mono">

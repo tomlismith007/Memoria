@@ -17,7 +17,6 @@ import pytest
 
 from memoria.rag.retrieve import (
     DocumentFrequency,
-    combined_score,
     keyword_score,
     retrieve,
 )

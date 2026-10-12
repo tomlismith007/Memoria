@@ -22,7 +22,7 @@ const DEFAULT_MODEL_INFO: ActiveModelInfo = {
   modelName: "默认模型",
 };
 
-export const App: React.FC = () => {
+const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>("ask");
   const [selectedWikiPage, setSelectedWikiPage] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);

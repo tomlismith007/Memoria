@@ -4,15 +4,8 @@ from memoria.rag import ChromaStore, FakeEmbedder, ingest_document
 from memoria.sync import archive_fact, archive_qa, dual_ingest, hybrid_answer
 from memoria.wiki import Wiki
 
+from conftest import ScriptedChat
 
-class ScriptedChat:
-    def __init__(self, *replies):
-        self.replies = list(replies)
-        self.calls = []
-
-    def chat(self, system, user):
-        self.calls.append((system, user))
-        return self.replies[min(len(self.calls) - 1, len(self.replies) - 1)]
 
 
 def _env(tmp_path):

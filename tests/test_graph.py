@@ -4,19 +4,11 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
 from memoria.graph import build_graph
-from memoria.mail import Email
 from memoria.rag import ChromaStore, FakeEmbedder, ingest_document
 from memoria.wiki import Wiki
 
+from conftest import ScriptedChat
 
-class ScriptedChat:
-    def __init__(self, *replies):
-        self.replies = list(replies)
-        self.calls = []
-
-    def chat(self, system, user):
-        self.calls.append((system, user))
-        return self.replies[min(len(self.calls) - 1, len(self.replies) - 1)]
 
 
 class StubService:

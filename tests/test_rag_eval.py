@@ -123,7 +123,7 @@ def test_idf_never_loses_a_hit_relative_to_plain_scoring(tmp_path):
         )
 
 
-def _large_corpus(tmp_path, n_filler=37):
+def _large_corpus(tmp_path):
     """A corpus with the target buried deep enough that a narrow k cannot see it."""
     store = ChromaStore(path=str(tmp_path / "chroma"))
     embedder = FakeEmbedder()
@@ -132,7 +132,7 @@ def _large_corpus(tmp_path, n_filler=37):
         "苹果香蕉橙子葡萄。水果价格表与挑选建议。" * 8,
         "今天天气不错适合散步。明天有雨记得带伞。" * 8,
     ]
-    bodies += [f"第{i}份无关文档。内容是会议纪要与日程安排说明。" * 8 for i in range(n_filler)]
+    bodies += [f"第{i}份无关文档。内容是会议纪要与日程安排说明。" * 8 for i in range(37)]
     target = "服务 A 的订阅将于 2027 年 1 月 1 日到期。需要提前 30 天发起续费。" * 8
     bodies.insert(20, target)
     for i, body in enumerate(bodies):
@@ -152,8 +152,7 @@ class _ScriptedBuriedStore:
     lets through.
     """
 
-    def __init__(self, total: int = 30, target_rank: int = 20):
-        self.total = total
+    def __init__(self, target_rank: int = 20):
         self.target_rank = target_rank
 
     def search(self, qvec, k: int) -> list[dict]:

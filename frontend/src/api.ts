@@ -1,5 +1,4 @@
 import type {
-  AskResponse,
   Citation,
   CustomProvider,
   DocumentListResponse,
@@ -9,7 +8,6 @@ import type {
   MailTriageResponse,
   AppNotification,
   AskStreamCitations,
-  AppMemory,
   MemoryCreateResponse,
   NotificationListResponse,
   ModelApiFormat,
@@ -41,12 +39,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  ask: (question: string, conversationId: string) =>
-    request<AskResponse>("/api/ask", {
-      method: "POST",
-      body: JSON.stringify({ question, conversation_id: conversationId }),
-    }),
-
   getWikiPages: (deep = false) =>
     request<WikiListResponse>(`/api/wiki/pages${deep ? "?deep=true" : ""}`),
 
@@ -106,7 +98,6 @@ export const api = {
       signal?: AbortSignal;
       onDelta?: (text: string) => void;
       onCitations?: (payload: AskStreamCitations) => void;
-      onDone?: () => void;
     }
   ) => {
     const res = await fetch(`${BASE_URL}/api/ask/stream`, {
@@ -136,7 +127,6 @@ export const api = {
         else if (evt.type === "error") throw new Error(evt.message);
       }
     }
-    handlers.onDone?.();
   },
 
   listNotifications: (unreadOnly = false) =>

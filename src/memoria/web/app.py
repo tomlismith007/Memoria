@@ -27,7 +27,7 @@ from memoria.graph import build_graph
 from memoria.llm import ChatLLM, OpenAICompatibleChat
 from memoria.mail import Email, fetch_messages
 from memoria.mail.auth import get_gmail_service
-from memoria.memory import MemoryLimitError, MemoryService, memory_id_for
+from memoria.memory import MemoryLimitError, MemoryService
 from memoria.proposals import (
     ProposalError,
     ProposalInvalid,
@@ -57,11 +57,6 @@ from memoria.wiki import Wiki, extract_links, lint as wiki_lint
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1)
     conversation_id: str = ""  # empty -> new conversation thread (its id is returned)
-
-
-class AskStreamRequest(BaseModel):
-    question: str = Field(..., min_length=1)
-    conversation_id: str = ""
 
 
 class AgentRequest(BaseModel):
@@ -381,6 +376,13 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             body["capabilities"] = caps
         return body
 
+    def _citations(result: dict) -> list[dict]:
+        """The answer-citation wire shape, shared by the three answer endpoints."""
+        return [
+            {"ref": c.ref, "doc_id": c.doc_id, "chunk": c.chunk, "start": c.start}
+            for c in result.get("answer_citations", [])
+        ]
+
     @app.post("/api/ask")
     def api_ask(req: AskRequest):
         # conversation_id is the LangGraph thread: the checkpointer replays the
@@ -401,19 +403,11 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             "source": result.get("answer_source", "rag+wiki"),
             "wiki_pages": result.get("answer_wiki_pages", []),
             "citations_verified": result.get("answer_verified", False),
-            "citations": [
-                {
-                    "ref": c.ref,
-                    "doc_id": c.doc_id,
-                    "chunk": c.chunk,
-                    "start": c.start,
-                }
-                for c in result.get("answer_citations", [])
-            ],
+            "citations": _citations(result),
         }
 
     @app.post("/api/ask/stream")
-    def api_ask_stream(req: AskStreamRequest):
+    def api_ask_stream(req: AskRequest):
         """feat-039: SSE variant of /api/ask.
 
         Event contract: start -> delta -> citations -> done | error.
@@ -446,10 +440,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                     "source": result.get("answer_source", "rag+wiki"),
                     "wiki_pages": result.get("answer_wiki_pages", []),
                     "citations_verified": result.get("answer_verified", False),
-                    "citations": [
-                        {"ref": c.ref, "doc_id": c.doc_id, "chunk": c.chunk, "start": c.start}
-                        for c in result.get("answer_citations", [])
-                    ],
+                    "citations": _citations(result),
                 }
             )
             yield sse({"type": "done"})
@@ -494,10 +485,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                     "source": result.get("answer_source", "rag+wiki"),
                     "wiki_pages": result.get("answer_wiki_pages", []),
                     "citations_verified": result.get("answer_verified", False),
-                    "citations": [
-                        {"ref": c.ref, "doc_id": c.doc_id, "chunk": c.chunk, "start": c.start}
-                        for c in result.get("answer_citations", [])
-                    ],
+                    "citations": _citations(result),
                 }
             )
         elif intent == "ingest":

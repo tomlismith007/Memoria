@@ -7,7 +7,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from starlette.testclient import TestClient
 
 from memoria.mail import Email
-from memoria.rag import ChromaStore, FakeEmbedder, ingest_document
+from memoria.rag import ChromaStore, FakeEmbedder
 from memoria.web.app import create_app
 from memoria.wiki import Wiki
 
@@ -71,6 +71,32 @@ def api_client(tmp_path, monkeypatch):
         "records_path": str(tmp_path / "memoria.db"),  # feat-066: isolate the records store
     })
     return TestClient(app), wiki, store
+
+
+def _patch_settings(monkeypatch, initial=None):
+    """In-memory settings store for the config routes; returns the live box.
+
+    The routes call load_settings/save_settings on every request, so a test that
+    exercises persistence must swap both. Reading `.current` after a request is
+    how a test asserts what was actually written.
+    """
+    from memoria.web.config import Settings
+
+    class _Box:
+        def __init__(self, settings):
+            self.current = settings
+
+    box = _Box(initial or Settings())
+    monkeypatch.setattr(
+        "memoria.web.config_routes.load_settings",
+        lambda: box.current.model_copy(deep=True),
+    )
+
+    def save_current(settings):
+        box.current = settings.model_copy(deep=True)
+
+    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+    return box
 
 
 def test_health(api_client):
@@ -306,15 +332,7 @@ def test_activate_rejects_cross_typed_model(api_client, monkeypatch):
         ],
     )
 
-    def load_current():
-        return current.model_copy(deep=True)
-
-    def save_current(settings):
-        nonlocal current
-        current = settings.model_copy(deep=True)
-
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+    box = _patch_settings(monkeypatch, current)
 
     resp = client.post(
         "/api/config/providers/activate",
@@ -322,7 +340,7 @@ def test_activate_rejects_cross_typed_model(api_client, monkeypatch):
     )
     assert resp.status_code == 400
     assert "向量模型" in resp.json()["detail"]
-    assert current.active_chat_model != "emb-1"
+    assert box.current.active_chat_model != "emb-1"
 
     resp = client.post(
         "/api/config/providers/activate",
@@ -337,7 +355,7 @@ def test_activate_rejects_cross_typed_model(api_client, monkeypatch):
         json={"provider_id": "p1", "model_id": "some-new-model", "model_type": "chat"},
     )
     assert ok.status_code == 200
-    assert current.active_chat_model == "some-new-model"
+    assert box.current.active_chat_model == "some-new-model"
 
 
 def test_model_type_conversion_clears_stale_embed_selector(api_client, monkeypatch):
@@ -360,24 +378,16 @@ def test_model_type_conversion_clears_stale_embed_selector(api_client, monkeypat
         ],
     )
 
-    def load_current():
-        return current.model_copy(deep=True)
-
-    def save_current(settings):
-        nonlocal current
-        current = settings.model_copy(deep=True)
-
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+    box = _patch_settings(monkeypatch, current)
 
     resp = client.post(
         "/api/config/providers/p1/models",
         json={"id": "emb-1", "name": "emb-1", "enabled": True, "model_type": "chat"},
     )
     assert resp.status_code == 200
-    assert current.providers[0].models[0].model_type == "chat"
-    assert current.active_embed_provider_id == ""
-    assert current.active_embed_model == ""
+    assert box.current.providers[0].models[0].model_type == "chat"
+    assert box.current.active_embed_provider_id == ""
+    assert box.current.active_embed_model == ""
 
 
 # Dummy keys shaped like the setup placeholder. These are NOT real credentials;
@@ -847,15 +857,7 @@ def test_provider_crud_and_model_management(api_client, monkeypatch):
     client, _, _ = api_client
     current = Settings()
 
-    def load_current():
-        return current.model_copy(deep=True)
-
-    def save_current(settings):
-        nonlocal current
-        current = settings.model_copy(deep=True)
-
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+    box = _patch_settings(monkeypatch, current)
 
     secret_key = "x" * 24
     # 1. Create provider
@@ -876,7 +878,7 @@ def test_provider_crud_and_model_management(api_client, monkeypatch):
     assert pdata["api_key_set"] is True
     assert pdata["masked_api_key"] == "xxxx...xxxx"
     assert secret_key not in create_resp.text
-    assert current.active_provider_id == "openrouter"
+    assert box.current.active_provider_id == "openrouter"
 
     # 2. Get providers
     list_resp = client.get("/api/config/providers")
@@ -898,7 +900,7 @@ def test_provider_crud_and_model_management(api_client, monkeypatch):
     assert m1_resp.status_code == 200
     assert m1_resp.json()["model"]["id"] == "stealth/union-alpha"
     assert m1_resp.json()["model"]["tags"] == ["1M"]
-    assert current.active_chat_model == "stealth/union-alpha"
+    assert box.current.active_chat_model == "stealth/union-alpha"
 
     m2_resp = client.post(
         f"/api/config/providers/{provider_id}/models",
@@ -929,8 +931,8 @@ def test_provider_crud_and_model_management(api_client, monkeypatch):
     )
     assert act_resp.status_code == 200
     assert act_resp.json()["active_chat_model"] == "stealth/space-bunny"
-    assert current.llm_model == "stealth/space-bunny"
-    assert current.llm_base_url == "https://openrouter.ai/api/v1"
+    assert box.current.llm_model == "stealth/space-bunny"
+    assert box.current.llm_base_url == "https://openrouter.ai/api/v1"
 
     # 6. Delete model with slash
     del_m_resp = client.delete(f"/api/config/providers/{provider_id}/models/stealth/union-alpha")
@@ -943,7 +945,7 @@ def test_provider_crud_and_model_management(api_client, monkeypatch):
     del_p_resp = client.delete(f"/api/config/providers/{provider_id}")
     assert del_p_resp.status_code == 200
     assert del_p_resp.json()["providers"] == []
-    assert current.active_provider_id == ""
+    assert box.current.active_provider_id == ""
 
 
 def test_provider_protocol_persists_and_rejects_unknown_formats(api_client, monkeypatch):
@@ -953,15 +955,7 @@ def test_provider_protocol_persists_and_rejects_unknown_formats(api_client, monk
     current = Settings()
     secret = "s" * 16
 
-    def load_current():
-        return current.model_copy(deep=True)
-
-    def save_current(settings):
-        nonlocal current
-        current = settings.model_copy(deep=True)
-
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+    box = _patch_settings(monkeypatch, current)
 
     create = client.post(
         "/api/config/providers",
@@ -1034,15 +1028,7 @@ def test_embedding_provider_is_independent_from_chat_provider(api_client, monkey
         llm_model="chat-model",
     )
 
-    def load_current():
-        return current.model_copy(deep=True)
-
-    def save_current(settings):
-        nonlocal current
-        current = settings.model_copy(deep=True)
-
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", load_current)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+    box = _patch_settings(monkeypatch, current)
 
     activated = client.post(
         "/api/config/providers/activate",
@@ -1055,13 +1041,13 @@ def test_embedding_provider_is_independent_from_chat_provider(api_client, monkey
     assert activated.status_code == 200
     assert activated.json()["active_embed_provider_id"] == "embed-provider"
     assert activated.json()["active_embed_model"] == "embed-model"
-    assert current.active_provider_id == "chat-provider"
-    assert current.active_chat_model == "chat-model"
-    assert current.active_embed_provider_id == "embed-provider"
-    assert current.active_embed_model == "embed-model"
-    assert current.llm_base_url == "https://chat.example/v1"
-    assert current.llm_api_key == chat_key
-    assert current.llm_model == "chat-model"
+    assert box.current.active_provider_id == "chat-provider"
+    assert box.current.active_chat_model == "chat-model"
+    assert box.current.active_embed_provider_id == "embed-provider"
+    assert box.current.active_embed_model == "embed-model"
+    assert box.current.llm_base_url == "https://chat.example/v1"
+    assert box.current.llm_api_key == chat_key
+    assert box.current.llm_model == "chat-model"
 
     listed = client.get("/api/config/providers").json()
     assert listed["active_embed_provider_id"] == "embed-provider"
@@ -1079,16 +1065,16 @@ def test_embedding_provider_is_independent_from_chat_provider(api_client, monkey
     )
     assert saved_embed.status_code == 200
     assert saved_embed.json()["provider"]["name"] == "Embed Provider Renamed"
-    assert current.active_provider_id == "chat-provider"
-    assert current.active_chat_model == "chat-model"
-    assert current.llm_base_url == "https://chat.example/v1"
+    assert box.current.active_provider_id == "chat-provider"
+    assert box.current.active_chat_model == "chat-model"
+    assert box.current.llm_base_url == "https://chat.example/v1"
 
     deleted = client.delete("/api/config/providers/embed-provider")
     assert deleted.status_code == 200
-    assert current.active_provider_id == "chat-provider"
-    assert current.active_chat_model == "chat-model"
-    assert current.active_embed_provider_id == ""
-    assert current.active_embed_model == ""
+    assert box.current.active_provider_id == "chat-provider"
+    assert box.current.active_chat_model == "chat-model"
+    assert box.current.active_embed_provider_id == ""
+    assert box.current.active_embed_model == ""
 
 
 def test_legacy_settings_load_with_default_embed_provider_state(tmp_path):
@@ -1179,7 +1165,7 @@ def test_provider_rejects_invalid_urls_and_errors(api_client):
     assert client.post("/api/config/providers/activate", json={"provider_id": "missing"}).status_code == 404
 
 
-def _ingest_raw(client, wiki, name, body):
+def _ingest_raw(client, name, body):
     """Upload + dual-ingest a raw file through the public API; returns doc_id."""
     resp = client.post(
         "/api/ingest",
@@ -1199,18 +1185,9 @@ def _approve(client, proposal: dict) -> dict:
     return resp.json()["proposal"]
 
 
-def _deny(client, proposal: dict) -> dict:
-    resp = client.post(
-        f"/api/proposals/{proposal['id']}/decide",
-        json={"decision": "denied", "content_hash": proposal["content_hash"]},
-    )
-    assert resp.status_code == 200
-    return resp.json()["proposal"]
-
-
 def test_documents_list_and_delete_no_orphan_vectors(api_client, tmp_path):
     client, wiki, store = api_client
-    doc_id = _ingest_raw(client, wiki, "note-a.md", "服务 A 将于 2027-01-01 到期。" * 10)
+    doc_id = _ingest_raw(client, "note-a.md", "服务 A 将于 2027-01-01 到期。" * 10)
     assert store.count() > 0
     assert doc_id in store.documents()  # chunked into several vectors
 
@@ -1243,7 +1220,7 @@ def test_documents_list_and_delete_no_orphan_vectors(api_client, tmp_path):
 
 def test_delete_document_without_raw_file_still_purges_vectors(api_client):
     client, wiki, store = api_client
-    doc_id = _ingest_raw(client, wiki, "note-b.md", "内容内容内容。" * 10)
+    doc_id = _ingest_raw(client, "note-b.md", "内容内容内容。" * 10)
     (wiki.raw_dir / "note-b.md").unlink()  # raw already gone, vectors remain
 
     proposal = client.post(
@@ -1268,7 +1245,7 @@ def test_delete_unknown_document_404(api_client):
 def test_proposal_hash_mismatch_rejected(api_client):
     """feat-066 anti-swap gate: the decide call must echo the reviewed hash."""
     client, wiki, store = api_client
-    doc_id = _ingest_raw(client, wiki, "note-h.md", "哈希守卫测试。" * 10)
+    doc_id = _ingest_raw(client, "note-h.md", "哈希守卫测试。" * 10)
     proposal = client.post(
         "/api/proposals", json={"kind": "delete_doc", "payload": {"doc_id": doc_id}}
     ).json()["proposal"]
@@ -1748,11 +1725,7 @@ def test_activate_disabled_provider_returns_400(api_client, monkeypatch):
     from memoria.web.config import Settings
     client, _, _ = api_client
     current = Settings()
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current.model_copy(deep=True))
-    def save_current(s):
-        nonlocal current
-        current = s.model_copy(deep=True)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+    box = _patch_settings(monkeypatch, current)
 
     save_resp = client.post(
         "/api/config/providers",
@@ -1782,11 +1755,7 @@ def test_save_provider_models_batch(api_client, monkeypatch):
     from memoria.web.config import Settings
     client, _, _ = api_client
     current = Settings()
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current.model_copy(deep=True))
-    def save_current(s):
-        nonlocal current
-        current = s.model_copy(deep=True)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+    box = _patch_settings(monkeypatch, current)
 
     # 1. Create provider
     save_resp = client.post(
@@ -1855,12 +1824,7 @@ def test_model_save_routes_agree_on_blank_ids(api_client, monkeypatch):
     from memoria.web.config import Settings
     client, _, _ = api_client
     current = Settings()
-    monkeypatch.setattr("memoria.web.config_routes.load_settings", lambda: current.model_copy(deep=True))
-
-    def save_current(s):
-        nonlocal current
-        current = s.model_copy(deep=True)
-    monkeypatch.setattr("memoria.web.config_routes.save_settings", save_current)
+    box = _patch_settings(monkeypatch, current)
 
     save_resp = client.post(
         "/api/config/providers",

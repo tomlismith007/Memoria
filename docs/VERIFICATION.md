@@ -5,7 +5,7 @@
 
 ## Automated checks
 
-- `python -m pytest -q` → **239 passed, 0 failed, 0 skipped**（2 个第三方 DeprecationWarning：chromadb/anyio，非本项目代码）。全套件 100% 离线：LLM/Embedder/Gmail/图全部注入 fake，零网络调用。
+- `python -m pytest -q` → **238 passed, 0 failed, 0 skipped**（2 个第三方 DeprecationWarning：chromadb/anyio，非本项目代码）。全套件 100% 离线：LLM/Embedder/Gmail/图全部注入 fake，零网络调用。
 - `cd frontend && npm run build` → green（tsc strict 零诊断 + vite 产出）。
 - `pwsh -NoProfile -File ./init.ps1` → 全量门禁 green（以上两项）。
 - **本次未跑/未覆盖的机器检查**：浏览器手工验收未执行（feat-066 审批中心 / feat-069 邮件横幅 UI 仅到构建级验证）；**真实 Gmail 账号端到端验收未执行**（授权→拉信→分拣→提案→归档全链路需要真账号，见邮件行 Boundary）；前端无组件级自动化测试（tsc + build 是唯一机器检查）；CI（GitHub Actions py3.14）结果独立于本地记录。
@@ -22,7 +22,7 @@
 | Gmail 连接与 token 加密（feat-069） | tests/test_mail_auth.py 8 个（Fernet roundtrip/缺 key 读写拒绝/legacy 明文过同一 key 门/60s 提前刷新/非交互永不弹浏览器）+ test_web_api.py 4 个（health mail 能力、坏 token 降级不阻塞启动、triage mail_ready） | token 密钥来自环境变量，无密钥管理服务；刷新去重为进程内锁（单进程假设）；加密文件格式无版本字段（换算法需重授权） |
 | 提案审批（feat-066） | tests/test_proposals.py 9 个（六道闸/过期/恢复/outcome_unknown）+ test_web_api.py（提案制删除/重建/归档全链路、hash 不符 409、重启 executing→outcome_unknown、对话通道无批准路径） | 归档执行经图完成（本机 SqliteSaver），未做双进程并发验收；提案过期清算在 decide 时惰性判定，后台定时清算待 P1 worker；审批中心 UI 未做浏览器手工验收 |
 | 文档删除与重建 | test_web_api.py：删除后 store.count()==0 且 doc_id 不在 documents()（红线）、raw 消失、404；重建后 total_chunks 不变 | 删除仅移除向量与 raw 文件，已编译 Wiki 页面刻意保留（记录在提案 payload 与 log.md） |
-| Web API 与图编排 | tests/test_graph.py 13 个（路由/中断/恢复/提案回执）+ tests/test_web_api.py 70+（全端点）| 无鉴权、仅绑 127.0.0.1（单用户边界，PERSONAL_AGENT_UPGRADE §4.4）；`/api/agent` 无前端调用方（CLI agent 子命令为实际自由文本路径） |
+| Web API 与图编排 | tests/test_graph.py 12 个（路由/中断/恢复/提案回执）+ tests/test_web_api.py 70+（全端点）| 无鉴权、仅绑 127.0.0.1（单用户边界，PERSONAL_AGENT_UPGRADE §4.4）；`/api/agent` 无前端调用方（CLI agent 子命令为实际自由文本路径） |
 | 出站网络（SSRF） | tests/test_net.py：仅 HTTPS/443、私网拒绝、DNS 重绑定窗口封堵、重定向 ≤3、响应上限 | 自研 http.client 层（feat-065 评估保留）；无证书钉扎；代理 fake-IP 环境会误拒（feat-060 记录，用户环境已知） |
 | 配置与连通性 | tests/test_web_api.py 配置段（脱敏、跨类型拒绝、批量保存、自愈解析） | 连通性测试只发最小请求，不校验模型实际回答质量 |
 | 对话流与队列（feat-039） | tests/test_web_api.py 2 个（SSE 事件序契约 start→delta→citations→done、error 事件）；**浏览器验收存档 gui-test-screenshots/feat-039/**：发送→停止方块切换、busy 中 Enter 入队（Up next 条+移出队列）、队列自动推进（A 完成 B 出队）、停止→已停止文案+Messages on hold+发送队列消息恢复、记住这条→已记住（服务端 /api/memories 确认）、审批中心弹窗渲染 | **delta 当前携带整段回答**（qa 为单次阻塞 LLM 调用，net.py 无流式读——token 级流式需扩展 safe_request，另开一批）；客户端 stop 为放弃请求（服务端图继续跑完，结果不落本地）；浏览器验收为桌面 1280×720，移动端视口未重测；发现并修复 Enter 提交失效 bug（见 Release fixes） |
@@ -37,7 +37,7 @@
 ## Reproduce
 
 ```powershell
-pwsh -NoProfile -File ./init.ps1        # 全量门禁：pytest 239 + frontend build
+pwsh -NoProfile -File ./init.ps1        # 全量门禁：pytest 238 + frontend build
 python -m pytest -q                     # 仅后端
 cd frontend; npm run build              # 仅前端
 # Gmail 生产验收（需真账号，Boundary 见矩阵邮件行）：

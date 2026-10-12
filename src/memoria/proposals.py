@@ -19,18 +19,9 @@ from datetime import datetime, timedelta, timezone
 from memoria.records import RecordStore
 
 KIND = "proposal"
-STATUSES = (
-    "awaiting_review",
-    "executing",
-    "succeeded",
-    "failed",
-    "outcome_unknown",
-    "denied",
-    "cancelled",
-    "expired",
-)
-# archive proposals are created by the mail triage flow, not by client POSTs.
-CLIENT_KINDS = ("delete_doc", "reindex")
+# Status vocabulary lives where it is enforced and displayed: the transitions in
+# this module, and ApprovalCenter's STATUS_LABEL map (which also still labels the
+# retired `cancelled` status of pre-existing records).
 ALL_KINDS = ("archive", "delete_doc", "reindex")
 TTL_SECONDS = 30 * 60
 DECISIONS = ("approved", "denied")

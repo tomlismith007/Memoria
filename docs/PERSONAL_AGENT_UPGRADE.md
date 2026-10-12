@@ -183,18 +183,18 @@ LangGraph（生产编排器，红线不变）
 | 通知 append-only / 网关 turn 租约（P2 若做 IM 入口再取） | hermes/04 |
 | enforced vs instructed 分级方法学 | 04b §2.6、§8 |
 
-## 6. 建议立项清单（待审，未写入 feature_list.json）
+## 6. 立项清单（**已立项并全部完成**——066/067/068/069/071 已写入 feature_list.json 且 completed；070 未另立新号，改为扩 feat-039 范围后完成）
 
-| 建议编号 | 阶段 | 名称 | 依赖 |
-|---|---|---|---|
-| feat-066 | P0 | 提案审批子系统（archive/delete_doc/reindex 三 kind + decide 端点 + interrupt 分型） | 无 |
-| feat-067 | P0 | 文档纪律最小包（VERIFICATION.md + limitation 字段 + 红线三处同文 + 免责句） | 无 |
-| feat-068 | P1 | 最小持久任务引擎 + mail_triage kind + 通知收件箱 | feat-066、069 |
-| feat-069 | P1 | 邮件生产通电（get_gmail_service 接入 + token 加密 + health capability） | 无 |
-| feat-070 | P1 | SSE 流式 + ConversationQueue（**改造既有 feat-039 的范围**，不另立新号） | 无 |
-| feat-071 | P1 | 最小记忆层（三字段 + API + qa 注入） | 无 |
+| 编号 | 阶段 | 名称 | 依赖 | 状态 |
+|---|---|---|---|---|
+| feat-066 | P0 | 提案审批子系统（archive/delete_doc/reindex 三 kind + decide 端点 + interrupt 分型） | 无 | completed |
+| feat-067 | P0 | 文档纪律最小包（VERIFICATION.md + limitation 字段 + 红线三处同文 + 免责句） | 无 | completed |
+| feat-068 | P1 | 最小持久任务引擎 + mail_triage kind + 通知收件箱 | feat-066、069 | completed |
+| feat-069 | P1 | 邮件生产通电（get_gmail_service 接入 + token 加密 + health capability） | 无 | completed |
+| feat-070 | P1 | SSE 流式 + ConversationQueue（**改造既有 feat-039 的范围**，不另立新号） | 无 | completed（并入 feat-039） |
+| feat-071 | P1 | 最小记忆层（三字段 + API + qa 注入） | 无 | completed |
 
-排序建议：066/067 并行先行（067 一天内）；069 完成后 068 立即接上（真实邮件流是 066 的验收前提）；070/071 并行殿后。每项的验收标准在立项时按 §3.4 VERIFICATION 模板展开。
+落地顺序（实际执行）：066/067 并行先行；069 完成后 068 接上；039 扩范围与 071 殿后。六项验收证据见 `docs/VERIFICATION.md` 矩阵与 `feature_list.json` 的 evidence 字段。
 
 ---
 

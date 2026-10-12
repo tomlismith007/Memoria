@@ -20,19 +20,21 @@ Memoria 的前端界面追求 **“克制、高级、触觉感明确的编辑级
 
 坚持 **“单色主调（Monochrome）+ 语义化低饱和粉彩（Muted Pastels）”** 原则。严禁使用任何高饱和紫色/霓虹渐变。
 
-| 语义角色 | 变量/类名 | 色值 (Hex) | 用途说明 |
+| 语义角色 | 类名（实际使用） | 色值 (Hex) | 用途说明 |
 |---|---|---|---|
 | **Canvas** | `bg-canvas` | `#FAFAF9` (Stone-50/Zinc-50 偏暖) | 全局底层背景，温和护眼 |
-| **Card Surface** | `bg-surface` | `#FFFFFF` | 主卡片、弹窗与浮层容器背景 |
-| **Subtle Surface** | `bg-subtle` | `#F4F4F5` (Zinc-100) | 次级嵌套卡片、未激活胶囊背景、输入框底色 |
-| **Primary Text** | `text-primary` | `#18181B` (Zinc-900) | 正文、大标题（**严禁使用绝对纯黑 `#000000`**） |
-| **Secondary Text** | `text-muted` | `#71717A` (Zinc-500) | 副标题、时间戳、次要元数据说明 |
-| **Border Line** | `border-whisper` | `#E4E4E7` (Zinc-200) | 1px 细线边界、卡片分割线、输入框边框 |
+| **Card Surface** | `bg-white` | `#FFFFFF` | 主卡片、弹窗与浮层容器背景 |
+| **Subtle Surface** | `bg-zinc-100` / `bg-zinc-50` | `#F4F4F5` / `#FAFAFA` | 次级嵌套卡片、未激活胶囊背景、输入框底色 |
+| **Primary Text** | `text-zinc-900` / `text-ink-primary` | `#18181B` (Zinc-900) | 正文、大标题（**严禁使用绝对纯黑 `#000000`**） |
+| **Secondary Text** | `text-zinc-500` / `text-zinc-400` | `#71717A` / `#A1A1AA` | 副标题、时间戳、次要元数据说明 |
+| **Border Line** | `border-zinc-200` / `border-zinc-100` | `#E4E4E7` / `#F4F4F5` | 1px 细线边界、卡片分割线、输入框边框 |
 | **Dark Pill Fill** | `bg-zinc-900` | `#18181B` | 主胶囊操作按钮背景，文字纯白 `#FAFAF9` |
 | **Wiki Tag Pastel** | `bg-emerald-50` / `text-emerald-700` | `#ECFDF5` / `#047857` | Wiki 页面标签、`[[双向链接]]` 胶囊徽标 |
 | **Citation Pastel** | `bg-blue-50` / `text-blue-700` | `#EFF6FF` / `#1D4ED8` | RAG 问答逐句引用胶囊 `[1]`，段落定位高亮 |
 | **Protected Amber** | `bg-amber-50` / `text-amber-800` | `#FFFBEB` / `#92400E` | 验证码/交易邮件受保护胶囊（不可归档红线标示） |
 | **Archive Candidate** | `bg-rose-50` / `text-rose-700` | `#FEF2F2` / `#B91C1C` | 营销邮件待归档胶囊、删除确认操作 |
+
+> 注：`tailwind.config.js` 只定义 `canvas` 与 `ink.primary` 两个自定义色；上表其余角色一律直接用 Tailwind 内置 zinc/emerald/blue/amber/rose 刻度，不另造 token。
 
 ---
 
@@ -61,7 +63,7 @@ Memoria 的前端界面追求 **“克制、高级、触觉感明确的编辑级
    - 应用：过滤选项、取消、重试、模式切换。
 3. **轮廓胶囊 (Outline Pill Button)**
    - 样式：`rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 font-medium text-sm px-4 py-2 transition-all`
-   - 应用：沉淀问答到 Wiki、导出 Markdown。
+   - 应用：沉淀问答到 Wiki。
 4. **胶囊标签与双向链接 (Capsule Badges & [[Wiki]] Links)**
    - 双向链接标签：`rounded-full px-2.5 py-0.5 text-xs font-medium bg-emerald-50/80 text-emerald-800 border border-emerald-200/60 hover:bg-emerald-100 hover:border-emerald-300 transition-colors inline-flex items-center gap-1 cursor-pointer`
    - 引用序号标签 `[n]`：`rounded-full px-2 py-0.2 text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60 hover:bg-blue-100 cursor-pointer ml-1 select-none`

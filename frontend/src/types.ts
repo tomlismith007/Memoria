@@ -66,8 +66,6 @@ export interface MailTriageResponse {
   thread_id: string;
   mail_ready: boolean;
   mail_reason: string;
-  pending?: string[];
-  error?: string;
 }
 
 export interface IngestResponse {
@@ -109,7 +107,7 @@ export interface ProvidersConfigResponse {
 }
 
 /** feat-049: which LLM capabilities are actually configured. */
-export interface CapabilityStatus {
+interface CapabilityStatus {
   ready: boolean;
   reason: string;
 }
@@ -136,7 +134,7 @@ export interface TestResultResponse {
 /** feat-066: a hash-bound approval record for destructive/external actions. */
 export type ProposalKind = "archive" | "delete_doc" | "reindex";
 
-export type ProposalStatus =
+type ProposalStatus =
   | "awaiting_review"
   | "executing"
   | "succeeded"
@@ -146,7 +144,7 @@ export type ProposalStatus =
   | "cancelled"
   | "expired";
 
-export interface ProposalMail {
+interface ProposalMail {
   msg_id: string;
   subject: string;
   sender: string;
@@ -157,8 +155,6 @@ export interface Proposal {
   id: string;
   kind: ProposalKind;
   payload: {
-    thread_id?: string;
-    confirmed_ids?: string[];
     msgs?: ProposalMail[];
     doc_id?: string;
     name?: string | null;
@@ -166,7 +162,6 @@ export interface Proposal {
   };
   content_hash: string;
   status: ProposalStatus;
-  created_at: string;
   expires_at: string;
   result?: Record<string, unknown> | null;
   error?: string | null;
@@ -186,14 +181,6 @@ export interface ProposalDecideResponse {
   proposal: Proposal;
 }
 
-/** feat-071: one bounded agent memory row. */
-export interface AppMemory {
-  id: string;
-  text: string;
-  source: string;
-  created_at: string;
-}
-
 /** feat-039: SSE citations event payload. */
 export interface AskStreamCitations {
   source: AskResponse["source"];
@@ -202,8 +189,8 @@ export interface AskStreamCitations {
   citations: Citation[];
 }
 
+/** feat-071: only the two fields AskView's 「记住这条」 reads back. */
 export interface MemoryCreateResponse {
-  memory: AppMemory;
   added: boolean;
   message: string;
 }
@@ -211,11 +198,8 @@ export interface MemoryCreateResponse {
 /** feat-068: append-only inbox entry — mark-read only, no delete. */
 export interface AppNotification {
   id: string;
-  key: string;
   title: string;
   body: string;
-  link: string | null;
-  read: boolean;
   created_at: string;
 }
 

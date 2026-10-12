@@ -5,17 +5,7 @@ import pytest
 from memoria.llm import FakeChat
 from memoria.wiki import Wiki, ingest, lint, query
 
-
-class ScriptedChat:
-    """Reply in call order; records prompts."""
-
-    def __init__(self, *replies: str):
-        self.replies = list(replies)
-        self.calls: list[tuple[str, str]] = []
-
-    def chat(self, system, user):
-        self.calls.append((system, user))
-        return self.replies[min(len(self.calls) - 1, len(self.replies) - 1)]
+from conftest import ScriptedChat
 
 
 @pytest.fixture

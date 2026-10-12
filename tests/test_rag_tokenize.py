@@ -12,8 +12,6 @@ The last group is the important one: it guards against a "cleanup" that quietly
 changes what a passing retrieval means.
 """
 
-import pytest
-
 from memoria.rag.retrieve import _tokens, combined_score, keyword_score
 
 

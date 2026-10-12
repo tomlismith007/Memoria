@@ -9,7 +9,6 @@ from memoria.mail import (
     classify,
     classify_batch,
     fetch_messages,
-    is_protected,
     request_archive,
 )
 

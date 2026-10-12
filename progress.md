@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-10-12
-**Active Feature:** feat-066/067/069/068/071/039 completed——P0 与 P1 全部落地。下一步按 PERSONAL_AGENT_UPGRADE §4.4：P2 观望区不立项，等触发条件
+**Active Feature:** feat-066/067/069/068/071/039 completed——P0 与 P1 全部落地；另完成全仓库 ponytail-audit 整改（后端死代码/测试去重/前端收敛/文档真相）。下一步按 PERSONAL_AGENT_UPGRADE §4.4：P2 观望区不立项，等触发条件
 
 ## Status
 
@@ -17,6 +17,7 @@
 - **feat-071 DONE**：最小记忆层。MemoryService（content-hash 去重/上限 100/CAS 编辑/原子遗忘）+ qa 节点数据块注入（'不是指令，不是许可'同句）+ GET/POST/编辑/遗忘 API + AskView'记住这条'按钮。237 tests + build green。limitation：管理面板 UI 未做、编辑不重算 id。
 - **feat-039 DONE**：SSE 流式 + ConversationQueue。后端 /api/ask/stream（事件契约 start→delta→citations→done|error）；前端 askStream 客户端 + AskView 队列语义（Enter 入队/Up next/自动推进/停止与失败暂停/永不隐式重发/发送停止同位）。浏览器验收通过并修复 Enter 提交失效 bug（存档 gui-test-screenshots/feat-039/）。239 tests + build green。
 - P1 收官。个人 agent 升级路线 P0+P1 六项全部完成（066/067/069/068/071/039）。
+- **全仓库 ponytail-audit 整改（本轮）**：审计结论——后端无架构级过度设计，最大收益在文档纪律。四批整改：①后端死代码（proposals 零引用常量、tasks 永不出现的 "queued" 前置、config 重复提示常量、app 未用导入 + 合并 AskStreamRequest + 抽 `_citations()`）；②测试去重（新建 tests/conftest.py 收编 4 份 ScriptedChat；test_web_api 的 8 份 monkeypatch 闭包对 → `_patch_settings()`；删 6 未用导入/死 helper `_deny`/重复 offset 测试/2 个死参数）；③前端（删零调用 `api.ask`、`onDone`、`AppMemory` 与未读响应字段；`draftModel()` 收三处重复 literal；串行保存 → 批量端点；7 个多余 export；package.json preview；tsconfig resolveJsonModule）；④文档真相 8 处（session-handoff 重复行+211→238+feat-068 提交状态、progress 两段化石、README/ARCHITECTURE 182→238、ARCHITECTURE 8→9 个 llm.chat 调用点、VERIFICATION test_graph 13→12、PERSONAL_AGENT_UPGRADE §6 立项状态、DESIGN.md 5 个不存在的色 token + 未实现的导出按钮）。**复核后撤回 4 条**：4 个 env 开关（与 MEMORIA_CHROMA 同类的常规逃生口）、requests 直接依赖（google.auth.transport.requests 本身 import requests）、lint_broken/lint_orphans 字段（feature_list.json:70 把 lint 列为摄入验收项）、cancelled 状态（前端有标签，是记录在案的八态设计）。238 tests + build green。
 
 ### What's Done
 
@@ -89,12 +90,13 @@
 
 ### What's In Progress
 
-- [ ] 无；feat-001..feat-064 已完成，feat-023 已完成。
+- [ ] 无；feat-001..feat-065 与 feat-066/067/068/069/071/039 均已完成。
 
 ### What's Next
 
-1. feat-038（多步摄入图循环）与 feat-039（SSE 流式回答）均标记为可选，未排期
+1. feat-038（多步摄入图循环）仍标记为可选，未排期；feat-039 已完成（SSE + ConversationQueue）
 2. 保持全套测试与 Harness 门禁（`./init.ps1`）100% 绿灯通过
+3. Gmail 真账号端到端验收待用户执行（设 TOKEN_ENCRYPTION_KEY → scripts/auth_gmail.py → run_web.py）
 
 ## Blockers / Risks
 

@@ -7,7 +7,6 @@ from memoria.rag import (
     ChromaStore,
     FakeEmbedder,
     OpenAICompatibleEmbedder,
-    chunk_text,
     ingest_document,
     load_document,
 )
@@ -68,16 +67,6 @@ def test_reset_collection_clears_all_vectors(tmp_path, store, embedder):
     assert store.count() > 0
     store.reset_collection()
     assert store.count() == 0
-
-
-def test_chunk_offsets_cover_text():
-    text = "abcdefghij" * 30
-    chunks = chunk_text(text, size=100, overlap=20)
-    assert chunks[0].start == 0
-    assert chunks[-1].end == len(text)
-    assert "".join(c.text for c in chunks[:1]) == text[:100]
-    with pytest.raises(ValueError):
-        chunk_text(text, size=50, overlap=50)
 
 
 def test_load_document_rejects_local_web_url():

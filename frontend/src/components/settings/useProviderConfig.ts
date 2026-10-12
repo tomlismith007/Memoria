@@ -9,7 +9,7 @@ import type {
 } from "../../types";
 import type { DeleteConfirmTarget } from "./DeleteConfirmDialog";
 
-export const isEmbeddingModelId = (modelId: string): boolean => {
+const isEmbeddingModelId = (modelId: string): boolean => {
   const lower = modelId.toLowerCase();
   return (
     lower.includes("embed") ||
@@ -20,7 +20,7 @@ export const isEmbeddingModelId = (modelId: string): boolean => {
   );
 };
 
-export const deriveModelType = (
+const deriveModelType = (
   modelId: string,
   fallback: "chat" | "embedding" = "chat"
 ): "chat" | "embedding" => {
@@ -42,11 +42,27 @@ export const deriveModelType = (
 };
 
 // Single source of truth for model tags.
-export const deriveTag = (modelId: string, embedding = false): string => {
+// Single source of truth for model tags.
+const deriveTag = (modelId: string, embedding = false): string => {
   const lower = modelId.toLowerCase();
   if (lower.includes("vision") || lower.includes("vl")) return "视觉";
   if (embedding || isEmbeddingModelId(modelId)) return "Embedding";
   return "Chat";
+};
+
+/** A freshly-fetched model id as an unsaved row: type inferred, tag derived. */
+const draftModel = (
+  modelId: string,
+  scope: "chat" | "embedding"
+): CustomModel => {
+  const model_type = deriveModelType(modelId, scope);
+  return {
+    id: modelId,
+    name: modelId,
+    tags: [deriveTag(modelId, model_type === "embedding")],
+    enabled: true,
+    model_type,
+  };
 };
 
 export const splitTags = (raw: string): string[] =>
@@ -263,16 +279,7 @@ export const useProviderConfig = (isOpen: boolean) => {
           setFormChatModel(res.models[0]);
         }
         if (isCreatingNew) {
-          const autoDrafts: CustomModel[] = res.models.slice(0, 15).map((mId) => {
-            const inferredType = deriveModelType(mId, settingsTab);
-            return {
-              id: mId,
-              name: mId,
-              tags: [deriveTag(mId, inferredType === "embedding")],
-              enabled: true,
-              model_type: inferredType,
-            };
-          });
+          const autoDrafts: CustomModel[] = res.models.slice(0, 15).map((mId) => draftModel(mId, settingsTab));
           setDraftModels(autoDrafts);
         }
         showToast("success", `成功拉取 ${res.models.length} 个可用模型`);
@@ -386,16 +393,7 @@ export const useProviderConfig = (isOpen: boolean) => {
   const handleImportAllFetched = async () => {
     if (fetchedModels.length === 0) return;
     if (isCreatingNew) {
-      const added: CustomModel[] = fetchedModels.slice(0, 30).map((mId) => {
-        const inferredType = deriveModelType(mId, settingsTab);
-        return {
-          id: mId,
-          name: mId,
-          tags: [deriveTag(mId, inferredType === "embedding")],
-          enabled: true,
-          model_type: inferredType,
-        };
-      });
+      const added: CustomModel[] = fetchedModels.slice(0, 30).map((mId) => draftModel(mId, settingsTab));
       setDraftModels(added);
       showToast("success", `已批量导入 ${added.length} 个模型`);
       return;
@@ -410,16 +408,7 @@ export const useProviderConfig = (isOpen: boolean) => {
         showToast("success", "所有模型均已添加");
         return;
       }
-      const modelsToSave = pending.map((mId) => {
-        const inferredType = deriveModelType(mId, settingsTab);
-        return {
-          id: mId,
-          name: mId,
-          tags: [deriveTag(mId, inferredType === "embedding")],
-          enabled: true,
-          model_type: inferredType,
-        };
-      });
+      const modelsToSave = pending.map((mId) => draftModel(mId, settingsTab));
 
       await api.saveProviderModelsBatch(selectedProvider.id, modelsToSave);
       const refreshed = await api.getProviders();
@@ -518,16 +507,20 @@ export const useProviderConfig = (isOpen: boolean) => {
         });
       }
 
-      // Import all draft models
-      for (const m of draftModels) {
+      // Import all draft models in one round-trip. Best-effort, like the
+      // per-model loop it replaces: a rejected batch must not abort the save.
+      if (draftModels.length > 0) {
         try {
-          await api.saveProviderModel(newP.id, {
-            id: m.id,
-            name: m.name,
-            tags: m.tags,
-            enabled: m.enabled,
-            model_type: m.model_type || settingsTab,
-          });
+          await api.saveProviderModelsBatch(
+            newP.id,
+            draftModels.map((m) => ({
+              id: m.id,
+              name: m.name,
+              tags: m.tags,
+              enabled: m.enabled,
+              model_type: m.model_type || settingsTab,
+            }))
+          );
         } catch {}
       }
 
@@ -889,7 +882,7 @@ export const useProviderConfig = (isOpen: boolean) => {
   };
 };
 
-export type ProviderConfigCtrl = ReturnType<typeof useProviderConfig>;
+type ProviderConfigCtrl = ReturnType<typeof useProviderConfig>;
 
 /** Every settings child takes the whole controller; declared once here. */
 export interface ProviderCtrlProps {

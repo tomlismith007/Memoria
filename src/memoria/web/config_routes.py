@@ -22,7 +22,6 @@ from memoria.web.config import (
     fetch_remote_models,
     load_settings,
     pick_model_id,
-    resolve_active_chat_model,
     save_settings,
     test_model_connectivity,
 )

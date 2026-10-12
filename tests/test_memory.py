@@ -4,7 +4,6 @@ into the qa prompt is data-only with the untrusted disclaimer in the same line.
 
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.types import Command
 from starlette.testclient import TestClient
 
 from memoria.graph import build_graph

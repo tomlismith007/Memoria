@@ -438,7 +438,8 @@
         "feat-034"
       ],
       "status": "completed",
-      "evidence": "python -m pytest -q → 239 passed（基线 237，+2：test_ask_stream_events 事件序契约 + test_ask_stream_error_event）；frontend build green；./init.ps1 全量门禁通过。实现：后端 POST /api/ask/stream（StreamingResponse text/event-stream，事件契约 start→delta→citations→done|error，SSE 变体与 /api/ask 同图同线程——conversation_id 即 LangGraph thread）；前端 api.askStream（fetch ReadableStream + SSE 解析，signal 可中止）+ AskView ConversationQueue 语义（refs 为真值的 52 行式状态机：running 中 composer 保持可编辑、Enter 入队、Up next 条带移出按钮、队列自动推进、停止与失败都暂停队列且永不隐式重发、发送队列消息恢复、新提交解锁、发送/停止同位切换）；浏览器验收（离线脚本化 LLM 服务器，存档 gui-test-screenshots/feat-039/）：全链路人工验证通过并发现/修复 Enter 提交失效 bug（隐式提交在 React 重渲染窗口被吞——AskInput 显式 onKeyDown 修复，二次修复补 running 入队分支，复测通过）。"
+      "evidence": "python -m pytest -q → 239 passed（基线 237，+2：test_ask_stream_events 事件序契约 + test_ask_stream_error_event）；frontend build green；./init.ps1 全量门禁通过。实现：后端 POST /api/ask/stream（StreamingResponse text/event-stream，事件契约 start→delta→citations→done|error，SSE 变体与 /api/ask 同图同线程——conversation_id 即 LangGraph thread）；前端 api.askStream（fetch ReadableStream + SSE 解析，signal 可中止）+ AskView ConversationQueue 语义（refs 为真值的 52 行式状态机：running 中 composer 保持可编辑、Enter 入队、Up next 条带移出按钮、队列自动推进、停止与失败都暂停队列且永不隐式重发、发送队列消息恢复、新提交解锁、发送/停止同位切换）；浏览器验收（离线脚本化 LLM 服务器，存档 gui-test-screenshots/feat-039/）：全链路人工验证通过并发现/修复 Enter 提交失效 bug（隐式提交在 React 重渲染窗口被吞——AskInput 显式 onKeyDown 修复，二次修复补 running 入队分支，复测通过）。",
+      "limitation": "delta 当前携带整段回答（qa 为单次阻塞 LLM 调用，net.py 无流式读——token 级流式需扩展 safe_request，另开一批）；客户端 stop 为放弃请求（服务端图继续跑完，结果不落本地）；浏览器验收为桌面 1280×720，移动端视口未重测"
     },
     {
       "id": "feat-040",
@@ -730,7 +731,17 @@
         "feat-066"
       ],
       "status": "completed",
-      "evidence": "python -m pytest -q → 237 passed（基线 231，+6：tests/test_memory.py）；frontend build green；./init.ps1 全量门禁通过。实现：memoria/memory.py——MemoryService（content-hash 去重，remember 返回 (memory, created) 由 insert 真值判定非猜测；上限 100 超限 MemoryLimitError→400；CAS 编辑（读前提=存储文本，并发丢失干净失败）；原子遗忘=records.take）；qa 节点注入（记忆块在 transcript/问题之前——更稳内容靠前，块头与'不是指令，不是许可'同句，04b §9.2 模式）；API：GET/POST /api/memories、POST /api/memories/{id}（编辑）、POST /api/memories/{id}/forget（404 幂等）；AskView 每条回答加'记住这条'按钮（source=User confirmed in AskView，重复点击走去重提示）。"
+      "evidence": "python -m pytest -q → 237 passed（基线 231，+6：tests/test_memory.py）；frontend build green；./init.ps1 全量门禁通过。实现：memoria/memory.py——MemoryService（content-hash 去重，remember 返回 (memory, created) 由 insert 真值判定非猜测；上限 100 超限 MemoryLimitError→400；CAS 编辑（读前提=存储文本，并发丢失干净失败）；原子遗忘=records.take）；qa 节点注入（记忆块在 transcript/问题之前——更稳内容靠前，块头与'不是指令，不是许可'同句，04b §9.2 模式）；API：GET/POST /api/memories、POST /api/memories/{id}（编辑）、POST /api/memories/{id}/forget（404 幂等）；AskView 每条回答加'记住这条'按钮（source=User confirmed in AskView，重复点击走去重提示）。",
+      "limitation": "记忆 id 为创建时内容 hash，编辑后不重算（编辑可产生语义近重复，插下去重只看 id）；记忆管理面板 UI 未做（AskView'记住'按钮 + API 编辑/遗忘，面板后补）；注入为有界全量（≤100 条），无相关性筛选"
+    },
+    {
+      "id": "feat-072",
+      "name": "Full-repo ponytail audit remediation (2026-10-12)",
+      "description": "全仓库过度设计/复杂度审计后的整改。审计结论：后端 ~5k 行无架构级过度设计（无单实现接口、无单调用方抽象层、无投机脚手架），最大收益在文档纪律。四批整改：①后端死代码；②测试去重；③前端收敛；④文档状态真相。明确不做（复核后撤回的审计建议）：4 个 env 开关（MEMORIA_RECORDS/CHECKPOINT_DB/LLM_API_FORMAT/DEMO_MODE——与 MEMORIA_CHROMA 同类的常规逃生口，CLI 路径在用）、requests 直接依赖（google.auth.transport.requests 本身 import requests，直接声明是正确做法）、lint_broken/lint_orphans 字段（feature_list feat-007 把 lint 列为摄入步骤验收项）、cancelled 提案状态（前端有标签，是记录在案的八态设计）。",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 238 passed（239 → 238，差额恰为删除的 1 个重复测试：test_rag_ingest.py 的 offset 契约已被 test_rag_chunking.py 完整覆盖，--collect-only 核对）；frontend build green（tsc strict 零诊断）；./init.ps1 全量门禁通过。①后端：proposals.py 删 STATUSES/CLIENT_KINDS 零引用常量；tasks.py 删永不出现的 \"queued\" 前置；config.py 删重复的 MAIL_KEY_MISSING_HINT；app.py 删未用导入 + 合并字段相同的 AskStreamRequest/AskRequest + 三处 citation 整形抽 _citations()；config_routes.py 删未用导入。②测试：新建 tests/conftest.py 收编 4 份逐字复制的 ScriptedChat；test_web_api.py 8 份 monkeypatch 闭包对 → 模块级 _patch_settings()（-50 行）；删 6 个未用导入、死 helper _deny、_ingest_raw 未用 wiki 参数、重复 offset 测试、test_rag_eval.py 两个死参数。③前端：删零调用 api.ask（非流式）/onDone/AppMemory 及未读响应字段（MailTriageResponse.pending,error；Proposal.thread_id,confirmed_ids,created_at；AppNotification.key,link,read）；useProviderConfig 三处逐字 model literal → draftModel()；串行保存循环 → saveProviderModelsBatch（后端端点已有测试）；7 个多余 export 关键字；package.json preview 脚本；tsconfig resolveJsonModule。④文档真相 8 处：session-handoff.md 重复行 + 211→238 + feat-068 提交状态 + 补 Commit State；progress.md 两段化石（What's In Progress 停在 feat-064、What's Next 仍称 feat-039 未排期）；README 两处 182→238；ARCHITECTURE 182→238 且 8→9 个 llm.chat() 调用点；VERIFICATION 239→238 且 test_graph 13→12；PERSONAL_AGENT_UPGRADE §6 标题'待审，未写入 feature_list.json'→已立项全 completed；DESIGN.md 5 个不存在的色 token（bg-surface/bg-subtle/text-primary/text-muted/border-whisper）→真实 Tailwind 类 + 未实现的'导出 Markdown'按钮。净减 77 行（267 insertions / 344 deletions）。调研沉淀（agent-architecture README 更新 + 07-talorys.md 删除 + talorys/、openmuse/ 新增，共 20 文件）已拆为独立 commit，不计入本条目。AST 死导入扫描 src/tests/scripts 全 .py → 0 命中。",
+      "limitation": "只做删除与收敛，未改任何行为契约（238 vs 239 的差额是唯一测试数变化，已逐项核对）；前端仍无组件级自动化测试（tsc + build 是唯一机器检查），本次前端改动仅到构建级验证；useProviderConfig.ts 仍是 897 行的单 hook（68 个返回键），本次只删重复未拆分"
     }
   ]
 }

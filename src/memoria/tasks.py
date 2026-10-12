@@ -133,9 +133,8 @@ class TaskEngine:
             "lease_until": lease_until,
             "next_run_at": _iso(now + timedelta(seconds=task.get("interval_seconds", 1800))),
         }
-        for premise in ("scheduled", "queued"):
-            if self._records.cas(KIND_TASK, task["id"], {"status": premise}, patch):
-                return self._records.get(KIND_TASK, task["id"])
+        if self._records.cas(KIND_TASK, task["id"], {"status": "scheduled"}, patch):
+            return self._records.get(KIND_TASK, task["id"])
         return None  # someone else claimed it / not due anymore
 
     def _reclaim_expired(self, task: dict) -> dict | None:

@@ -128,18 +128,24 @@ def test_qa_route_carries_history_for_follow_ups(tmp_path):
 
 
 def test_recent_turns_drops_oldest_until_budget_fits():
-    """feat-042: history is trimmed by token budget, newest turns kept first."""
-    from memoria.graph.nodes import KEEP_RECENT_TOKENS, _recent_turns
+    """feat-042: history is trimmed by token budget, newest turns kept first.
+
+    feat-073 moved the trimmer into memoria.context (shared with the wiki and
+    memory budgets) and made it report the dropped prefix for compaction.
+    """
+    from memoria.context import KEEP_RECENT_TOKENS, fit_history
 
     def turn(i, size):
         return {"question": f"q{i}", "answer": "答" * size}
 
     # Each turn costs (2 + 6000) / 1.5 ≈ 4001.3 tokens, so 4 fit and a 5th would exceed.
     history = [turn(i, 6000) for i in range(10)]
-    kept = _recent_turns(history)
+    kept, dropped = fit_history(history)
     assert len(kept) == 4
     assert kept[-1]["question"] == "q9"  # newest survives
     assert kept[0]["question"] == "q6"  # the six oldest are dropped
+    assert [t["question"] for t in dropped] == [f"q{i}" for i in range(6)]
+    assert dropped + kept == history  # the split is lossless and order-preserving
 
     # The kept turns must actually fit the budget they claim to respect.
     total = sum(len(t["question"]) + len(t["answer"]) for t in kept) / 1.5
@@ -147,10 +153,10 @@ def test_recent_turns_drops_oldest_until_budget_fits():
 
     # A short history is never truncated.
     short = [turn(i, 10) for i in range(3)]
-    assert _recent_turns(short) == short
+    assert fit_history(short) == (short, [])
 
     # Empty history is safe.
-    assert _recent_turns([]) == []
+    assert fit_history([]) == ([], [])
 
 
 def test_llm_nodes_retry_transient_failures(tmp_path):

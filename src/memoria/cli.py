@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import uuid
 
 
@@ -60,11 +61,13 @@ def _graph(store, embedder, llm, wiki, overrides: dict | None):
 
 
 def main(argv: list[str] | None = None, deps: dict | None = None) -> int:
+    from memoria.llm import counters, reset_counters
     from memoria.wiki import lint as wiki_lint
 
     args = build_parser().parse_args(argv)
     store, embedder, llm, wiki = _deps(args, deps)
     deps = deps or {}
+    reset_counters()
 
     # lint has no graph branch; it is a read-only audit over the wiki files.
     if args.cmd == "lint":
@@ -103,4 +106,6 @@ def main(argv: list[str] | None = None, deps: dict | None = None) -> int:
             print(f"doc={result.get('doc_id')} chunks={result.get('chunks', 0)}")
         else:
             print(f"pending_archive={result.get('pending_archive', [])}")
+    # feat-073: cost estimate to stderr, so stdout stays parseable for callers.
+    print(f"[usage] {counters()}", file=sys.stderr)
     return 0

@@ -5,7 +5,7 @@ Project harness for reliable agent-assisted development.
 Memoria = RAG 知识库问答 + LLM Wiki（知识复利）+ 轻量 AI 邮件分类，LangGraph 编排。
 Full spec: `docs/ARCHITECTURE.md` (read it before implementing any module).
 
-## Red Lines (never violate — see docs/ARCHITECTURE.md § Invariants)
+## Red Lines (never violate — see docs/ARCHITECTURE.md § 5 关键约束（红线 — 永不违反）)
 
 - 验证码/交易邮件**永不自动归档**；任何归档必须人工确认
 - `raw/` 只读不写

@@ -104,3 +104,17 @@ def test_cli_ask_presets_intent_and_skips_router(tmp_path, capsys):
     main(["ask", "何时到期"], deps=deps)
     assert not any("意图路由" in system for system, _ in deps["llm"].calls)
     capsys.readouterr()
+
+
+def test_cli_reports_usage_on_stderr(tmp_path, capsys):
+    """feat-073: the cost estimate goes to stderr, so stdout stays parseable."""
+    deps = _deps(tmp_path, "[[服务到期]]", "2027 年到期。[[服务到期]]", "充分")
+    deps["wiki"].ensure_layout()
+    deps["wiki"].write_page("服务到期", "# 服务到期\n\n2027 年到期。\n")
+    deps["wiki"].build_index()
+    assert main(["ask", "何时到期"], deps=deps) == 0
+    captured = capsys.readouterr()
+    assert "[usage]" in captured.err
+    assert "llm_calls" in captured.err
+    assert "[usage]" not in captured.out  # stdout carries only the answer
+    assert "2027" in captured.out

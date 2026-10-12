@@ -19,8 +19,8 @@ class MemoriaState(TypedDict, total=False):
     answer_verified: bool
     # ponytail: history deliberately has NO operator.add reducer. The checkpointer
     # replays the accumulated turns back into the node, which trims them to
-    # KEEP_RECENT_TOKENS and writes the trimmed list back. Adding a reducer here
-    # would double-append on every turn. Upgrade path: adopt LangGraph's
+    # context.KEEP_RECENT_TOKENS and writes the trimmed list back. Adding a reducer
+    # here would double-append on every turn. Upgrade path: adopt LangGraph's
     # add_messages semantics instead of hand-rolled trimming.
     history: list  # prior turns of this thread: [{"question": str, "answer": str}]
 

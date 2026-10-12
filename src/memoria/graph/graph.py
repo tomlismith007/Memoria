@@ -7,7 +7,7 @@ from langgraph.types import RetryPolicy
 
 from memoria.graph import nodes
 from memoria.graph.state import MemoriaState
-from memoria.llm import ChatLLM
+from memoria.llm import ChatLLM, CountingLLM
 from memoria.rag import ChromaStore, Embedder
 from memoria.wiki import Wiki
 
@@ -21,6 +21,10 @@ def build_graph(
     proposals=None,
     memories=None,
 ):
+    # feat-073: one wrap point covers all nine call sites; the isinstance guard keeps
+    # a rebuild (activate_settings) from stacking wrappers and double-counting.
+    if not isinstance(llm, CountingLLM):
+        llm = CountingLLM(llm)
     # Transient gateway errors retry 3x; confirm_archive stays retry-free (interrupt).
     llm_retry = RetryPolicy(max_attempts=3)
     g = StateGraph(MemoriaState)

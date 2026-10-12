@@ -742,6 +742,35 @@
       "status": "completed",
       "evidence": "python -m pytest -q → 238 passed（239 → 238，差额恰为删除的 1 个重复测试：test_rag_ingest.py 的 offset 契约已被 test_rag_chunking.py 完整覆盖，--collect-only 核对）；frontend build green（tsc strict 零诊断）；./init.ps1 全量门禁通过。①后端：proposals.py 删 STATUSES/CLIENT_KINDS 零引用常量；tasks.py 删永不出现的 \"queued\" 前置；config.py 删重复的 MAIL_KEY_MISSING_HINT；app.py 删未用导入 + 合并字段相同的 AskStreamRequest/AskRequest + 三处 citation 整形抽 _citations()；config_routes.py 删未用导入。②测试：新建 tests/conftest.py 收编 4 份逐字复制的 ScriptedChat；test_web_api.py 8 份 monkeypatch 闭包对 → 模块级 _patch_settings()（-50 行）；删 6 个未用导入、死 helper _deny、_ingest_raw 未用 wiki 参数、重复 offset 测试、test_rag_eval.py 两个死参数。③前端：删零调用 api.ask（非流式）/onDone/AppMemory 及未读响应字段（MailTriageResponse.pending,error；Proposal.thread_id,confirmed_ids,created_at；AppNotification.key,link,read）；useProviderConfig 三处逐字 model literal → draftModel()；串行保存循环 → saveProviderModelsBatch（后端端点已有测试）；7 个多余 export 关键字；package.json preview 脚本；tsconfig resolveJsonModule。④文档真相 8 处：session-handoff.md 重复行 + 211→238 + feat-068 提交状态 + 补 Commit State；progress.md 两段化石（What's In Progress 停在 feat-064、What's Next 仍称 feat-039 未排期）；README 两处 182→238；ARCHITECTURE 182→238 且 8→9 个 llm.chat() 调用点；VERIFICATION 239→238 且 test_graph 13→12；PERSONAL_AGENT_UPGRADE §6 标题'待审，未写入 feature_list.json'→已立项全 completed；DESIGN.md 5 个不存在的色 token（bg-surface/bg-subtle/text-primary/text-muted/border-whisper）→真实 Tailwind 类 + 未实现的'导出 Markdown'按钮。净减 77 行（267 insertions / 344 deletions）。调研沉淀（agent-architecture README 更新 + 07-talorys.md 删除 + talorys/、openmuse/ 新增，共 20 文件）已拆为独立 commit，不计入本条目。AST 死导入扫描 src/tests/scripts 全 .py → 0 命中。",
       "limitation": "只做删除与收敛，未改任何行为契约（238 vs 239 的差额是唯一测试数变化，已逐项核对）；前端仍无组件级自动化测试（tsc + build 是唯一机器检查），本次前端改动仅到构建级验证；useProviderConfig.ts 仍是 897 行的单 hook（68 个返回键），本次只删重复未拆分"
+    },
+    {
+      "id": "feat-073",
+      "name": "Unified context budget + LLM metering (第二轮 K1/K3)",
+      "description": "docs/PERSONAL_AGENT_UPGRADE.md §7（第二轮上下文内核强化）。①预算统一：新建叶子模块 memoria/context.py，放 estimate_tokens()/trim_page()/trim_memories()/fit_history()，被 graph/（history）与 wiki/（页正文）同时导入——wiki 不得反向依赖编排层。此前只有 qa 的 history 有预算（KEEP_RECENT_TOKENS），wiki 页正文与记忆块是无上限拼接，是仓库里仅有的两处会随输入无界增长且无固有边界的注入（RAG 侧 top_n=4×800 字符本身有界，刻意不纳入）。②有界注入必须可见：三处裁剪都留显式标记（…[中间省略 N 字]…／…[已省略 N 条记忆]…）而非静默截断——模型不知道中间缺内容时会用自身权重补全，产出'看起来有引用'实则无据的答案。③计量：llm.CountingLLM 实现同一 ChatLLM Protocol，在 build_graph 单一入口包一层（isinstance 守卫防 activate_settings 重建时叠加包装重复计数），9 个调用点零改动；计数项 llm_calls/est_prompt_tokens/est_completion_tokens/summary_calls/tokens_dropped/tokens_summarized；暴露面三处：SSE done.usage（按本轮增量，模块计数是进程累计值）、CLI ask/agent stderr 一行、测试直读 counters()。④wiki 三处页注入（query 选页正文、ingest 相关页正文、lint 页对）统一过 trim_page。",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 276 passed（251 → 276，+25 见 feat-074/075 合计）；frontend build green；./init.ps1 全量门禁通过。tests/test_context_budget.py 24 个：trim_page 边界（恰好等于上限不裁剪/超出留标记/省略字数正确）、trim_memories 标记尾条、fit_history 无损有序切分（dropped+kept==history）、单轮超预算不返回空历史、CountingLLM 计量与属性透传（.calls）、counters() 返回副本、build_graph 不重复包装、SSE done.usage 为本轮增量、CLI stderr 单行且 stdout 不含 [usage]。既有 tests/test_wiki_ops.py 13 个 prompt 布局断言（稳定前缀优先、跨次 ingest 目录块逐字不变）在接入裁剪后仍全绿，证明裁剪未打乱缓存前缀。",
+      "limitation": "est_* 计数由 1.5 char/token 字符换算得出，llm.py 不解析 provider usage 块，因此计费口径与真实账单有偏差（前缀缓存命中部分也按全量估算，实际成本被高估）；计数器进程内、重启即失，无按 thread 分解，升级路径已写进 llm.py 的 ponytail 注释（解析 provider usage + records 落库）；RAG 片段（top_n=4）与 system prompt 未纳入预算——前者本身有界约 2.1k token，后者是缓存前缀不可裁；记忆写入仍无单条长度校验（只在注入侧裁剪），一条超长记忆会占满块并挤掉其余条目；单页 4000/记忆 4000 字符上限为初始取值，未按真实页面分布调优"
+    },
+    {
+      "id": "feat-074",
+      "name": "Two-tier context compaction (第二轮 K4)",
+      "description": "docs/PERSONAL_AGENT_UPGRADE.md §7（第二轮）。在 feat-073 的预算之上引入第二级压缩：第一级零成本（裁注入块），第二级有成本——仅当被淘汰的历史新增内容超过 SUMMARY_MIN_TOKENS=512 时才花一次 LLM 调用把它折叠成一条摘要伪回合（{\"question\": \"（此前对话摘要）\", \"summary\": true}）并写回 state.history，使 checkpoint 状态本身有界而不只是 prompt 变短。选伪回合而非新增 state 字段：只保留'一个列表、一条裁剪规则、一个注入位'，代价是它与真回合同形，靠 summary 标记区分。两条硬约束：①闸门只数新淘汰的内容——把已有摘要计入会让它自己够到 512，从而每轮都买一次摘要调用（成本回归，且没有任何正确性测试会发现），已有摘要改为并入下一次摘要做增量合并；②压缩失败必须降级为丢弃、绝不冒泡——摘要调用抛错或返回空时保留已付费的旧摘要、丢弃其余，回答照常产出（压缩是优化，不得让用户拿不到答案）。",
+      "dependencies": [
+        "feat-073"
+      ],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 276 passed（251 → 276，+25 含 feat-073/075）。tests/test_context_budget.py 压缩段：未超预算时零额外 LLM 调用且 counters() 全空（防回归的关键断言）、闸门以下只丢弃不摘要（counters.tokens_dropped>0 且 summary_calls==0）、超闸门摘要一次并置 summary 标记（summary_calls==1）、**已有摘要不计入闸门**（prior_summary 单独超 512 但新内容极小 → 仍不调用，验证防重复付费）、合并时旧摘要文本进入新摘要调用（增量合并生效）、摘要抛异常/返回空白均降级为丢弃且 kept==history[-4:]、输入 history 不被就地修改、图级写回验证（seeded 约 16k token 历史 → out['history'] 含 summary 且存储态 <3000 token，末轮问句不被压缩）、无压缩路径下答案照常（'2027' in answer 且 summary_calls==0）、摘要伪回合渲染为（此前对话）上下文而非（本次问题）。",
+      "limitation": "**未做真模型压缩质量对比**：测试断言的是机制（触发/闸门/降级/有界），不是摘要的信息保真度——真实 provider 下的要点保留率无数据，已如实记入 VERIFICATION Boundary；512 token 闸门与 2000 字符摘要上限为初始取值，未按实测调优；压缩在 qa 节点内同步执行，超预算那一轮会增加一次串行 LLM 往返（延迟上升，但只在超预算时发生）；摘要质量依赖 SUMMARY_SYSTEM 的措辞，该 prompt 本身无质量测试"
+    },
+    {
+      "id": "feat-075",
+      "name": "Named LLM prompt face + inline-prompt ban (第二轮 K2)",
+      "description": "docs/PERSONAL_AGENT_UPGRADE.md §7（第二轮）。9 个 llm.chat 调用点里 5 个原本已是命名常量（ROUTER_SYSTEM/GATE_SYSTEM/classify.SYSTEM/BATCH_SYSTEM/answer.SYSTEM），4 个内联在 wiki/ops.py 调用点（ingest/select/answer/lint）。本轮把 4 处提为 INGEST_SYSTEM/SELECT_SYSTEM/ANSWER_SYSTEM/LINT_SYSTEM 模块常量，并用 AST 扫描测试禁止任何新的 llm.chat(\"字面量\", ...) 出现——prompt 漂移正是从内联重新开始的。prompt 布局是性能约束（§7.1 稳定前缀优先，feat-040/041/064 的缓存调优依赖它），内联字符串无法审计，具名常量才能被测试锁住。",
+      "dependencies": [],
+      "status": "completed",
+      "evidence": "python -m pytest -q → 276 passed；tests/test_prompts.py 13 个：9 条 system prompt 全部具名且非空、无首尾空白、9 条互不重复、feat-075 抽出的 4 条 wiki prompt 与原文**逐字节相同**（golden 表锁定，内联时代无任何东西钉住它们）、邮件两条仍含'验证码/交易'+'永不自动归档'+'不可信数据'（instructed 红线的载体，删掉等于模型从没被告知）、AST 扫描 src/ 全 .py 断言零内联 prompt 字面量。",
+      "limitation": "字节锁定只覆盖常量本身，不覆盖调用点拼装的 user 消息（随输入变化无法锁）；prompt 措辞质量无测试（如'只回一个词'是否真被遵守），仅由既有行为测试间接覆盖；本轮是纯重构，未改任何 prompt 文本，因此对模型行为零影响（这是刻意约束：改文本会打掉 provider 前缀缓存）"
     }
   ]
 }

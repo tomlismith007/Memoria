@@ -161,6 +161,75 @@ class ChatLLM(Protocol):
     def chat(self, system: str, user: str) -> str: ...
 
 
+# feat-073: process-local counters. Wrap any ChatLLM to measure what the graph
+# actually spends; the wrapper implements the same Protocol, so call sites are
+# unchanged. Counters are read by tests and surfaced on the SSE `done` event and
+# the CLI's stderr line.
+#
+# ponytail: in-process and reset on restart — no history, no per-thread breakdown,
+# and no provider-reported usage (llm.py does not parse usage blocks, so prompt and
+# completion figures are estimates off the same 1.5 char/token rule as context.py).
+# Upgrade path: parse provider usage where the response carries it, then persist
+# per-run rows in the records store.
+_counters: dict[str, int | float] = {}
+
+
+def reset_counters() -> None:
+    _counters.clear()
+
+
+def counters() -> dict[str, int | float]:
+    """Snapshot of the counters; a copy, so callers cannot mutate the totals."""
+    return dict(_counters)
+
+
+def _bump(key: str, amount: float) -> None:
+    _counters[key] = _counters.get(key, 0) + amount
+
+
+def record_summary_call(prompt_tokens: float, completion_tokens: float) -> None:
+    """feat-074: a compaction summarisation call — counted apart from normal turns."""
+    _bump("summary_calls", 1)
+    _bump("summary_prompt_tokens", prompt_tokens)
+    _bump("summary_completion_tokens", completion_tokens)
+
+
+def record_dropped(tokens: float) -> None:
+    """Tokens removed from the prompt by trimming, with no LLM call spent."""
+    _bump("tokens_dropped", tokens)
+
+
+def record_summarized(tokens: float) -> None:
+    """Tokens that entered a summary instead of being dropped outright."""
+    _bump("tokens_summarized", tokens)
+
+
+class CountingLLM:
+    """ChatLLM decorator that tallies calls and estimated tokens.
+
+    Same Protocol as the wrapped client, so `build_graph` and the web wiring can
+    swap it in without any node knowing. Estimation uses the shared 1.5
+    char/token rule (memoria.context), so prompt and completion figures are on the
+    same scale as the budget they are checked against.
+    """
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+
+    def chat(self, system: str, user: str) -> str:
+        from memoria.context import estimate_tokens
+
+        _bump("llm_calls", 1)
+        _bump("est_prompt_tokens", estimate_tokens(system) + estimate_tokens(user))
+        reply = self.inner.chat(system, user)
+        _bump("est_completion_tokens", estimate_tokens(reply))
+        return reply
+
+    def __getattr__(self, name):
+        # Anything else (tests reaching for `.calls`, adapters) passes through.
+        return getattr(self.inner, name)
+
+
 class FakeChat:
     """Canned reply for offline tests. Records calls."""
 

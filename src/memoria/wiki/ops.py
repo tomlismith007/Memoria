@@ -5,12 +5,23 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from memoria.context import trim_page
 from memoria.llm import ChatLLM
 from memoria.rag.retrieve import keyword_score
 from memoria.wiki.pages import Wiki, extract_links
 
 SECTION_RE = re.compile(r"^## \[\[([^\[\]]+)\]\]\s*$", re.M)
 _WIKI_REF_RE = re.compile(r"\[\[[^\]]+\]\]")
+
+# feat-075: named system prompts. The text is frozen — it is the cached prefix
+# these calls rely on (§7.1), so any edit here invalidates the provider cache
+# for every wiki call. tests/test_prompts.py locks the bytes.
+INGEST_SYSTEM = "你是 Wiki 维护者。只输出页面内容，无多余解释。"
+SELECT_SYSTEM = (
+    "你是 Wiki 检索器。根据目录选出能回答问题的页面，每行一个（`[[页名]]` 或页名），不要解释。"
+)
+ANSWER_SYSTEM = "你是 Wiki 问答助手。只根据提供的页面回答，注明 [[页名]] 来源；答不上就直说。"
+LINT_SYSTEM = "你是 Wiki 审核员。判断两页是否有实质矛盾，只回 `YES: 原因` 或 `NO`。"
 
 
 def _parse_sections(text: str) -> list[tuple[str, str]]:
@@ -60,7 +71,10 @@ def ingest(
     pages = {n: wiki.read_page(n) for n in wiki.list_pages()}
     selected = _select_relevant(pages, material, k=max_pages)
     index_block = "\n".join(f"- [[{n}]]" for n in sorted(pages)) or "（空）"
-    bodies = "\n\n".join(f"## [[{n}]]\n{pages[n]}" for n in selected) or "（无相关页面）"
+    bodies = (
+        "\n\n".join(f"## [[{n}]]\n{trim_page(pages[n] or '')}" for n in selected)
+        or "（无相关页面）"
+    )
     user = (
         f"现有页面目录：\n{index_block}\n\n"
         f"新资料（来源：{origin}）：\n{material}\n\n"
@@ -68,7 +82,7 @@ def ingest(
         "请更新相关页面（新建+修改，总数不超过 "
         f"{max_pages}），每个页面用 `## [[页名]]` 开头输出完整新内容。"
     )
-    sections = _parse_sections(llm.chat("你是 Wiki 维护者。只输出页面内容，无多余解释。", user))
+    sections = _parse_sections(llm.chat(INGEST_SYSTEM, user))
     updated = []
     for name, body in sections[:max_pages]:
         wiki.write_page(name, body + "\n")
@@ -96,16 +110,18 @@ def query(question: str, wiki: Wiki, llm: ChatLLM) -> WikiAnswer:
     names = wiki.list_pages()
     selected = _parse_names(
         llm.chat(
-            "你是 Wiki 检索器。根据目录选出能回答问题的页面，每行一个（`[[页名]]` 或页名），不要解释。",
+            SELECT_SYSTEM,
             f"目录：\n{index}\n\n问题：{question}",
         ),
         set(names),
     )
+    # feat-073: each selected body passes the shared page ceiling — this was the
+    # widest unbounded injection in the repo (LLM-chosen page count × page size).
     context = "\n\n".join(
-        f"## [[{n}]]\n{wiki.read_page(n)}" for n in selected if wiki.read_page(n)
+        f"## [[{n}]]\n{trim_page(body)}" for n in selected if (body := wiki.read_page(n))
     )
     text = llm.chat(
-        "你是 Wiki 问答助手。只根据提供的页面回答，注明 [[页名]] 来源；答不上就直说。",
+        ANSWER_SYSTEM,
         f"页面：\n{context or '（无相关页面）'}\n\n问题：{question}",
     )
     # Conservative: a wiki answer without any [[页名]] source is unverified, even refusals.
@@ -141,8 +157,9 @@ def lint(wiki: Wiki, llm: ChatLLM | None = None) -> LintReport:
     if llm is not None:
         for a, b in pairs[:max_pairs]:
             verdict = llm.chat(
-                "你是 Wiki 审核员。判断两页是否有实质矛盾，只回 `YES: 原因` 或 `NO`。",
-                f"页 A [[{a}]]：\n{wiki.read_page(a)}\n\n页 B [[{b}]]：\n{wiki.read_page(b)}",
+                LINT_SYSTEM,
+                f"页 A [[{a}]]：\n{trim_page(wiki.read_page(a) or '')}\n\n"
+                f"页 B [[{b}]]：\n{trim_page(wiki.read_page(b) or '')}",
             )
             if verdict.strip().upper().startswith("YES"):
                 report.contradictions.append(f"[[{a}]] vs [[{b}]]: {verdict.strip()}")

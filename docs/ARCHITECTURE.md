@@ -77,7 +77,7 @@ FastAPI 后端服务挂载静态前端，提供 RESTful 接口与极致现代感
 | 前端工程 | Vite + React 19 + TypeScript 5.7 + Tailwind v3 | 秒级构建、类型安全；圆角卡片 (`rounded-3xl`) 与胶囊按键 (`rounded-full`) 设计系统。**无状态管理库、无 markdown 库、无组件库**——`useState` + 手写 `MarkdownRenderer.tsx` + 7 个自建 UI 基础组件；运行时依赖仅 `react` / `react-dom` / `lucide-react` |
 | 邮件接入 | Gmail API + OAuth（本地离线/交互授权生成 token.json） | 最小权限（只读 + 归档写权限）；凭据只放本地密钥文件，永不入库 |
 | 文档解析 | pypdf（PDF）/ Markdown 直接读 / 网页抽取 | 够用优先；重型解析（OCR、复杂表格）需求出现再换 |
-| 测试 | pytest（238 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 18 秒跑完 |
+| 测试 | pytest（276 项，全离线） | `FakeChat` / `FakeEmbedder`（32 维哈希词袋）注入，全套件零网络调用，约 18 秒跑完 |
 | Python 环境 | >= 3.11 | 本机 3.14，CI 亦用 3.14；标准库优先，离线单元测试 100% 模拟隔离 |
 
 ## 5. 关键约束（红线 — 永不违反）
@@ -128,9 +128,11 @@ Provider 的前缀缓存只在**字节完全相同**的前缀上命中，因此 
 
 ### 7.3 上下文按 token 预算裁剪，不按轮数
 
-`graph/nodes.py` 的 `KEEP_RECENT_TOKENS = 20_000` 从最新一轮往回累加，超预算即丢最旧。**禁止**改回固定轮数截断（如 `[-6:]`）：中英文混排下 6 轮可能是 3k 也可能是 20k token，无法与 context window 对齐。
+`context.py` 的 `KEEP_RECENT_TOKENS = 20_000` 从最新一轮往回累加，超预算即丢最旧。**禁止**改回固定轮数截断（如 `[-6:]`）：中英文混排下 6 轮可能是 3k 也可能是 20k token，无法与 context window 对齐。
 
-字符估算系数 1.5 char/token 取 CJK 保守侧（英文约 4）。升级路径是接 tiktoken，见该处 `ponytail:` 注释。
+字符估算系数 1.5 char/token 取 CJK 保守侧（英文约 4）。升级路径是接 tiktoken，见 `context.py` 的 `ponytail:` 注释。
+
+feat-073 起该预算与 wiki 页、记忆块共用同一个模块（`memoria/context.py`），三处不再是各自内联的常数；feat-074 起超预算的历史先经 `_compact()` 折叠再写回，见 §7.7。
 
 ### 7.4 循环内的 LLM 调用必须折叠
 
@@ -191,6 +193,46 @@ Provider 的前缀缓存只在**字节完全相同**的前缀上命中，因此 
 
 **评测语料的规模决定结论的适用范围**：小语料上「k 无影响」并不代表大语料下也无影响。
 该教训已由 `test_narrow_recall_window_finds_nothing` 固化。
+
+### 7.7 上下文内核：统一预算 + 两级压缩 + 计量（feat-073/074/075）
+
+三个 feature 一起把"上下文怎么装进 prompt"从散落约定收敛成一条路径。
+
+**统一预算（feat-073）** —— `memoria/context.py` 是叶子模块，同时被 `graph/`（history）
+与 `wiki/`（页正文）导入，因此 wiki 不必反向依赖编排层。四个上限：`KEEP_RECENT_TOKENS`
+（历史）、`MAX_PAGE_CHARS`（单页）、`MAX_MEMORY_CHARS`（记忆块总量）、以及
+`estimate_tokens()` 这一个换算公式。
+
+**有界注入必须可见** —— 三处裁剪都在文本里留下显式标记（`…[中间省略 N 字]…`、
+`…[已省略 N 条记忆]…`），而不是静默截断。理由是不安全的方向：模型不知道中间缺内容时，
+会用自身权重把缺口补全，产出一个"看起来有引用"实则无据的答案。
+
+**两级压缩（feat-074）** —— 第一级零成本：裁注入块（页取 head 70% + tail 30%、记忆按字符
+预算）。第二级有成本：仅当被淘汰的历史**新增**内容超过 `SUMMARY_MIN_TOKENS = 512` 时，
+才花一次调用把它折叠成一条摘要伪回合（`{"question": "（此前对话摘要）", "summary": True}`）
+并**写回 `state.history`** —— 有界的是 checkpoint 状态本身，不只是 prompt。
+
+两条硬约束：
+
+1. **闸门只数新淘汰的内容**。把已有摘要计入会让它自己就够到 512，从而每轮都买一次摘要
+   调用（成本回归，且没有任何正确性测试会发现）。已有摘要改为并入下一次摘要，增量合并。
+2. **压缩失败必须降级为丢弃，绝不冒泡**。摘要调用抛错或返回空时，保留已付费的旧摘要、
+   丢弃其余，回答照常产出。压缩是优化，不得让用户拿不到答案。
+
+**计量（feat-073）** —— `llm.CountingLLM` 实现同一个 `ChatLLM` Protocol，在 `build_graph`
+单一入口包一层，9 个调用点零改动（`isinstance` 守卫防止 `activate_settings` 重建时叠加包装
+导致重复计数）。计数项：`llm_calls`、`est_prompt_tokens`、`est_completion_tokens`、
+`summary_calls`、`tokens_dropped`、`tokens_summarized`。暴露面三处：SSE `done` 事件的
+`usage` 字段（按本轮**增量**，模块计数是进程累计值）、CLI `ask`/`agent` 的 stderr 一行、
+测试直接读 `counters()`。
+
+`est_` 前缀是刻意的：这些是 1.5 char/token 估算值，**不是** provider 实测用量
+（`llm.py` 不解析 usage 块）。SSE 与 CLI 都按估算值如实标注。
+
+**prompt 面（feat-075）** —— 9 个 system prompt 全部具名为模块常量，`tests/test_prompts.py`
+用 AST 扫描禁止新的内联 `llm.chat("字面量", ...)`，并字节锁定 feat-075 抽出的 4 条 wiki
+prompt（内联时代没有任何东西钉住它们）。邮件两条额外断言红线句仍在——那是 instructed
+约束的载体，删掉它就等于模型从没被告知这条规则。
 
 ## 8. 非目标（明确不做）
 

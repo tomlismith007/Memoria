@@ -1329,6 +1329,14 @@ def test_ask_stream_events(api_client):
     assert events[2]["citations_verified"] is True
     assert events[2]["source"] == "wiki"  # wiki answers trace via [[page]], not [n]
 
+    # feat-073: the done event reports this turn's spend as a delta. The counters
+    # are cumulative process totals, so an absolute figure here would be wrong.
+    usage = events[3]["usage"]
+    assert usage["llm_calls"] >= 1  # wiki select + answer + gate
+    assert usage["est_prompt_tokens"] > 0
+    assert usage["est_completion_tokens"] > 0
+    assert usage.get("summary_calls", 0) == 0  # short thread: no compaction paid for
+
     # The streamed thread answers follow-ups like the JSON route: same thread id.
     follow = client.post(
         "/api/ask/stream",

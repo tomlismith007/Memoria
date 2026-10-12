@@ -24,7 +24,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from memoria.graph import build_graph
-from memoria.llm import ChatLLM, OpenAICompatibleChat
+from memoria.llm import ChatLLM, CountingLLM, OpenAICompatibleChat, counters as llm_counters
 from memoria.mail import Email, fetch_messages
 from memoria.mail.auth import get_gmail_service
 from memoria.memory import MemoryLimitError, MemoryService
@@ -147,7 +147,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
 
     store = overrides.get("store") or ChromaStore(path=chroma_path)
     embedder = overrides.get("embedder") or OpenAICompatibleEmbedder()
-    llm: ChatLLM = overrides.get("llm") or OpenAICompatibleChat()
+    llm: ChatLLM = CountingLLM(overrides.get("llm") or OpenAICompatibleChat())
     wiki: Wiki = overrides.get("wiki") or Wiki(wiki_path)
     wiki.ensure_layout()
     mail_service = overrides.get("mail_service")
@@ -223,7 +223,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             from memoria.llm import FakeChat
             from memoria.rag import FakeEmbedder
 
-            llm = FakeChat()
+            llm = CountingLLM(FakeChat())
             embedder = FakeEmbedder()
             compiled_graph = build_compiled()
             return
@@ -242,11 +242,13 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
             llm_model = resolve_active_chat_model(settings) or llm_model
 
         if "llm" not in overrides:
-            llm = OpenAICompatibleChat(
-                base_url=llm_base_url,
-                api_key=llm_api_key or "no-key",
-                model=llm_model,
-                api_format=active_provider.api_format if active_provider else None,
+            llm = CountingLLM(
+                OpenAICompatibleChat(
+                    base_url=llm_base_url,
+                    api_key=llm_api_key or "no-key",
+                    model=llm_model,
+                    api_format=active_provider.api_format if active_provider else None,
+                )
             )
 
         embed_base_url = settings.embed_base_url
@@ -426,6 +428,7 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                 return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
 
             yield sse({"type": "start", "conversation_id": conversation_id})
+            before = llm_counters()
             try:
                 result = compiled_graph.invoke(
                     {"text": req.question, "intent": "问答"}, config
@@ -443,7 +446,15 @@ def create_app(overrides: dict[str, Any] | None = None) -> FastAPI:
                     "citations": _citations(result),
                 }
             )
-            yield sse({"type": "done"})
+            # feat-073: this turn's spend, as a delta — the module counters are
+            # cumulative process totals, so the raw values would be misleading here.
+            # Estimates, not provider-reported usage (see llm.CountingLLM).
+            after = llm_counters()
+            usage = {
+                key: round(after.get(key, 0) - before.get(key, 0), 1)
+                for key in after.keys() | before.keys()
+            }
+            yield sse({"type": "done", "usage": usage})
 
         return StreamingResponse(
             event_stream(),

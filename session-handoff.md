@@ -2,9 +2,9 @@
 
 ## Current Objective
 
-- Goal: **Memoria 本体升级为准个人 agent**（2026-10-12 grill-me 定案，D1-D12 见 `docs/PERSONAL_AGENT_UPGRADE.md`）。LangGraph 保持生产编排器；hermes/OpenMuse 研究为模式参考库（`docs/agent-architecture/`）。
-- 路线：P0 审批实体化 + 文档纪律 → P1 任务引擎 + 邮件通电 + SSE 对话流 + 最小记忆层 → P2 观望区（monitor/MCP/skill 均不做，见指南 §4.4）。
-- Current status: **P0（066/067）与 P1（069/068/071/039）全部完成**——个人 agent 升级路线六项收官。238 tests + build green（原 239，本次审计删掉 1 个与 test_rag_chunking.py 完全重复的 offset 测试）。P2 观望区按指南 §4.4 不立项。
+- Goal: **Memoria 本体升级为准个人 agent**（2026-10-12 grill-me 定案，D1-D12 见 `docs/PERSONAL_AGENT_UPGRADE.md`）。LangGraph 保持生产编排器；hermes/OpenMuse/talorys 研究为模式参考库（`docs/agent-architecture/`）。
+- 路线：P0 审批实体化 + 文档纪律 → P1 任务引擎 + 邮件通电 + SSE 对话流 + 最小记忆层 → P2 观望区（monitor/MCP/skill 均不做，见指南 §4.4）→ **第二轮：上下文内核强化（§7，已完成）**。
+- Current status: **P0（066/067）与 P1（069/068/071/039）全部完成**，**第二轮上下文内核（073/074/075）完成**。276 tests + build green（238 → 276，第二轮 +38：test_prompts 13 + test_context_budget 24 + test_web_api/test_cli 各 +1 减去既有测试迁移）。P2 观望区按指南 §4.4 不立项；第二轮明确不做项见指南 §7.3。
 
 ## 本轮做了什么（2026-10-12）
 
@@ -56,15 +56,33 @@
    - **前端**：删零调用的 `api.ask`/`onDone`/`AppMemory`/未读响应字段；useProviderConfig 三处逐字 model literal → `draftModel()`、串行保存循环 → 批量端点；7 个多余 export 关键字；package.json preview 脚本；tsconfig resolveJsonModule。
    - **文档真相**：修 session-handoff/progress/README/ARCHITECTURE/VERIFICATION/PERSONAL_AGENT_UPGRADE/DESIGN 共 8 处状态误报（详见下方 Verification Evidence）。
 
+### 第二轮：上下文内核强化（feat-073/074/075）
+
+10. **调研与立项**：通读 `docs/agent-architecture/` 全部 35 篇（六家横向对比 + hermes/talorys/openmuse 三子目录），提炼出作者直接点名给 Memoria 的 22 条可迁移结论；三轮 grill 澄清后立项（K1-K5 见 `PERSONAL_AGENT_UPGRADE.md` §7.1）。范围裁定：只做上下文内核 + prompt 面收敛；运行时观测/工具面/子代理/记忆自动整理**不做**（理由逐条记 §7.3）。
+11. **feat-075 DONE（prompt 面收敛）**：9 个 `llm.chat` 调用点里 5 个已是常量，4 个内联在 `wiki/ops.py`（ingest/select/answer/lint）→ 提为 `INGEST_SYSTEM`/`SELECT_SYSTEM`/`ANSWER_SYSTEM`/`LINT_SYSTEM`。**纯重构，prompt 文本逐字节不变**（改文本会打掉 feat-040/041/064 的前缀缓存调优）。新增 `tests/test_prompts.py`：AST 扫描禁止新的内联 `llm.chat("字面量")`（prompt 漂移正是从内联重新开始的），golden 表字节锁定 4 条原文，邮件两条断言红线句与免责句仍在。
+12. **feat-073 DONE（预算统一 + 计量）**：
+    - 新建叶子模块 `memoria/context.py`（`wiki` 不得反向依赖 `graph`）：`estimate_tokens`/`trim_page`/`trim_memories`/`fit_history`。预算从"只有 history"扩到 **wiki 页正文**（query/ingest/lint 三处页注入）与**记忆块**——盘点发现这两处是仓库里仅有的无界注入；RAG 侧 `top_n=4 × 800 字符` 本身有界（≈2.1k token）且 §7.6 明示是刻意的成本权衡，**刻意不纳入**。
+    - **有界必须可见**：三处裁剪都留显式标记（`…[中间省略 N 字]…`／`…[已省略 N 条记忆]…`）。理由是不安全方向——模型不知道中间缺内容时会用自身权重补全，产出"看起来有引用"实则无据的答案。
+    - `llm.CountingLLM` 实现同一 `ChatLLM` Protocol，在 `build_graph` 单一入口包一层（`isinstance` 守卫防 `activate_settings` 重建时叠加包装导致重复计数），9 个调用点零改动。计数项 6 个；暴露面三处：SSE `done.usage`（**按本轮增量**，模块计数是进程累计值）、CLI `ask`/`agent` stderr 一行（stdout 保持可解析）、测试直读 `counters()`。
+    - `est_` 前缀刻意保留：这是 1.5 char/token 估算值，不是 provider 实测用量。
+13. **feat-074 DONE（两级压缩）**：第一级零成本裁注入块；第二级仅当**新**淘汰内容 > `SUMMARY_MIN_TOKENS=512` 时花一次调用折叠成摘要伪回合 `{"question": "（此前对话摘要）", "summary": true}` 并**写回 `state.history`**（有界的是 checkpoint 状态本身，不只是 prompt）。两条硬约束：①**闸门只数新淘汰的内容**——把已有摘要计入会让它自己够到 512，从而每轮都买一次摘要调用（成本回归，且没有任何正确性测试会发现）；已有摘要改为并入下一次摘要做增量合并。②**压缩失败必须降级为丢弃、绝不冒泡**——抛错或空返回时保留已付费的旧摘要、丢弃其余，回答照常产出。
+    - 选伪回合而非新增 state 字段：只保留"一个列表、一条裁剪规则、一个注入位"，代价是与真回合同形靠 `summary` 标记区分。
+14. **结果**：238 → **276 tests**（+38），零新依赖，**图拓扑未变**（仍单遍 DAG），前端未动。机制与两条硬约束记入 `docs/ARCHITECTURE.md §7.7`；§7.3 中"超预算即丢最旧"的旧表述已同 commit 修订。
+
 ## Verification Evidence
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| 后端全量 | `python -m pytest -q` | **238 passed** | 196 → 211（066）→ 223（069）→ 231（068）→ 237（071）→ 239（039）→ 238（审计删 1 个重复测试） |
-| 前端构建 | `cd frontend && npm run build` | green | tsc strict 零诊断 |
+| 后端全量 | `python -m pytest -q` | **276 passed** | 196 → 211（066）→ 223（069）→ 231（068）→ 237（071）→ 239（039）→ 238（审计删 1 重复）→ 276（第二轮 +38） |
+| 前端构建 | `cd frontend && npm run build` | green | tsc strict 零诊断（第二轮未动前端） |
 | 全量回归 | `pwsh -NoProfile -File ./init.ps1` | green | pytest + build |
 | 死导入扫描 | AST 扫描 src/tests/scripts 全部 .py | 0 命中 | 唯一例外是 `__init__.py` 的 re-export（有意） |
-| 测试数变化核对 | `pytest --collect-only` | 239 → 238 | 差额恰为删除的 1 个重复测试（test_rag_ingest.py 的 offset 契约，test_rag_chunking.py 已完整覆盖） |
+| 内联 prompt 扫描 | `tests/test_prompts.py::test_no_prompt_is_inlined_at_a_call_site` | 0 命中 | AST 扫描 `src/`，禁止 `llm.chat("字面量", ...)` 复活 |
+| prompt 字节锁定 | `tests/test_prompts.py` golden 表 | 4/4 相同 | feat-075 抽出的 wiki prompt 与内联原文逐字节一致 |
+| 压缩零开销 | `test_compact_under_budget_makes_no_extra_llm_call` | 通过 | 未超预算时 `counters()` 全空——防成本回归的关键断言 |
+| 压缩闸门防重付 | `test_compact_gate_ignores_the_prior_summary_so_it_does_not_repeat` | 通过 | 旧摘要单独超 512 也不触发新调用 |
+| 压缩失败降级 | `test_compact_falls_back_*`（抛错/空白） | 2/2 通过 | 降级为丢弃，`kept == history[-4:]`，回答仍产出 |
+| 测试数变化核对 | `pytest --collect-only` | 238 → 276 | +13 test_prompts、+24 test_context_budget、test_web_api +1（SSE usage）、test_cli +1（stderr usage）；test_graph 的预算测试改为 `fit_history` 契约 |
 
 ## Commit State
 
@@ -77,11 +95,14 @@
 - `0a5cd88` feat(ask): SSE 流式端点 + ConversationQueue 对话队列 (feat-039)
 - `9ec2b48` ci: 安装项目本体而非裸 pytest
 - `e696f6f` fix(ci): 修复 linux 环境暴露的两个环境脆弱测试
-- **本轮审计整改**：待提交（后端死代码 / 测试去重 / 前端收敛 / 文档真相 四批改动都在工作区）
+- `ed9c03f` docs(research): 新增 talorys/openmuse 分维度深读，07-talorys 并入子目录
+- `99ae993` refactor: 全仓库 ponytail 审计整改 (feat-072)
+- **第二轮上下文内核**：待提交（feat-073/074/075 三项改动在同一批文件里交织，无法拆成三个可独立通过的 commit，故合并为一个枚举 commit）
 
 ## Next Session Startup
 
-1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 238 passed + build green）。
-2. 阅读 `AGENTS.md` → `docs/PERSONAL_AGENT_UPGRADE.md`（路线与边界）→ `feature_list.json` → `docs/VERIFICATION.md` → 本文件。
-3. 升级路线 P0+P1 已收官。后续按 docs/PERSONAL_AGENT_UPGRADE.md §4.4：P2 观望区不主动立项；日常工作回归 AGENTS.md 常规流程（VERIFICATION.md 保持同步）。
+1. 运行 `pwsh -NoProfile -File ./init.ps1`（预期 276 passed + build green）。
+2. 阅读 `AGENTS.md` → `docs/PERSONAL_AGENT_UPGRADE.md`（路线与边界，§7 为第二轮）→ `feature_list.json` → `docs/VERIFICATION.md` → 本文件。
+3. 升级路线 P0+P1 与第二轮上下文内核均已收官。后续按 `PERSONAL_AGENT_UPGRADE.md` §4.4（P2 观望区）与 §7.3（第二轮明确不做项）：**均不主动立项，等触发条件**；日常工作回归 AGENTS.md 常规流程（VERIFICATION.md 保持同步）。
 4. 启动命令：`python run_web.py`；Gmail 真账号验收：设 TOKEN_ENCRYPTION_KEY → python scripts/auth_gmail.py → MailView（横幅消失即通）；定时分拣在 Gmail 就绪后自动运行（间隔 MEMORIA_MAIL_TRIAGE_INTERVAL 默认 1800s）。
+5. 第二轮遗留的已知边界（改动前先读）：计量为估算值非 provider 实测；计数器重启即失；记忆写入仍无单条长度校验；压缩质量未做真模型对比。详见 `docs/VERIFICATION.md` 对应行的 Boundary 列。
